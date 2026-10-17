@@ -325,20 +325,53 @@ async function rmrosterFetchNotifsLive(){
       }catch{}
       if(isEditing) return;
 
-      // Rosters
+      // Rosters - with deduplication and deleted staff respect
       const liveRosters = await rmrosterFetchLive();
       if(liveRosters && liveRosters.length>0){
-        let localStr = localStorage.getItem('retail_roster_byFortnight_v1')||'[]';
-        if(JSON.stringify(liveRosters)!==localStr){
-          try{
-            let local = JSON.parse(localStr);
-            if(liveRosters.length>=local.length){
-              localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(liveRosters));
-              console.log('🔄 Live rosters updated');
-              window.dispatchEvent(new CustomEvent('rmroster-live-update', {detail: liveRosters}));
+        try{
+          // Deduplicate live rosters and respect deleted staff
+          let dedupedLive = liveRosters.map(r=>{
+            let seen = new Set();
+            let deduped = [];
+            for(let s of r.staff){
+              // Check if this staff was recently deleted
+              let deletedFlag = localStorage.getItem('staff_deleted_'+s.id);
+              if(deletedFlag && (Date.now() - parseInt(deletedFlag) < 86400000)){ // 24h
+                continue; // skip recently deleted
+              }
+              if(seen.has(s.id)) continue;
+              seen.add(s.id);
+              deduped.push(s);
             }
-          }catch{}
-        }
+            return {...r, staff: deduped};
+          });
+          
+          let localStr = localStorage.getItem('retail_roster_byFortnight_v1')||'[]';
+          let local = [];
+          try{ local = JSON.parse(localStr); }catch{}
+          
+          // Only update if live has more recent data and not bringing back deleted
+          let shouldUpdate = false;
+          if(dedupedLive.length>=local.length){
+            // Check if any deleted staff would come back
+            let hasDeleted = false;
+            for(let r of dedupedLive){
+              for(let s of r.staff){
+                if(localStorage.getItem('staff_deleted_'+s.id)) hasDeleted = true;
+              }
+            }
+            // If no deleted staff in live, or live is newer, update
+            if(!hasDeleted || JSON.stringify(dedupedLive)!==localStr){
+              shouldUpdate = true;
+            }
+          }
+          
+          if(shouldUpdate && JSON.stringify(dedupedLive)!==localStr){
+            localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(dedupedLive));
+            console.log('🔄 Live rosters updated (deduplicated)');
+            window.dispatchEvent(new CustomEvent('rmroster-live-update', {detail: dedupedLive}));
+          }
+        }catch(e){ console.warn('Roster fetch failed', e); }
       }
       
       // Requests
@@ -402,15 +435,27 @@ async function rmrosterFetchNotifsLive(){
 
 
 <script>
-// Delete staff function for manager/master/admin
+// Delete staff function for manager/master/admin - NOW PUSHES TO LIVE DB
 window.deleteStaffFromRoster = function(staffId, staffName){
   if(!confirm(`Delete ${staffName} (${staffId}) from ALL rosters? This cannot be undone. Duplicates will be removed.`)) return;
   try{
     // Remove from rosters (retail_roster_byFortnight_v1)
     let rostersStr = localStorage.getItem('retail_roster_byFortnight_v1');
+    let newRosters = [];
     if(rostersStr){
       let rosters = JSON.parse(rostersStr);
-      let newRosters = rosters.map(r=>({...r, staff: r.staff.filter(s=>s.id!==staffId)}));
+      newRosters = rosters.map(r=>{
+        // Also deduplicate while deleting
+        let seen = new Set();
+        let deduped = [];
+        for(let s of r.staff){
+          if(s.id===staffId) continue; // delete target
+          if(seen.has(s.id)) continue; // remove duplicates
+          seen.add(s.id);
+          deduped.push(s);
+        }
+        return {...r, staff: deduped};
+      });
       localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(newRosters));
       console.log('Deleted staff from rosters', staffId);
     }
@@ -423,9 +468,10 @@ window.deleteStaffFromRoster = function(staffId, staffName){
     }
     // Remove from users
     let usersStr = localStorage.getItem('retail_roster_users_v1');
+    let newUsers = [];
     if(usersStr){
       let users = JSON.parse(usersStr);
-      let newUsers = users.filter(u=>u.id!==staffId);
+      newUsers = users.filter(u=>u.id!==staffId);
       localStorage.setItem('retail_roster_users_v1', JSON.stringify(newUsers));
     }
     // Remove from original shifts backup
@@ -433,7 +479,6 @@ window.deleteStaffFromRoster = function(staffId, staffName){
     if(origStr){
       try{
         let orig = JSON.parse(origStr);
-        // orig is object keyed by rosterId -> staffId -> dateIdx -> shift
         let newOrig = {...orig};
         for(let rosterId in newOrig){
           if(newOrig[rosterId] && newOrig[rosterId][staffId]){
@@ -443,12 +488,73 @@ window.deleteStaffFromRoster = function(staffId, staffName){
         localStorage.setItem('retail_roster_originalShifts_v1', JSON.stringify(newOrig));
       }catch{}
     }
-    alert(`Deleted ${staffName} from all rosters. Refreshing...`);
-    location.reload();
+    // PUSH TO LIVE DB - this is what was missing
+    try{
+      // Push updated rosters to live
+      if(newRosters.length>0){
+        newRosters.forEach(r=>{
+          fetch(`${RMROSTER_DB_URL}/rosters/${r.id}.json`, {
+            method: 'PUT',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({...r, _pushedAt: Date.now(), _deletedStaff: staffId})
+          }).then(()=>console.log('✅ Pushed deleted roster to live', r.id)).catch(()=>{});
+        });
+      }
+      // Push updated users to live
+      if(newUsers.length>0){
+        fetch(`${RMROSTER_DB_URL}/users.json`, {
+          method: 'PUT',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(newUsers)
+        }).then(()=>console.log('✅ Pushed deleted users to live')).catch(()=>{});
+      }
+      // Set flag so live poll doesn't bring it back
+      localStorage.setItem('staff_deleted_'+staffId, Date.now().toString());
+    }catch(e){ console.warn('Live push failed', e); }
+    
+    alert(`Deleted ${staffName} from all rosters and pushed to live DB. Refreshing...`);
+    setTimeout(()=>location.reload(), 500);
   }catch(e){
     alert('Delete failed: ' + e.message);
   }
 };
+
+// Auto-deduplicate on load - remove duplicate staff IDs from all rosters
+(function(){
+  try{
+    let rostersStr = localStorage.getItem('retail_roster_byFortnight_v1');
+    if(!rostersStr) return;
+    let rosters = JSON.parse(rostersStr);
+    let changed = false;
+    let newRosters = rosters.map(r=>{
+      let seen = new Set();
+      let deduped = [];
+      for(let s of r.staff){
+        if(seen.has(s.id)){
+          changed = true;
+          continue;
+        }
+        seen.add(s.id);
+        deduped.push(s);
+      }
+      if(deduped.length!==r.staff.length) changed = true;
+      return {...r, staff: deduped};
+    });
+    if(changed){
+      console.log('Auto-deduplicated rosters on load');
+      localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(newRosters));
+      // Push deduped to live
+      newRosters.forEach(r=>{
+        fetch(`${RMROSTER_DB_URL}/rosters/${r.id}.json`, {
+          method: 'PUT',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(r)
+        }).catch(()=>{});
+      });
+    }
+  }catch{}
+})();
+
 
 // Deduplicate staff when importing - remove duplicates by id
 window.deduplicateRosterStaff = function(roster){
