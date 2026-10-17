@@ -1,6 +1,103 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
+<meta name="color-scheme" content="light only">
+<style id="disable-dark-mode">
+/* Force light mode - ignore device dark mode setting */
+:root{
+  color-scheme: light only!important;
+  --bg: #ffffff;
+  --text: #111111;
+}
+
+html{
+  color-scheme: light only!important;
+  background: #ffffff!important;
+  background-color: #ffffff!important;
+}
+
+body{
+  color-scheme: light only!important;
+  background: #ffffff!important;
+  background-color: #ffffff!important;
+  color: #111111!important;
+}
+
+/* Override dark mode preferences */
+@media (prefers-color-scheme: dark){
+  html{
+    color-scheme: light only!important;
+    background: #ffffff!important;
+    background-color: #ffffff!important;
+    filter: none!important;
+  }
+  
+  body{
+    color-scheme: light only!important;
+    background: #ffffff!important;
+    background-color: #ffffff!important;
+    color: #111111!important;
+    filter: none!important;
+  }
+  
+  /* Keep all designed colors as is - don't invert */
+  div, header, main, section, article, aside, nav, footer{
+    filter: none!important;
+  }
+  
+  /* Ensure white backgrounds stay white */
+  .bg-white, [class*="bg-white"], [class*="bg-[#"]{
+    filter: none!important;
+  }
+  
+  /* Prevent dark mode from changing inputs */
+  input, select, textarea, button{
+    color-scheme: light only!important;
+    filter: none!important;
+  }
+  
+  /* Keep yellow, blue, black colors as designed */
+  .bg-\[\#FFE066\], [class*="FFE066"]{
+    background-color: #FFE066!important;
+    color: #111!important;
+  }
+  
+  .bg-\[\#A8D8FF\], [class*="A8D8FF"]{
+    background-color: #A8D8FF!important;
+    color: #111!important;
+  }
+  
+  .bg-\[\#111\], .bg-black, [class*="bg-\[\#111\]"]{
+    background-color: #111!important;
+    color: white!important;
+  }
+}
+
+/* Also force for all browsers that support color-scheme */
+*{
+  color-scheme: light only!important;
+}
+
+/* Ensure no dark mode filter is applied anywhere */
+html, body, div, span, applet, object, iframe,
+h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+a, abbr, acronym, address, big, cite, code,
+del, dfn, em, img, ins, kbd, q, s, samp,
+small, strike, strong, sub, sup, tt, var,
+b, u, i, center,
+dl, dt, dd, ol, ul, li,
+fieldset, form, label, legend,
+table, caption, tbody, tfoot, thead, tr, th, td,
+article, aside, canvas, details, embed, 
+figure, figcaption, footer, header, hgroup, 
+menu, nav, output, ruby, section, summary,
+time, mark, audio, video{
+  filter: none!important;
+  -webkit-filter: none!important;
+}
+</style>
+
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>React Artifact</title>
@@ -109,6 +206,84 @@
 }
 </style>
 
+
+<style id="mobile-header-left-fix">
+@media (max-width: 768px){
+  /* Move hamburger to top left, ensure header has space */
+  header.sticky{
+    padding-left:64px!important;
+  }
+  /* The header with Repco Roster - add left padding */
+  div.bg-\[\#111\].text-white.rounded-\[12px\]{
+    margin-left:52px!important;
+  }
+  /* Alternative header selector */
+  header{
+    padding-left:60px!important;
+  }
+  /* Ensure logout button not overlapped - it's on right, hamburger now on left */
+  #mobile-hamburger-btn{
+    left:12px!important;
+    right:auto!important;
+    top:12px!important;
+  }
+}
+</style>
+
+
+<style id="mobile-bell-fix">
+/* Bell notification dropdown exceeds screen bounds on mobile - FIX ONLY MOBILE */
+@media (max-width: 768px){
+  /* The bell container is relative, dropdown is absolute right-0 w-[320px] max-w-[90vw] */
+  /* Override to fixed centered modal on mobile */
+  div.absolute.right-0.mt-2.w-\[320px\].max-w-\[90vw\].bg-white.border-\[3px\].border-\[\#111\].rounded-\[16px\]{
+    position:fixed!important;
+    top:70px!important;
+    left:50%!important;
+    right:auto!important;
+    transform:translateX(-50%)!important;
+    width:92vw!important;
+    max-width:92vw!important;
+    min-width:0!important;
+    margin-top:0!important;
+    max-height:75vh!important;
+    overflow-y:auto!important;
+    z-index:9999!important;
+    box-shadow:6px 6px 0px #111!important;
+  }
+  
+  /* Also target any div with bell notification that has absolute right-0 */
+  div.relative > div.absolute.right-0.mt-2{
+    position:fixed!important;
+    top:70px!important;
+    left:50%!important;
+    right:auto!important;
+    transform:translateX(-50%)!important;
+    width:92vw!important;
+    max-width:92vw!important;
+  }
+  
+  /* Ensure notification content doesn't overflow */
+  div.absolute.right-0.mt-2.w-\[320px\] *{
+    max-width:100%!important;
+    word-wrap:break-word!important;
+    overflow-wrap:break-word!important;
+  }
+  
+  /* Bell button itself - ensure it's not too close to edge */
+  button.relative.bg-white.border-\[2\.5px\]{
+    flex-shrink:0!important;
+  }
+  
+  /* The bell notification list items */
+  div.absolute.right-0 div.flex.flex-col.gap-2,
+  div.absolute.right-0 div.flex.flex-col{
+    width:100%!important;
+    max-width:100%!important;
+  }
+}
+</style>
+
 </head>
 <body>
   <div id="root"></div>
@@ -161,7 +336,109 @@ window.exportFullRosterToPDF = function(fortnight){
     }
     htmlContent += renderSection('FULL TIME', fullStaff, fortnight.dates, fortnight.dateRange);
     htmlContent += renderSection('CASUAL', casualStaff, fortnight.dates, fortnight.dateRange);
-    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;border:2px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Print / Save as PDF</button></div></body></html>';
+    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;border:2px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Print / Save as PDF</button></div>
+<script id="improved-tab-persist">
+// Improved: directly persist p state via overriding k function
+(function(){
+  const KEY = 'retail_roster_last_tab_id';
+  
+  // Save function
+  function saveTabId(id){
+    try{ localStorage.setItem(KEY, id); }catch{}
+  }
+  
+  // Try to find and wrap the tab setter by observing
+  let originalK = null;
+  let attempts = 0;
+  
+  // Hook into button clicks more reliably - map text to id
+  function getTabIdFromText(text){
+    text = (text||'').trim();
+    if(text==='Full Roster') return 'full';
+    if(text==='My Schedule') return 'my';
+    if(text==="Today's Buddies" || text==='Today Buddies') return 'today';
+    if(text==="Tomorrow's Buddies" || text==='Tomorrow Buddies') return 'tomorrow';
+    if(text.indexOf('Requests')>-1) return 'requests';
+    if(text==='Custom Rosters') return 'custom';
+    if(text==='Hidden Staff') return 'hidden';
+    if(text==='Archive') return 'archive';
+    if(text==='Accounts') return 'accounts';
+    return null;
+  }
+  
+  // Setup click listeners on all tab buttons
+  function hookTabButtons(){
+    let btns = document.querySelectorAll('button');
+    for(let btn of btns){
+      if(btn.dataset.tabPersist) continue;
+      let text = (btn.textContent||'').trim();
+      let id = getTabIdFromText(text);
+      if(id){
+        // Check if in tab bar (not mobile drawer)
+        if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
+        btn.dataset.tabPersist = '1';
+        btn.addEventListener('click', ()=>{ saveTabId(id); });
+      }
+    }
+  }
+  
+  // Restore on load - click the saved tab
+  function restoreTab(){
+    try{
+      let saved = localStorage.getItem(KEY);
+      if(!saved) return;
+      // Don't restore if it's the default that session restore would set
+      // Only restore if user explicitly navigated before
+      let isEmployee = false;
+      try{
+        let session = localStorage.getItem('retail_roster_session_v1');
+        if(session){
+          let s = JSON.parse(session);
+          // If session exists, app will auto-set to my or full - we want to override with saved tab if different
+        }
+      }catch{}
+      
+      setTimeout(()=>{
+        let btns = document.querySelectorAll('button');
+        for(let btn of btns){
+          if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
+          let text = (btn.textContent||'').trim();
+          let id = getTabIdFromText(text);
+          if(id===saved){
+            console.log('Restoring tab on refresh:', saved, text);
+            btn.click();
+            break;
+          }
+        }
+      }, 800);
+    }catch{}
+  }
+  
+  // Init
+  setTimeout(hookTabButtons, 1000);
+  setTimeout(hookTabButtons, 2500);
+  setTimeout(restoreTab, 1200);
+  
+  // Re-hook on mutations (when tabs re-render)
+  let mo = new MutationObserver(()=>{ hookTabButtons(); });
+  mo.observe(document.body, {childList: true, subtree: true});
+  
+  // Also save when mobile menu tab clicked
+  document.addEventListener('click', (e)=>{
+    let target = e.target;
+    if(target.closest && target.closest('#mobile-menu-drawer')){
+      let btn = target.closest('button.menu-tab');
+      if(btn){
+        let text = btn.getAttribute('data-tab-text')||btn.textContent||'';
+        let id = getTabIdFromText(text);
+        if(id) saveTabId(id);
+      }
+    }
+  });
+})();
+</script>
+
+</body></html>';
     let blob = new Blob([htmlContent], {type:'text/html'});
     let url = URL.createObjectURL(blob);
     let win = window.open(url, '_blank');
@@ -1110,7 +1387,8 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
     display:flex!important;
     position:fixed!important;
     top:12px!important;
-    right:12px!important;
+    left:12px!important;
+    right:auto!important;
     z-index:9999!important;
     background:#111!important;
     color:white!important;
@@ -1690,6 +1968,397 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
   }
   
   setInterval(ensureHiddenInBuddies, 1000);
+})();
+</script>
+
+
+<script id="persist-last-tab">
+// Stay on same page after refresh - persist last tab
+(function(){
+  const LAST_TAB_KEY = 'retail_roster_last_tab_v1';
+  
+  // Save tab when it changes
+  function saveLastTab(tabId){
+    try{
+      if(tabId && typeof tabId === 'string'){
+        localStorage.setItem(LAST_TAB_KEY, tabId);
+        console.log('Saved last tab:', tabId);
+      }
+    }catch{}
+  }
+  
+  // Hook into tab setter k - we need to intercept button clicks
+  function setupTabPersistence(){
+    // Find all tab buttons and hook their click to save
+    let tabButtons = document.querySelectorAll('button');
+    for(let btn of tabButtons){
+      let text = (btn.textContent||'').trim();
+      // Check if it's a tab button by text
+      if(['Full Roster', 'My Schedule', "Today's Buddies", "Tomorrow's Buddies", 'Requests', 'Custom Rosters', 'Hidden Staff', 'Archive', 'Accounts'].some(t=>text.indexOf(t)>-1 || text===t)){
+        // Avoid duplicate listeners
+        if(btn.dataset.persistHooked) continue;
+        btn.dataset.persistHooked = '1';
+        btn.addEventListener('click', function(){
+          // Determine tab id from text
+          let tabId = null;
+          if(text.indexOf('Full Roster')>-1) tabId = 'full';
+          else if(text.indexOf('My Schedule')>-1) tabId = 'my';
+          else if(text.indexOf("Today's Buddies")>-1 || text.indexOf('Today')>-1 && text.indexOf('Buddies')>-1) tabId = 'today';
+          else if(text.indexOf("Tomorrow's Buddies")>-1 || text.indexOf('Tomorrow')>-1) tabId = 'Buddies';
+          else if(text.indexOf('Requests')>-1) tabId = 'requests';
+          else if(text.indexOf('Custom Rosters')>-1) tabId = 'custom';
+          else if(text.indexOf('Hidden Staff')>-1) tabId = 'hidden';
+          else if(text.indexOf('Archive')>-1) tabId = 'archive';
+          else if(text.indexOf('Accounts')>-1) tabId = 'accounts';
+          
+          // More precise: try to get id from React props or data
+          // Fallback: save text itself
+          if(!tabId){
+            // Try to infer from button's onClick closure - save lowercased text
+            tabId = text.toLowerCase().replace(/[^a-z]/g, '');
+          }
+          
+          // Actually, better to save the button's intended tab by observing p changes via mutation
+          // For now save text, we'll also observe URL/hash changes
+          saveLastTab(text);
+        });
+      }
+    }
+    
+    // Also observe for tab changes via React state - watch for active tab styling
+    let observer = new MutationObserver(function(){
+      try{
+        // Find active tab by pink shadow or black bg
+        let activeBtn = null;
+        let allBtns = document.querySelectorAll('button');
+        for(let b of allBtns){
+          if(b.closest && b.closest('#mobile-menu-drawer')) continue;
+          let style = window.getComputedStyle(b);
+          // Active has pink shadow or black bg
+          if(style.boxShadow && style.boxShadow.indexOf('rgb(236, 72, 153)')>-1){
+            activeBtn = b;
+            break;
+          }
+          if(b.className && b.className.indexOf('bg-[#111]')>-1 && b.textContent && b.textContent.length<30){
+            // Check if it's in tab bar
+            if(b.parentElement && b.parentElement.textContent.indexOf('Full Roster')>-1){
+              activeBtn = b;
+              break;
+            }
+          }
+        }
+        if(activeBtn){
+          let text = (activeBtn.textContent||'').trim();
+          if(text) saveLastTab(text);
+        }
+      }catch{}
+    });
+    
+    observer.observe(document.body, {childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style']});
+  }
+  
+  // Restore last tab on load
+  function restoreLastTab(){
+    try{
+      let lastTab = localStorage.getItem(LAST_TAB_KEY);
+      if(!lastTab) return;
+      
+      console.log('Restoring last tab:', lastTab);
+      
+      // Wait for app to load
+      let attempts = 0;
+      let interval = setInterval(()=>{
+        attempts++;
+        if(attempts>20){
+          clearInterval(interval);
+          return;
+        }
+        
+        // Find button with matching text and click it
+        let allBtns = document.querySelectorAll('button');
+        for(let btn of allBtns){
+          if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
+          let text = (btn.textContent||'').trim();
+          if(text===lastTab || (lastTab.indexOf(text)>-1 && text.length>3) || (text.indexOf(lastTab)>-1 && lastTab.length>3)){
+            // Don't restore if it's already active
+            let style = window.getComputedStyle(btn);
+            let isActive = style.boxShadow && style.boxShadow.indexOf('rgb(236, 72, 153)')>-1;
+            if(!isActive){
+              console.log('Clicking to restore tab:', text);
+              btn.click();
+              clearInterval(interval);
+              return;
+            } else {
+              clearInterval(interval);
+              return;
+            }
+          }
+        }
+        
+        // Also try by id mapping
+        let tabMap = {
+          'full': 'Full Roster',
+          'my': 'My Schedule',
+          'today': "Today's Buddies",
+          'tomorrow': "Tomorrow's Buddies",
+          'requests': 'Requests',
+          'custom': 'Custom Rosters',
+          'hidden': 'Hidden Staff',
+          'archive': 'Archive',
+          'accounts': 'Accounts'
+        };
+        
+        // If lastTab is an id like 'full', map to text
+        let targetText = tabMap[lastTab] || tabMap[lastTab.toLowerCase()] || lastTab;
+        for(let btn of allBtns){
+          if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
+          let text = (btn.textContent||'').trim();
+          if(text.indexOf(targetText)>-1 || targetText.indexOf(text)>-1){
+            let style = window.getComputedStyle(btn);
+            let isActive = style.boxShadow && style.boxShadow.indexOf('rgb(236, 72, 153)')>-1;
+            if(!isActive){
+              console.log('Clicking to restore tab by map:', text);
+              btn.click();
+              clearInterval(interval);
+              return;
+            }
+          }
+        }
+      }, 500);
+    }catch(e){ console.warn('Restore tab failed', e); }
+  }
+  
+  // Setup after load
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', ()=>{
+      setTimeout(setupTabPersistence, 1000);
+      setTimeout(restoreLastTab, 1500);
+    });
+  } else {
+    setTimeout(setupTabPersistence, 1000);
+    setTimeout(restoreLastTab, 1500);
+  }
+  
+  // Also save on beforeunload
+  window.addEventListener('beforeunload', ()=>{
+    try{
+      // Find active tab
+      let allBtns = document.querySelectorAll('button');
+      for(let b of allBtns){
+        if(b.closest && b.closest('#mobile-menu-drawer')) continue;
+        let style = window.getComputedStyle(b);
+        if(style.boxShadow && style.boxShadow.indexOf('rgb(236, 72, 153)')>-1){
+          let text = (b.textContent||'').trim();
+          if(text) localStorage.setItem(LAST_TAB_KEY, text);
+          break;
+        }
+      }
+    }catch{}
+  });
+})();
+</script>
+
+
+<script id="mobile-bell-js-fix">
+// Mobile only - fix bell dropdown position when opened
+(function(){
+  function fixBellDropdown(){
+    if(window.innerWidth > 768) return;
+    
+    // Find bell dropdown
+    let dropdowns = document.querySelectorAll('div.absolute.right-0.mt-2.w-\[320px\]');
+    for(let dd of dropdowns){
+      if(window.innerWidth <= 768){
+        dd.style.position = 'fixed';
+        dd.style.top = '70px';
+        dd.style.left = '50%';
+        dd.style.right = 'auto';
+        dd.style.transform = 'translateX(-50%)';
+        dd.style.width = '92vw';
+        dd.style.maxWidth = '92vw';
+        dd.style.maxHeight = '75vh';
+        dd.style.overflowY = 'auto';
+        dd.style.zIndex = '9999';
+      }
+    }
+  }
+  
+  // Watch for bell dropdown opening
+  let observer = new MutationObserver(function(mutations){
+    if(window.innerWidth > 768) return;
+    for(let mut of mutations){
+      for(let node of mut.addedNodes){
+        if(node.nodeType===1){
+          if(node.className && node.className.indexOf('absolute right-0 mt-2')>-1 && node.className.indexOf('w-[320px]')>-1){
+            setTimeout(fixBellDropdown, 10);
+          }
+          // Also check children
+          let nested = node.querySelectorAll && node.querySelectorAll('div.absolute.right-0.mt-2.w-\[320px\]');
+          if(nested && nested.length>0){
+            setTimeout(fixBellDropdown, 10);
+          }
+        }
+      }
+    }
+  });
+  
+  observer.observe(document.body, {childList: true, subtree: true});
+  
+  // Also fix on bell button click
+  document.addEventListener('click', function(e){
+    let target = e.target;
+    if(target.closest && target.closest('button')){
+      let btn = target.closest('button');
+      if(btn.textContent && btn.textContent.indexOf('🔔')>-1){
+        setTimeout(fixBellDropdown, 100);
+        setTimeout(fixBellDropdown, 300);
+      }
+    }
+  });
+})();
+</script>
+
+
+<script id="logout-session-fix">
+// Fix logout - must end session for both mobile and desktop
+(function(){
+  function clearSession(){
+    try{
+      localStorage.removeItem('retail_roster_session_v1');
+      localStorage.removeItem('retail_roster_last_tab_v1');
+      localStorage.removeItem('retail_roster_last_tab_id');
+      localStorage.removeItem('retail_roster_last_tab');
+      // Also clear any forced flags that might auto-login
+      // Keep rosters, users, hidden, etc - only clear session
+      console.log('Session cleared on logout');
+    }catch(e){}
+  }
+  
+  function hookLogoutButtons(){
+    // Find all LOGOUT buttons
+    let buttons = document.querySelectorAll('button');
+    for(let btn of buttons){
+      let text = (btn.textContent||'').trim().toUpperCase();
+      if(text==='LOGOUT' && !btn.dataset.logoutFixed){
+        btn.dataset.logoutFixed = '1';
+        // Add capture listener that runs before React's
+        btn.addEventListener('click', function(e){
+          console.log('Logout pressed - clearing session');
+          clearSession();
+          // Also try to clear via the o2 function if available
+          try{
+            if(window.o2 && typeof window.o2 === 'function'){
+              window.o2();
+            }
+          }catch{}
+          // Ensure after a short delay, session is still cleared and user is logged out
+          setTimeout(()=>{
+            clearSession();
+            // If still showing roster (user not null), force reload to login
+            let hasLoginForm = document.body.textContent.indexOf('Username')>-1 && document.body.textContent.indexOf('Password')>-1;
+            let hasRoster = document.body.textContent.indexOf('Full Roster')>-1 || document.body.textContent.indexOf('My Schedule')>-1;
+            if(!hasLoginForm && hasRoster){
+              // Try to find and trigger React logout again
+              console.log('Still logged in after logout, forcing clear');
+              try{ localStorage.removeItem('retail_roster_session_v1'); }catch{}
+              // Force reload to show login
+              setTimeout(()=>{ location.reload(); }, 300);
+            }
+          }, 200);
+        }, true); // capture phase to run first
+      }
+    }
+  }
+  
+  // Hook immediately and on mutations
+  hookLogoutButtons();
+  setTimeout(hookLogoutButtons, 500);
+  setTimeout(hookLogoutButtons, 1500);
+  
+  let observer = new MutationObserver(()=>{ hookLogoutButtons(); });
+  observer.observe(document.body, {childList: true, subtree: true});
+  
+  // Also override the global logout if o2 exists
+  // Patch the e(null) behavior to also clear session
+  // We do this by watching for session removal
+  window.addEventListener('beforeunload', function(){
+    // If user is logging out, ensure session is cleared
+    let logoutBtn = document.querySelector('button');
+  });
+  
+  // On page load, if no session, ensure last tab doesn't auto-login
+  // Actually, if Jt doesn't exist, we should NOT restore tab - clear last tab keys if no session
+  (function(){
+    try{
+      let session = localStorage.getItem('retail_roster_session_v1');
+      if(!session){
+        // No session, clear last tab to prevent auto-navigation after logout
+        localStorage.removeItem('retail_roster_last_tab_v1');
+        localStorage.removeItem('retail_roster_last_tab_id');
+      }
+    }catch{}
+  })();
+})();
+</script>
+
+
+<script id="improved-logout-fix">
+// Improved logout - ensure session ends for both mobile and desktop
+(function(){
+  // Override the logout button's React handler by intercepting
+  // The header logout is S("button",{onClick:()=>e(null),...}) which only sets user null
+  // We need to make it also remove session
+  
+  function ensureLogoutEndsSession(){
+    // Find logout button and replace its onClick behavior via DOM
+    document.addEventListener('click', function(e){
+      let target = e.target;
+      let btn = target.closest && target.closest('button');
+      if(!btn) return;
+      let text = (btn.textContent||'').trim().toUpperCase();
+      if(text==='LOGOUT'){
+        // Clear session immediately
+        try{
+          localStorage.removeItem('retail_roster_session_v1');
+          localStorage.removeItem('retail_roster_last_tab_v1');
+          localStorage.removeItem('retail_roster_last_tab_id');
+          sessionStorage.clear();
+          console.log('Logout: session ended');
+        }catch(err){}
+        
+        // After React sets user to null, force reload after delay to ensure login screen
+        setTimeout(()=>{
+          try{
+            let session = localStorage.getItem('retail_roster_session_v1');
+            if(session){
+              localStorage.removeItem('retail_roster_session_v1');
+            }
+            // Check if still logged in (roster visible)
+            let bodyText = document.body.textContent||'';
+            let isRosterVisible = bodyText.indexOf('Full Roster')>-1 || bodyText.indexOf('My Schedule')>-1;
+            let isLoginVisible = bodyText.indexOf('Login')>-1 || (bodyText.indexOf('Username')>-1 && bodyText.indexOf('Password')>-1);
+            
+            if(isRosterVisible && !isLoginVisible){
+              console.log('Logout did not fully clear, reloading to login');
+              location.reload();
+            }
+          }catch{}
+        }, 500);
+      }
+    }, true);
+  }
+  
+  ensureLogoutEndsSession();
+  
+  // On load, if user just logged out (no session), don't restore last tab
+  try{
+    let session = localStorage.getItem('retail_roster_session_v1');
+    if(!session){
+      localStorage.removeItem('retail_roster_last_tab_v1');
+      localStorage.removeItem('retail_roster_last_tab_id');
+      console.log('No session on load - cleared last tab to stay logged out');
+    }
+  }catch{}
 })();
 </script>
 
