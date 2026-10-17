@@ -265,181 +265,338 @@ header > div{
 </style>
 
 
-<meta name="color-scheme" content="light">
+
+
+
+<meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light">
-<meta name="theme-color" content="#ffffff">
-<style id="force-light-mode-strong">
-/* ULTRA STRONG - Force light mode, ignore device dark mode - BOTH MOBILE AND DESKTOP */
+<meta name="theme-color" content="#FFE066">
+<style id="ultra-light-mode-and-header-fix">
+/* === ULTRA STRONG LIGHT MODE - ignore device dark mode - BOTH MOBILE AND DESKTOP === */
 :root{
   color-scheme: light only!important;
   supported-color-schemes: light!important;
+  --color-scheme: light only;
 }
 
 html{
   color-scheme: light only!important;
-  background: #ffffff!important;
-  background-color: #ffffff!important;
+  background: #FFE066!important;
+  background-color: #FFE066!important;
+  forced-color-adjust: none!important;
+  -webkit-forced-color-adjust: none!important;
 }
 
 body{
   color-scheme: light only!important;
-  background: #ffffff!important;
-  background-color: #ffffff!important;
+  background: #FFE066!important;
+  background-color: #FFE066!important;
   color: #111111!important;
+  forced-color-adjust: none!important;
+  -webkit-forced-color-adjust: none!important;
 }
 
-/* Override any dark mode media queries from Tailwind or browser */
-@media (prefers-color-scheme: dark){
-  :root{
-    color-scheme: light only!important;
-  }
-  
-  html{
-    color-scheme: light only!important;
-    background: #ffffff!important;
-    background-color: #ffffff!important;
-    color: #111111!important;
-  }
-  
-  body{
-    color-scheme: light only!important;
-    background: #ffffff!important;
-    background-color: #ffffff!important;
-    color: #111111!important;
-  }
-  
-  /* Force all backgrounds to stay light as designed */
-  div, header, main, section, nav, aside, footer, article{
-    color-scheme: light only!important;
-  }
-  
-  /* Keep white cards white */
-  .bg-white, [class*="bg-white"], [class*="bg-\[\#FFF"]{
-    background-color: #ffffff!important;
-    color: #111111!important;
-  }
-  
-  /* Keep yellow #FFE066 */
-  [class*="FFE066"], .bg-\[\#FFE066\]{
-    background-color: #FFE066!important;
-    color: #111111!important;
-    border-color: #111111!important;
-  }
-  
-  /* Keep blue #A8D8FF */
-  [class*="A8D8FF"], .bg-\[\#A8D8FF\]{
-    background-color: #A8D8FF!important;
-    color: #111111!important;
-    border-color: #111111!important;
-  }
-  
-  /* Keep black #111 */
-  .bg-\[\#111\], [class*="bg-\[\#111"]{
-    background-color: #111111!important;
-    color: #ffffff!important;
-  }
-  
-  /* Inputs stay light */
-  input, textarea, select{
-    background-color: #ffffff!important;
-    color: #111111!important;
-    border-color: #111111!important;
-    color-scheme: light only!important;
-  }
-  
-  /* Buttons stay as designed */
-  button{
-    color-scheme: light only!important;
-  }
+/* Login page - keep yellow background */
+body > div, #root, #app{
+  background: #FFE066!important;
+  background-color: #FFE066!important;
 }
 
-/* For browsers that invert colors in dark mode - prevent */
-html, body{
-  filter: none!important;
-  -webkit-filter: none!important;
-  -moz-filter: none!important;
-  -ms-filter: none!important;
-  -o-filter: none!important;
-}
-
-/* Extra: force light for any element that might get dark mode */
+/* All elements forced light */
 *{
   color-scheme: light only!important;
+  forced-color-adjust: none!important;
+}
+
+/* Override dark mode completely */
+@media (prefers-color-scheme: dark){
+  :root, html, body{
+    color-scheme: light only!important;
+    background: #FFE066!important;
+    background-color: #FFE066!important;
+    color: #111!important;
+  }
+  
+  /* Login card stays dark card? No - keep as designed white/black */
+  /* Actually login card is dark (#111) by design - keep it */
+  /* But background behind it must stay yellow, not dark brown */
+  
+  /* Force all Tailwind dark variants off */
+  html.dark, body.dark, .dark{
+    color-scheme: light only!important;
+    background: #FFE066!important;
+  }
+  
+  /* Keep designed colors */
+  .bg-white{ background-color: #ffffff!important; color: #111!important; }
+  .bg-\[\#111\]{ background-color: #111!important; color: white!important; }
+  [class*="bg-\[\#FFE066"]{ background-color: #FFE066!important; }
+  [class*="bg-\[\#A8D8FF"]{ background-color: #A8D8FF!important; }
+}
+
+/* === HEADER TITLE FIX - Repco Roster on one line between menu and logout === */
+/* Header container */
+header.sticky{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:8px!important;
+  padding-left:60px!important; /* space for hamburger */
+  padding-right:12px!important;
+  min-height:56px!important;
+  flex-wrap:nowrap!important;
+}
+
+/* Left side of header - contains title */
+header > div:first-child{
+  flex:1!important;
+  display:flex!important;
+  align-items:center!important;
+  min-width:0!important;
+  gap:8px!important;
+  flex-wrap:nowrap!important;
+}
+
+/* Title - Repco Roster ✨ - ONE LINE, between menu and logout */
+div.bg-\[\#111\].text-white.rounded-\[12px\]{
+  height:40px!important;
+  min-height:40px!important;
+  max-height:40px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  padding:0 12px!important;
+  line-height:1!important;
+  gap:6px!important;
+  flex-shrink:0!important;
+  max-width:calc(100vw - 140px)!important; /* leave space for bell+logout */
+}
+
+/* Ensure star emoji stays inline */
+div.bg-\[\#111\].text-white.rounded-\[12px\] *{
+  white-space:nowrap!important;
+  display:inline!important;
+}
+
+/* Right side - bell + logout */
+header > div:last-child{
+  display:flex!important;
+  align-items:center!important;
+  gap:8px!important;
+  flex-shrink:0!important;
+  flex-wrap:nowrap!important;
+}
+
+/* Bell button */
+header button.relative.bg-white.border-\[2\.5px\]{
+  width:40px!important;
+  height:40px!important;
+  min-width:40px!important;
+  min-height:40px!important;
+  flex-shrink:0!important;
+}
+
+/* Logout button */
+header button.bg-\[\#111\].text-white.border-\[2\.5px\].rounded-full{
+  height:40px!important;
+  min-height:40px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  padding:0 16px!important;
+  flex-shrink:0!important;
+  white-space:nowrap!important;
+}
+
+@media (max-width: 768px){
+  header.sticky{
+    padding-left:60px!important;
+    padding-right:8px!important;
+  }
+  
+  /* Title on mobile - even tighter */
+  div.bg-\[\#111\].text-white.rounded-\[12px\]{
+    height:40px!important;
+    font-size:14px!important;
+    padding:0 10px!important;
+    max-width:calc(100vw - 130px)!important;
+    gap:4px!important;
+  }
+  
+  /* Hide the small user info on mobile to save space */
+  header div.hidden.sm\:block{
+    display:none!important;
+  }
+}
+
+/* Desktop - keep title centered between menu (hidden) and logout */
+@media (min-width: 769px){
+  header.sticky{
+    padding-left:12px!important;
+  }
+  div.bg-\[\#111\].text-white.rounded-\[12px\]{
+    max-width:none!important;
+  }
+  #mobile-hamburger-btn{
+    display:none!important;
+  }
 }
 </style>
 
-<script id="force-light-js">
-// JS enforcement - force light mode even if CSS fails
+<script id="ultra-force-light-js">
+// Ultra strong JS to force light mode - runs constantly
 (function(){
   function forceLight(){
     try{
-      document.documentElement.style.setProperty('color-scheme', 'light only', 'important');
-      document.documentElement.style.setProperty('background-color', '#ffffff', 'important');
-      document.documentElement.style.setProperty('background', '#ffffff', 'important');
-      document.documentElement.setAttribute('data-theme', 'light');
-      document.documentElement.setAttribute('data-color-mode', 'light');
+      let html = document.documentElement;
+      let body = document.body;
       
-      if(document.body){
-        document.body.style.setProperty('color-scheme', 'light only', 'important');
-        document.body.style.setProperty('background-color', '#ffffff', 'important');
-        document.body.style.setProperty('background', '#ffffff', 'important');
-        document.body.style.setProperty('color', '#111111', 'important');
+      html.style.setProperty('color-scheme', 'light only', 'important');
+      html.style.setProperty('background-color', '#FFE066', 'important');
+      html.style.setProperty('background', '#FFE066', 'important');
+      html.style.setProperty('forced-color-adjust', 'none', 'important');
+      html.setAttribute('data-theme', 'light');
+      html.classList.remove('dark');
+      html.classList.add('light');
+      
+      if(body){
+        body.style.setProperty('color-scheme', 'light only', 'important');
+        body.style.setProperty('background-color', '#FFE066', 'important');
+        body.style.setProperty('background', '#FFE066', 'important');
+        body.style.setProperty('color', '#111', 'important');
+        body.classList.remove('dark');
+        body.classList.add('light');
       }
       
-      // Also set meta theme-color
-      let meta = document.querySelector('meta[name="theme-color"]');
-      if(meta) meta.content = '#ffffff';
-      
-      // Force all style tags that might have dark mode to be light
-      document.documentElement.classList.remove('dark');
-      document.documentElement.classList.add('light');
-      document.body && document.body.classList.remove('dark');
-      document.body && document.body.classList.add('light');
+      // Force all elements that might have dark background
+      let allDivs = document.querySelectorAll('div');
+      for(let div of allDivs){
+        if(div.style.backgroundColor && div.style.backgroundColor.indexOf('rgb(0, 0, 0)')>-1){
+          // Keep black for designed black elements
+          if(div.className && div.className.indexOf('bg-[#111]')>-1) continue;
+        }
+      }
     }catch(e){}
   }
   
-  // Run immediately
   forceLight();
-  
-  // Run on load
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded', forceLight);
-  }
-  
-  // Run after delays
+  document.addEventListener('DOMContentLoaded', forceLight);
   setTimeout(forceLight, 100);
   setTimeout(forceLight, 500);
   setTimeout(forceLight, 1000);
   setTimeout(forceLight, 2000);
+  setInterval(forceLight, 3000);
   
-  // Watch for dark class being added and remove it
-  let observer = new MutationObserver(function(mutations){
-    for(let mut of mutations){
-      if(mut.attributeName==='class'){
-        let el = mut.target;
-        if(el.classList && el.classList.contains('dark')){
-          el.classList.remove('dark');
-          el.classList.add('light');
-          forceLight();
-        }
-      }
-      if(mut.attributeName==='style'){
+  // Watch for dark class
+  let obs = new MutationObserver((muts)=>{
+    for(let m of muts){
+      if(m.attributeName==='class' && m.target.classList.contains('dark')){
+        m.target.classList.remove('dark');
         forceLight();
       }
     }
   });
+  obs.observe(document.documentElement, {attributes: true});
+  if(document.body) obs.observe(document.body, {attributes: true});
   
-  observer.observe(document.documentElement, {attributes: true, attributeFilter: ['class', 'style']});
-  if(document.body){
-    observer.observe(document.body, {attributes: true, attributeFilter: ['class', 'style']});
+  // Listen for OS dark mode
+  try{
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', forceLight);
+  }catch{}
+})();
+</script>
+
+
+<style id="login-hamburger-and-dark-extra">
+/* Hide hamburger on login page */
+body:has(input[placeholder*="Username"]) #mobile-hamburger-btn,
+body:has(input[placeholder*="username"]) #mobile-hamburger-btn{
+  display:none!important;
+}
+
+/* Alternative detection via JS will also hide */
+
+/* Login page - force light even stronger */
+@media (prefers-color-scheme: dark){
+  /* The main login container - keep it dark card as designed? Actually login card is dark by design (#111) - keep it */
+  /* But background behind must be yellow, not dark brown */
+  html, body, div#root, div.min-h-screen{
+    background: #FFE066!important;
+    background-color: #FFE066!important;
   }
   
-  // Also listen for prefers-color-scheme changes and force light
-  try{
-    let media = window.matchMedia('(prefers-color-scheme: dark)');
-    media.addEventListener && media.addEventListener('change', forceLight);
-    media.addListener && media.addListener(forceLight);
-  }catch{}
+  /* Login inputs - they are dark in dark mode screenshot, should stay dark? 
+     Actually design: inputs are dark gray with white text? In screenshot they are dark - that's okay 
+     But background behind card must be yellow */
+  
+  /* Ensure no dark overlay */
+  div.bg-\[\#FFF2B2\], div.bg-\[\#FFE066\]{
+    background-color: #FFE066!important;
+  }
+}
+
+/* Header title - ensure star stays inline, no wrap */
+div.bg-\[\#111\].text-white.rounded-\[12px\]{
+  white-space:nowrap!important;
+  overflow:visible!important;
+}
+
+/* Make header title container flex nowrap */
+header div.flex.items-center.gap-3{
+  flex-wrap:nowrap!important;
+  white-space:nowrap!important;
+}
+</style>
+
+<script id="hide-hamburger-on-login-and-force-light-login">
+// Hide hamburger on login page, and force login page light background
+(function(){
+  function checkLoginPage(){
+    try{
+      let bodyText = document.body.textContent||'';
+      let hasUsername = bodyText.indexOf('Username')>-1 || document.querySelector('input[placeholder*="Username"]');
+      let hasPassword = bodyText.indexOf('Password')>-1 || document.querySelector('input[placeholder*="Password"]');
+      let isLogin = hasUsername && hasPassword;
+      
+      let hamburger = document.getElementById('mobile-hamburger-btn');
+      if(hamburger){
+        if(isLogin){
+          hamburger.style.display = 'none';
+        } else {
+          if(window.innerWidth<=768){
+            hamburger.style.display = 'flex';
+          }
+        }
+      }
+      
+      // Force login background yellow even in dark mode
+      if(isLogin){
+        document.documentElement.style.backgroundColor = '#FFE066';
+        document.body.style.backgroundColor = '#FFE066';
+        let rootDivs = document.querySelectorAll('div.min-h-screen, div.flex.min-h-screen, body > div');
+        for(let d of rootDivs){
+          if(d.className && d.className.indexOf('bg-')>-1){
+            // Keep as is if it's the card (bg-[#111] or bg-white)
+            if(d.className.indexOf('bg-[#111]')>-1 || d.className.indexOf('bg-white')>-1) continue;
+            // Otherwise force yellow for page background
+          }
+        }
+      }
+    }catch{}
+  }
+  
+  checkLoginPage();
+  setTimeout(checkLoginPage, 500);
+  setTimeout(checkLoginPage, 1500);
+  setInterval(checkLoginPage, 2000);
+  
+  let obs = new MutationObserver(checkLoginPage);
+  obs.observe(document.body, {childList: true, subtree: true});
 })();
 </script>
 
@@ -499,18 +656,21 @@ window.exportFullRosterToPDF = function(fortnight){
 
 
 
-<script id="persist-last-tab-final">
-// FINAL FIX: Refresh stays on same page - overrides session restore that forces my/full
+
+
+
+<script id="refresh-persist-final-v32">
+// FINAL: Refresh keeps user on same page, only refreshes data - works mobile + desktop
 (function(){
-  const KEY_ID = 'retail_roster_last_tab_id';
-  const KEY_TEXT = 'retail_roster_last_tab_v1';
+  const KEY_ID = 'retail_roster_last_tab_id_v2';
+  const KEY_TEXT = 'retail_roster_last_tab_text_v2';
   
   function getTabIdFromText(text){
     text = (text||'').trim();
     if(text==='Full Roster') return 'full';
     if(text==='My Schedule') return 'my';
-    if(text==="Today's Buddies" || text.indexOf("Today")>-1 && text.indexOf("Buddies")>-1) return 'today';
-    if(text==="Tomorrow's Buddies" || text.indexOf("Tomorrow")>-1 && text.indexOf("Buddies")>-1) return 'tomorrow';
+    if(text==="Today's Buddies" || (text.indexOf('Today')>-1 && text.indexOf('Buddies')>-1)) return 'today';
+    if(text==="Tomorrow's Buddies" || (text.indexOf('Tomorrow')>-1 && text.indexOf('Buddies')>-1)) return 'tomorrow';
     if(text.indexOf('Requests')>-1) return 'requests';
     if(text==='Custom Rosters') return 'custom';
     if(text==='Hidden Staff') return 'hidden';
@@ -519,123 +679,183 @@ window.exportFullRosterToPDF = function(fortnight){
     return null;
   }
   
-  function saveTabId(id){
+  function saveTab(id, text){
     try{
       if(id){
         localStorage.setItem(KEY_ID, id);
-        console.log('[Persist] Saved tab:', id);
+        localStorage.setItem(KEY_TEXT, text||id);
+        console.log('[PersistV32] Saved:', id, text);
       }
     }catch{}
   }
   
-  function hookAllTabs(){
-    let btns = document.querySelectorAll('button');
-    for(let btn of btns){
-      if(btn.dataset.persistFinal) continue;
-      if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
-      let text = (btn.textContent||'').trim();
-      let id = getTabIdFromText(text);
-      if(id){
-        // Only tab bar buttons (check parent has bg-[#FFE066] or is in tab bar container)
-        let parent = btn.parentElement;
-        let isTabBar = false;
-        while(parent && parent!==document.body){
-          if(parent.className && (parent.className.indexOf('bg-[#FFE066]')>-1 || parent.className.indexOf('border-b-[3px]')>-1)){
-            isTabBar = true;
-            break;
-          }
-          parent = parent.parentElement;
-        }
-        if(isTabBar){
-          btn.dataset.persistFinal = '1';
-          btn.addEventListener('click', ()=>{ saveTabId(id); }, true);
-        }
-      }
-    }
-  }
-  
-  function getCurrentActiveTabId(){
+  function getActiveTabId(){
     try{
       let btns = document.querySelectorAll('button');
       for(let btn of btns){
         if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
         let text = (btn.textContent||'').trim();
-        if(!getTabIdFromText(text)) continue;
-        // Active has pink shadow
+        let id = getTabIdFromText(text);
+        if(!id) continue;
         let style = window.getComputedStyle(btn);
-        if(style.boxShadow && style.boxShadow.indexOf('rgb(236, 72, 153)')>-1){
-          return getTabIdFromText(text);
+        // Active has pink shadow
+        if(style.boxShadow && style.boxShadow.indexOf('236, 72, 153')>-1){
+          return id;
+        }
+        // Also check bg-[#111] active
+        if(btn.className.indexOf('bg-[#111]')>-1 && btn.parentElement && btn.parentElement.textContent.indexOf('Full Roster')>-1){
+          // Need to check if this is the active one - look for parent container
+          // Better to check if button has data-active or similar
+          // For now use shadow as primary
         }
       }
     }catch{}
     return null;
   }
   
-  function restoreTab(force){
+  function restoreTabForMobile(savedId){
     try{
-      let saved = localStorage.getItem(KEY_ID);
-      if(!saved) return false;
+      console.log('[PersistV32] Attempting mobile restore for:', savedId);
+      // Open hamburger menu
+      let hamburger = document.getElementById('mobile-hamburger-btn');
+      if(!hamburger) return false;
       
-      // Don't restore if already on saved tab
-      let current = getCurrentActiveTabId();
-      if(current===saved && !force) return true;
+      // Click hamburger to open menu
+      hamburger.click();
       
-      // Don't restore if saved is 'my' or 'full' and we're already on my/full? Actually we want to restore any saved
-      // But if session restore just set to my/full, we want to override if saved was different
-      if(saved==='my' || saved==='full'){
-        // If user explicitly was on my/full before refresh, restore it - but session restore already does my/full
-        // So only override if current != saved
-        if(current===saved) return true;
-      }
+      setTimeout(()=>{
+        let drawer = document.getElementById('mobile-menu-drawer');
+        if(!drawer) return;
+        
+        let tabs = drawer.querySelectorAll('button.menu-tab');
+        for(let tab of tabs){
+          let text = tab.getAttribute('data-tab-text')||tab.textContent||'';
+          let id = getTabIdFromText(text);
+          if(id===savedId){
+            console.log('[PersistV32] Mobile clicking:', text);
+            tab.click();
+            return true;
+          }
+        }
+      }, 300);
       
-      console.log('[Persist] Restoring tab:', saved, 'current:', current);
-      
+      return true;
+    }catch(e){ console.warn('Mobile restore failed', e); return false; }
+  }
+  
+  function restoreTabForDesktop(savedId){
+    try{
       let btns = document.querySelectorAll('button');
       for(let btn of btns){
         if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
         let text = (btn.textContent||'').trim();
         let id = getTabIdFromText(text);
-        if(id===saved){
+        if(id===savedId){
+          console.log('[PersistV32] Desktop clicking:', text);
           btn.click();
-          console.log('[Persist] Clicked tab:', text);
           return true;
         }
       }
       return false;
+    }catch(e){ return false; }
+  }
+  
+  function restoreTab(force){
+    try{
+      let savedId = localStorage.getItem(KEY_ID);
+      if(!savedId) return false;
+      
+      let current = getActiveTabId();
+      if(current===savedId && !force){
+        console.log('[PersistV32] Already on saved tab:', savedId);
+        return true;
+      }
+      
+      // Don't restore if saved is my and current is my (default) - but if user was on today, we must restore
+      console.log('[PersistV32] Restoring:', savedId, 'current:', current, 'isMobile:', window.innerWidth<=768);
+      
+      if(window.innerWidth<=768){
+        return restoreTabForMobile(savedId);
+      } else {
+        return restoreTabForDesktop(savedId);
+      }
     }catch(e){ console.warn('Restore failed', e); return false; }
   }
   
-  // Hook tabs
-  hookAllTabs();
-  setTimeout(hookAllTabs, 1000);
-  setTimeout(hookAllTabs, 2000);
+  function hookTabs(){
+    let btns = document.querySelectorAll('button');
+    for(let btn of btns){
+      if(btn.dataset.persistV32) continue;
+      if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
+      let text = (btn.textContent||'').trim();
+      let id = getTabIdFromText(text);
+      if(id){
+        let parent = btn.parentElement;
+        let isTabBar = false;
+        while(parent && parent!==document.body && parent){
+          if(parent.className && (parent.className.indexOf('bg-[#FFE066]')>-1 || parent.className.indexOf('border-b-[3px]')>-1)){
+            isTabBar = true;
+            break;
+          }
+          parent = parent.parentElement;
+          if(!parent) break;
+        }
+        if(isTabBar){
+          btn.dataset.persistV32 = '1';
+          btn.addEventListener('click', ()=>{ saveTab(id, text); }, true);
+        }
+      }
+    }
+  }
   
-  // Restore with delays to override session restore effect (which runs on mount)
-  // Session restore runs early, so we restore after 1s, 2s, 3s to ensure we win
-  setTimeout(()=>{ restoreTab(); }, 1200);
-  setTimeout(()=>{ restoreTab(); }, 2200);
-  setTimeout(()=>{ restoreTab(); }, 3500);
-  setTimeout(()=>{ restoreTab(true); }, 5000); // force at 5s
+  // Hook
+  hookTabs();
+  setTimeout(hookTabs, 1000);
+  setTimeout(hookTabs, 2000);
   
-  // Also observe mutations to re-hook
-  let mo = new MutationObserver(()=>{ hookAllTabs(); });
+  // Restore with increasing delays to beat session restore (which forces my/full)
+  setTimeout(()=>{ restoreTab(); }, 800);
+  setTimeout(()=>{ restoreTab(); }, 1500);
+  setTimeout(()=>{ restoreTab(); }, 2500);
+  setTimeout(()=>{ restoreTab(); }, 4000);
+  setTimeout(()=>{ restoreTab(true); }, 6000);
+  
+  // Observe
+  let mo = new MutationObserver(()=>{ hookTabs(); });
   mo.observe(document.body, {childList: true, subtree: true});
   
-  // Save on mobile menu clicks too
+  // Save on mobile drawer clicks
   document.addEventListener('click', (e)=>{
-    let target = e.target;
-    let menuBtn = target.closest && target.closest('#mobile-menu-drawer button.menu-tab');
+    let menuBtn = e.target.closest && e.target.closest('#mobile-menu-drawer button.menu-tab');
     if(menuBtn){
       let text = menuBtn.getAttribute('data-tab-text')||menuBtn.textContent||'';
       let id = getTabIdFromText(text);
-      if(id) saveTabId(id);
+      if(id) saveTab(id, text);
     }
   }, true);
   
-  // On beforeunload, save current active tab
+  // Save current on beforeunload
   window.addEventListener('beforeunload', ()=>{
-    let current = getCurrentActiveTabId();
-    if(current) saveTabId(current);
+    let current = getActiveTabId();
+    if(current){
+      let text = '';
+      try{
+        let btns = document.querySelectorAll('button');
+        for(let b of btns){
+          if(getTabIdFromText(b.textContent)===current){
+            text = b.textContent.trim();
+            break;
+          }
+        }
+      }catch{}
+      saveTab(current, text);
+    }
+  });
+  
+  // Also save on pagehide for mobile
+  window.addEventListener('pagehide', ()=>{
+    let current = getActiveTabId();
+    if(current) saveTab(current, current);
   });
 })();
 </script>
