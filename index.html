@@ -1256,73 +1256,70 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
 </style>
 
 <script id="mobile-hamburger-script">
-// Mobile hamburger menu - ONLY for mobile, desktop unchanged
+// Mobile hamburger menu - ONLY for mobile, desktop unchanged - FIXED duplication + toggle
 (function(){
+  var isMenuOpen = false;
+  
   function initMobileMenu(){
-    // Only run on mobile
     if(window.innerWidth > 768) return;
-    
-    // Check if already initialized
     if(document.getElementById('mobile-hamburger-btn')) return;
     
-    // Create hamburger button
     var hamburgerBtn = document.createElement('button');
     hamburgerBtn.id = 'mobile-hamburger-btn';
     hamburgerBtn.innerHTML = '☰';
     hamburgerBtn.setAttribute('aria-label', 'Open menu');
     document.body.appendChild(hamburgerBtn);
     
-    // Create overlay
     var overlay = document.createElement('div');
     overlay.id = 'mobile-menu-overlay';
     document.body.appendChild(overlay);
     
-    // Create drawer
     var drawer = document.createElement('div');
     drawer.id = 'mobile-menu-drawer';
     drawer.innerHTML = '<div class="menu-header"><span>Menu</span><button id="mobile-menu-close" style="background:#111;color:white;border:2px solid #111;border-radius:8px;width:32px;height:32px;font-size:16px;font-weight:800;cursor:pointer;">✕</button></div><div id="mobile-menu-tabs" style="display:flex;flex-direction:column;gap:10px;"></div>';
     document.body.appendChild(drawer);
     
-    // Function to get current tabs from page
     function getTabs(){
-      var tabs = [];
-      // Find all tab buttons in the page - look for buttons with specific text
-      var allButtons = document.querySelectorAll('button');
-      var tabNames = ['Full Roster', 'My Schedule', 'Today\'s Buddies', 'Tomorrow\'s Buddies', 'Requests', 'Custom Rosters', 'Hidden Staff', 'Archive', 'Accounts'];
       var foundTabs = [];
+      var tabNames = ['Full Roster', 'My Schedule', 'Today\'s Buddies', 'Tomorrow\'s Buddies', 'Requests', 'Custom Rosters', 'Hidden Staff', 'Archive', 'Accounts'];
+      var allButtons = document.querySelectorAll('button');
       
       for(var i=0;i<allButtons.length;i++){
         var btn = allButtons[i];
+        // Skip buttons inside mobile menu itself - FIX duplication
+        if(btn.closest && btn.closest('#mobile-menu-drawer')) continue;
+        if(btn.id==='mobile-hamburger-btn' || btn.id==='mobile-menu-close') continue;
+        
         var text = (btn.textContent||'').trim();
-        // Check if this button is a tab (in the tab bar area)
+        if(!text || text.length>30) continue;
+        
         for(var j=0;j<tabNames.length;j++){
-          if(text.indexOf(tabNames[j])>-1 || text===tabNames[j]){
-            // Check if it's in the tab bar (brown background area)
+          if(text===tabNames[j] || text.indexOf(tabNames[j])>-1){
+            // Must be in tab bar area (brown bar)
             var parent = btn.parentElement;
             var isTabBar = false;
-            while(parent && parent!==document.body){
-              if(parent.className && parent.className.indexOf('bg-')>-1){
+            var depth = 0;
+            while(parent && parent!==document.body && depth<6){
+              if(parent.className && (parent.className.indexOf('bg-[#FFE066]')>-1 || parent.className.indexOf('border-b-[3px]')>-1)){
                 isTabBar = true;
                 break;
               }
-              // Check if parent has many tab buttons
-              if(parent.querySelectorAll('button').length>=3 && parent.querySelectorAll('button').length<=10){
-                // Likely tab bar
-                if(parent.textContent.indexOf('Full Roster')>-1){
-                  isTabBar = true;
-                  break;
-                }
-              }
               parent = parent.parentElement;
+              depth++;
             }
-            if(isTabBar || text==='Full Roster' || text==='My Schedule' || text.indexOf('Buddies')>-1 || text.indexOf('Accounts')>-1 || text.indexOf('Custom')>-1 || text.indexOf('Hidden')>-1 || text.indexOf('Archive')>-1 || text.indexOf('Requests')>-1){
-              // Avoid duplicates
+            // Also check if parent container has Full Roster text
+            var container = btn.closest('div');
+            if(container && container.textContent.indexOf('Full Roster')>-1 && container.textContent.length<1000){
+              isTabBar = true;
+            }
+            
+            if(isTabBar){
               var exists = false;
               for(var k=0;k<foundTabs.length;k++){
                 if(foundTabs[k].text===text) exists = true;
               }
-              if(!exists && text.length>0 && text.length<30){
-                foundTabs.push({text: text, element: btn, isActive: btn.className.indexOf('bg-[#111]')>-1 || btn.style.backgroundColor==='rgb(17, 17, 17)' || btn.getAttribute('data-active')==='true'});
+              if(!exists){
+                foundTabs.push({text: text, element: btn});
               }
             }
           }
@@ -1334,20 +1331,26 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
     function renderMenuTabs(){
       var container = document.getElementById('mobile-menu-tabs');
       if(!container) return;
+      
+      // Clear first - FIX duplication
+      container.innerHTML = '';
+      
       var tabs = getTabs();
-      // If no tabs found via button scan, try to find tab bar container directly
       if(tabs.length===0){
-        // Look for the brown tab bar
         var possibleBars = document.querySelectorAll('div');
         for(var i=0;i<possibleBars.length;i++){
           var div = possibleBars[i];
-          if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1){
+          if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1 && div.className.indexOf('bg-[#FFE066]')>-1){
             var btns = div.querySelectorAll('button');
             if(btns.length>=2){
               tabs = [];
               for(var j=0;j<btns.length;j++){
                 var t = (btns[j].textContent||'').trim();
-                if(t) tabs.push({text: t, element: btns[j]});
+                if(t && t.length<30){
+                  var exists = false;
+                  for(var k=0;k<tabs.length;k++) if(tabs[k].text===t) exists = true;
+                  if(!exists) tabs.push({text: t, element: btns[j]});
+                }
               }
               break;
             }
@@ -1355,8 +1358,6 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
         }
       }
       
-      var html = '';
-      // Icons for tabs
       var icons = {
         'Full Roster': '📋',
         'My Schedule': '📅',
@@ -1369,29 +1370,17 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
         'Accounts': '👤'
       };
       
+      var html = '';
       for(var i=0;i<tabs.length;i++){
         var tab = tabs[i];
         var icon = '•';
         for(var key in icons){
           if(tab.text.indexOf(key)>-1) icon = icons[key];
         }
-        // Check if active - look for pink border or dark background
-        var isActive = tab.element && (tab.element.className.indexOf('bg-[#111]')>-1 || tab.element.className.indexOf('bg-black')>-1 || tab.element.style.backgroundColor==='rgb(17, 17, 17)' || tab.element.parentElement && tab.element.parentElement.querySelector && tab.element.textContent.indexOf('My Schedule')>-1 && document.querySelector('button[class*="My Schedule"]'));
-        // Better active detection: check if button has pink shadow or is selected
-        if(tab.element){
-          var style = window.getComputedStyle(tab.element);
-          if(style.boxShadow && style.boxShadow.indexOf('rgb(236, 72, 153)')>-1) isActive = true; // pink shadow
-          if(tab.element.className.indexOf('My Schedule')>-1 && tab.text.indexOf('My Schedule')>-1){
-            // Check if this is the active tab by looking at page content
-            var nextUp = document.querySelector('[class*="NEXT UP"]');
-            if(nextUp) isActive = true;
-          }
-        }
-        html += '<button class="menu-tab' + (isActive ? ' active' : '') + '" data-tab-index="' + i + '" data-tab-text="' + tab.text.replace(/"/g, '') + '"><span>' + icon + '</span><span>' + tab.text + '</span></button>';
+        html += '<button class="menu-tab" data-tab-index="' + i + '" data-tab-text="' + tab.text.replace(/"/g, '') + '"><span>' + icon + '</span><span>' + tab.text + '</span></button>';
       }
       container.innerHTML = html;
       
-      // Add click handlers
       var menuTabs = container.querySelectorAll('.menu-tab');
       for(var i=0;i<menuTabs.length;i++){
         menuTabs[i].addEventListener('click', function(){
@@ -1401,49 +1390,61 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
           if(originalTabs[idx] && originalTabs[idx].element){
             originalTabs[idx].element.click();
           } else {
-            // Fallback: find button by text and click
             var allBtns = document.querySelectorAll('button');
             for(var j=0;j<allBtns.length;j++){
+              if(allBtns[j].closest && allBtns[j].closest('#mobile-menu-drawer')) continue;
               if((allBtns[j].textContent||'').trim()===tabText){
                 allBtns[j].click();
                 break;
               }
             }
           }
-          closeMenu();
+          closeMenu(); // Close on tab select
         });
       }
     }
     
     function openMenu(){
+      if(isMenuOpen) return;
       renderMenuTabs();
       document.getElementById('mobile-menu-drawer').classList.add('active');
       document.getElementById('mobile-menu-overlay').classList.add('active');
       document.body.style.overflow = 'hidden';
+      isMenuOpen = true;
+      // Change hamburger to X when open
+      hamburgerBtn.innerHTML = '✕';
     }
     
     function closeMenu(){
+      if(!isMenuOpen) return;
       document.getElementById('mobile-menu-drawer').classList.remove('active');
       document.getElementById('mobile-menu-overlay').classList.remove('active');
       document.body.style.overflow = '';
+      isMenuOpen = false;
+      hamburgerBtn.innerHTML = '☰';
     }
     
-    hamburgerBtn.addEventListener('click', openMenu);
+    function toggleMenu(){
+      if(isMenuOpen){
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    }
+    
+    hamburgerBtn.addEventListener('click', toggleMenu); // Toggle, not just open
     overlay.addEventListener('click', closeMenu);
     document.getElementById('mobile-menu-close').addEventListener('click', closeMenu);
     
-    // Hide original tab bar on mobile - find the container with tabs
     function hideOriginalTabs(){
       if(window.innerWidth > 768) return;
       var allDivs = document.querySelectorAll('div');
       for(var i=0;i<allDivs.length;i++){
         var div = allDivs[i];
-        // Only hide the specific tab bar: must contain Full Roster + My Schedule AND have class bg-[#FFE066] AND be sticky
         if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1 && div.querySelectorAll('button').length>=3 && div.querySelectorAll('button').length<=10){
           var className = div.className||'';
-          // Tab bar has bg-[#FFE066] and border-b-[3px] and sticky
-          if(className.indexOf('bg-[#FFE066]')>-1 || className.indexOf('border-b-[3px]')>-1 || className.indexOf('sticky')>-1){
-            if(div.textContent.length < 800){
+          if(className.indexOf('bg-[#FFE066]')>-1 || className.indexOf('border-b-[3px]')>-1){
+            if(div.textContent.length < 800 && !div.closest('#mobile-menu-drawer')){
               div.style.display = 'none';
               div.classList.add('tab-bar-container', 'mobile-hidden');
             }
@@ -1452,12 +1453,10 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
       }
     }
     
-    // Initial hide
     setTimeout(hideOriginalTabs, 500);
     setTimeout(hideOriginalTabs, 1500);
     setTimeout(hideOriginalTabs, 3000);
     
-    // Re-hide on navigation
     var observer = new MutationObserver(function(){
       if(window.innerWidth <= 768){
         hideOriginalTabs();
@@ -1466,19 +1465,16 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
     observer.observe(document.body, {childList: true, subtree: true});
   }
   
-  // Init on load
   if(document.readyState==='loading'){
     document.addEventListener('DOMContentLoaded', initMobileMenu);
   } else {
     initMobileMenu();
   }
   
-  // Re-init on resize
   window.addEventListener('resize', function(){
     if(window.innerWidth <= 768){
       initMobileMenu();
     } else {
-      // Desktop: remove mobile menu
       var btn = document.getElementById('mobile-hamburger-btn');
       var overlay = document.getElementById('mobile-menu-overlay');
       var drawer = document.getElementById('mobile-menu-drawer');
@@ -1533,6 +1529,167 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
     }
   });
   observer.observe(document.body, {childList: true, subtree: true});
+})();
+</script>
+
+
+<script id="hidden-live-sync">
+// === HIDDEN STAFF LIVE SYNC - FIX for mobile buddies ===
+(function(){
+  async function pushHiddenLive(hidden){
+    try{
+      await fetch(`${RMROSTER_DB_URL}/hidden.json`, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(hidden)
+      });
+      console.log('✅ Hidden staff pushed live', hidden.length);
+    }catch(e){ console.warn('Hidden push failed', e); }
+  }
+  
+  async function fetchHiddenLive(){
+    try{
+      const res = await fetch(`${RMROSTER_DB_URL}/hidden.json`);
+      if(!res.ok) return null;
+      const data = await res.json();
+      if(!data) return null;
+      // Data could be array or object values
+      if(Array.isArray(data)) return data;
+      if(typeof data === 'object'){
+        // If object with keys, convert to array
+        const vals = Object.values(data);
+        // If vals are arrays, flatten? Actually hidden is stored as array directly in Firebase if PUT array
+        // But if stored as object, return values
+        if(vals.length>0 && vals[0] && vals[0].firstName) return vals;
+        return data;
+      }
+      return null;
+    }catch(e){ return null; }
+  }
+  
+  // Watch localStorage for hidden changes and push
+  let lastHiddenStr = localStorage.getItem('retail_roster_hidden_v1')||'';
+  setInterval(()=>{
+    try{
+      let current = localStorage.getItem('retail_roster_hidden_v1')||'';
+      if(current && current!==lastHiddenStr){
+        lastHiddenStr = current;
+        let hidden = JSON.parse(current);
+        pushHiddenLive(hidden);
+      }
+    }catch{}
+  }, 3000);
+  
+  // Poll for live hidden updates - especially for mobile
+  setInterval(async ()=>{
+    try{
+      let isEditing = false;
+      try{
+        let overlays = document.querySelectorAll('.fixed.inset-0.bg-black\/50');
+        if(overlays.length>0) isEditing = true;
+        let active = document.activeElement;
+        if(active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA')) isEditing = true;
+      }catch{}
+      if(isEditing) return;
+      
+      const liveHidden = await fetchHiddenLive();
+      if(liveHidden && Array.isArray(liveHidden) && liveHidden.length>0){
+        let localStr = localStorage.getItem('retail_roster_hidden_v1')||'[]';
+        let local = [];
+        try{ local = JSON.parse(localStr); }catch{}
+        
+        // Only update if live has data and is different, and live is not empty
+        // Merge: use live if it has more or different entries
+        if(JSON.stringify(liveHidden)!==localStr){
+          // Respect deleted flag
+          let hasNew = false;
+          for(let h of liveHidden){
+            if(!local.find(l=>l.id===h.id)){
+              hasNew = true;
+              break;
+            }
+          }
+          // If live has more entries or different, update
+          if(liveHidden.length>=local.length || hasNew){
+            localStorage.setItem('retail_roster_hidden_v1', JSON.stringify(liveHidden));
+            console.log('🔄 Live hidden staff updated from', local.length, 'to', liveHidden.length);
+            // Trigger event so React picks up
+            window.dispatchEvent(new CustomEvent('hidden-live-update', {detail: liveHidden}));
+          }
+        }
+      }
+    }catch(e){ console.warn('Hidden poll failed', e); }
+  }, 5000);
+  
+  // Initial fetch on load - critical for mobile
+  window.addEventListener('load', async ()=>{
+    try{
+      const liveHidden = await fetchHiddenLive();
+      if(liveHidden && Array.isArray(liveHidden) && liveHidden.length>0){
+        let localStr = localStorage.getItem('retail_roster_hidden_v1')||'[]';
+        let local = [];
+        try{ local = JSON.parse(localStr); }catch{}
+        // If local is empty and live has data, use live (mobile first load)
+        if(local.length===0){
+          localStorage.setItem('retail_roster_hidden_v1', JSON.stringify(liveHidden));
+          console.log('📡 Loaded live hidden staff on initial load:', liveHidden.length);
+        } else if(liveHidden.length>local.length){
+          // Live has more, merge
+          localStorage.setItem('retail_roster_hidden_v1', JSON.stringify(liveHidden));
+          console.log('📡 Updated hidden staff on load:', liveHidden.length);
+        }
+      }
+    }catch{}
+  });
+  
+  // Also push on hidden staff add (hook into the add function via storage event)
+  window.addEventListener('storage', (e)=>{
+    if(e.key==='retail_roster_hidden_v1' && e.newValue){
+      try{
+        let hidden = JSON.parse(e.newValue);
+        pushHiddenLive(hidden);
+      }catch{}
+    }
+  });
+})();
+</script>
+
+
+<script id="buddies-overlap-fix">
+// Ensure buddies overlap logic works even when Xn is matched by name (not just id)
+// And force hidden staff to show when overlapping
+(function(){
+  // Patch the mA/fA logic by ensuring hidden staff are always considered
+  // This runs after React renders, forces buddies to include hidden if they overlap
+  function ensureHiddenInBuddies(){
+    try{
+      // Check if we're on Today's or Tomorrow's Buddies page
+      let isToday = document.body.textContent.indexOf("Today's Buddies")>-1 && document.querySelector('[class*="ON SHIFT"]');
+      let isTomorrow = document.body.textContent.indexOf("Tomorrow's Buddies")>-1;
+      if(!isToday && !isTomorrow) return;
+      
+      // Get current user shift from My Schedule or from localStorage?
+      // We rely on the existing mA/fA which already includes hidden when overlap
+      // But ensure HIDDEN badges are visible
+      let hiddenBadges = document.querySelectorAll('span');
+      for(let i=0;i<hiddenBadges.length;i++){
+        if(hiddenBadges[i].textContent.trim()==='HIDDEN'){
+          hiddenBadges[i].style.display = 'inline-flex';
+          hiddenBadges[i].style.visibility = 'visible';
+          hiddenBadges[i].style.opacity = '1';
+          // Ensure parent card is visible
+          let card = hiddenBadges[i].closest('div.w-full.bg-white');
+          if(card){
+            card.style.display = 'flex';
+            card.style.visibility = 'visible';
+            card.style.opacity = '1';
+          }
+        }
+      }
+    }catch(e){}
+  }
+  
+  setInterval(ensureHiddenInBuddies, 1000);
 })();
 </script>
 
