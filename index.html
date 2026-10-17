@@ -48,18 +48,42 @@ window.addEventListener('load', async ()=>{
     }
   }catch{}
 
-  // Poll every 10s for updates from other users
+  // Poll every 15s for updates from other users - NO reload while editing
   setInterval(async ()=>{
-    const live = await rmrosterFetchLive();
-    if(live){
-      const localStr = localStorage.getItem('retail_roster_byFortnight_v1')||'[]';
-      if(JSON.stringify(live)!==localStr && live.length>=JSON.parse(localStr||'[]').length){
-        localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(live));
-        console.log('🔄 Live update received');
-        location.reload();
+    try{
+      // Don't auto-update while someone is editing a shift (Fn modal open)
+      let isEditing = false;
+      try{
+        // Check if edit modal is open by looking for fixed overlay
+        let overlays = document.querySelectorAll('.fixed.inset-0.bg-black\/50');
+        if(overlays.length>0) isEditing = true;
+        // Also check if any input is focused (user typing)
+        let active = document.activeElement;
+        if(active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA')) isEditing = true;
+      }catch{}
+      if(isEditing){
+        console.log('Skipping live update - user is editing');
+        return;
       }
-    }
-  }, 10000);
+      
+      const live = await rmrosterFetchLive();
+      if(live){
+        const localStr = localStorage.getItem('retail_roster_byFortnight_v1')||'[]';
+        if(JSON.stringify(live)!==localStr){
+          try{
+            let local = JSON.parse(localStr);
+            if(live.length>=local.length){
+              localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(live));
+              console.log('🔄 Live update received from another user - updated localStorage (no reload)');
+              // Dispatch event so React can pick up if it listens, otherwise user will see on next navigation
+              window.dispatchEvent(new CustomEvent('rmroster-live-update', {detail: live}));
+              // Don't reload - let user continue editing, changes will appear on next roster switch or page refresh
+            }
+          }catch{}
+        }
+      }
+    }catch{}
+  }, 15000);
 });
 </script>
 
@@ -155,6 +179,208 @@ window.addEventListener('load', async ()=>{
       console.log('Forced My Schedule default to UPCOMING');
     }
   }catch(e){}
+})();
+</script>
+
+
+
+
+
+<script>
+// === LIVE SYNC FOR REQUESTS + ROSTERS ===
+const RMROSTER_DB_URL = "https://rmroster-live-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+async function rmrosterPushLive(roster){
+  try{
+    await fetch(`${RMROSTER_DB_URL}/rosters/${roster.id}.json`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({...roster, _pushedAt: Date.now()})
+    });
+  }catch(e){}
+}
+
+async function rmrosterFetchLive(){
+  try{
+    const res = await fetch(`${RMROSTER_DB_URL}/rosters.json`);
+    if(!res.ok) return null;
+    const data = await res.json();
+    if(!data) return null;
+    return Object.values(data).filter(r=>r && r.id && r.dates);
+  }catch{ return null; }
+}
+
+async function rmrosterPushRequestsLive(requests){
+  try{
+    await fetch(`${RMROSTER_DB_URL}/requests.json`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(requests)
+    });
+    console.log('✅ Requests pushed live');
+  }catch(e){}
+}
+
+async function rmrosterFetchRequestsLive(){
+  try{
+    const res = await fetch(`${RMROSTER_DB_URL}/requests.json`);
+    if(!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) ? data : null;
+  }catch{ return null; }
+}
+
+async function rmrosterPushNotifsLive(notifs){
+  try{
+    await fetch(`${RMROSTER_DB_URL}/notifs.json`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(notifs)
+    });
+  }catch(e){}
+}
+
+async function rmrosterFetchNotifsLive(){
+  try{
+    const res = await fetch(`${RMROSTER_DB_URL}/notifs.json`);
+    if(!res.ok) return null;
+    return await res.json();
+  }catch{ return null; }
+}
+</script>
+
+
+<script>
+// Combined live sync for rosters + requests + notifs - NO RELOAD WHILE EDITING
+(function(){
+  let lastRostersStr = localStorage.getItem('retail_roster_byFortnight_v1')||'';
+  let lastRequestsStr = localStorage.getItem('retail_roster_requests_shared_v2')||'';
+  let lastNotifsStr = localStorage.getItem('retail_roster_employee_notifs_v2')||'';
+  let lastPush = 0;
+  
+  async function doPushRosters(){
+    try{
+      let rostersStr = localStorage.getItem('retail_roster_byFortnight_v1');
+      if(!rostersStr) return;
+      let rosters = JSON.parse(rostersStr);
+      if(!Array.isArray(rosters)) return;
+      for(let r of rosters){
+        await rmrosterPushLive(r);
+      }
+    }catch{}
+  }
+  
+  async function doPushRequests(){
+    try{
+      let reqStr = localStorage.getItem('retail_roster_requests_shared_v2');
+      if(!reqStr) return;
+      let reqs = JSON.parse(reqStr);
+      await rmrosterPushRequestsLive(reqs);
+    }catch{}
+  }
+  
+  async function doPushNotifs(){
+    try{
+      let notifsStr = localStorage.getItem('retail_roster_employee_notifs_v2');
+      if(!notifsStr) return;
+      let notifs = JSON.parse(notifsStr);
+      await rmrosterPushNotifsLive(notifs);
+    }catch{}
+  }
+
+  // Watch for local changes and push
+  setInterval(()=>{
+    try{
+      let currentRosters = localStorage.getItem('retail_roster_byFortnight_v1')||'';
+      let currentRequests = localStorage.getItem('retail_roster_requests_shared_v2')||'';
+      let currentNotifs = localStorage.getItem('retail_roster_employee_notifs_v2')||'';
+      
+      if(currentRosters && currentRosters!==lastRostersStr){
+        lastRostersStr = currentRosters;
+        if(Date.now() - lastPush > 2000){
+          lastPush = Date.now();
+          doPushRosters();
+        }
+      }
+      if(currentRequests && currentRequests!==lastRequestsStr){
+        lastRequestsStr = currentRequests;
+        doPushRequests();
+      }
+      if(currentNotifs && currentNotifs!==lastNotifsStr){
+        lastNotifsStr = currentNotifs;
+        doPushNotifs();
+      }
+    }catch{}
+  }, 3000);
+
+  // Poll for live updates from other users - NO RELOAD WHILE EDITING
+  setInterval(async ()=>{
+    try{
+      let isEditing = false;
+      try{
+        let overlays = document.querySelectorAll('.fixed.inset-0.bg-black\\/50');
+        if(overlays.length>0) isEditing = true;
+        let active = document.activeElement;
+        if(active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA')) isEditing = true;
+      }catch{}
+      if(isEditing) return;
+
+      // Rosters
+      const liveRosters = await rmrosterFetchLive();
+      if(liveRosters && liveRosters.length>0){
+        let localStr = localStorage.getItem('retail_roster_byFortnight_v1')||'[]';
+        if(JSON.stringify(liveRosters)!==localStr){
+          try{
+            let local = JSON.parse(localStr);
+            if(liveRosters.length>=local.length){
+              localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(liveRosters));
+              console.log('🔄 Live rosters updated');
+              window.dispatchEvent(new CustomEvent('rmroster-live-update', {detail: liveRosters}));
+            }
+          }catch{}
+        }
+      }
+      
+      // Requests
+      const liveRequests = await rmrosterFetchRequestsLive();
+      if(liveRequests){
+        let localReqStr = localStorage.getItem('retail_roster_requests_shared_v2')||'[]';
+        if(JSON.stringify(liveRequests)!==localReqStr){
+          localStorage.setItem('retail_roster_requests_shared_v2', JSON.stringify(liveRequests));
+          console.log('🔄 Live requests updated', liveRequests.length);
+          window.dispatchEvent(new CustomEvent('storage', {key: 'retail_roster_requests_shared_v2'}));
+        }
+      }
+      
+      // Notifs
+      const liveNotifs = await rmrosterFetchNotifsLive();
+      if(liveNotifs){
+        let localNotifsStr = localStorage.getItem('retail_roster_employee_notifs_v2')||'{}';
+        if(JSON.stringify(liveNotifs)!==localNotifsStr){
+          localStorage.setItem('retail_roster_employee_notifs_v2', JSON.stringify(liveNotifs));
+          console.log('🔄 Live notifs updated');
+        }
+      }
+    }catch(e){ console.warn('Live poll failed', e); }
+  }, 10000);
+  
+  // Initial fetch on load
+  window.addEventListener('load', async ()=>{
+    try{
+      const liveRosters = await rmrosterFetchLive();
+      if(liveRosters && liveRosters.length>0){
+        localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(liveRosters));
+      }
+      const liveRequests = await rmrosterFetchRequestsLive();
+      if(liveRequests){
+        localStorage.setItem('retail_roster_requests_shared_v2', JSON.stringify(liveRequests));
+      }
+      const liveNotifs = await rmrosterFetchNotifsLive();
+      if(liveNotifs){
+        localStorage.setItem('retail_roster_employee_notifs_v2', JSON.stringify(liveNotifs));
+      }
+    }catch{}
+  });
 })();
 </script>
 
