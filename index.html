@@ -887,14 +887,14 @@ window.exportFullRosterToPDF(z)},className:"bg-[#111] text-white border-[2.5px] 
   <script>(function(){function m(a){var h=a.getAttribute("href");if(!h)return;try{var u=new URL(h,document.baseURI);if((u.protocol==="http:"||u.protocol==="https:")&&u.host!==location.host){a.target="_blank";a.rel="noopener noreferrer";}}catch(e){}}function s(){document.querySelectorAll("a[href]").forEach(m);}if(document.readyState!=="loading"){s();}else{document.addEventListener("DOMContentLoaded",s);}document.addEventListener("click",function(e){var a=e.target&&e.target.closest&&e.target.closest("a[href]");if(a){m(a);}},true);})();</script>
   <script type="application/json" data-clippy-inline-media-manifest="1">{"version":1,"slots":[]}</script>
 
+
+
 <script>
-// Export Full Roster as printable PDF - exactly as shown on website
-window.exportFullRosterToExcel = window.exportFullRosterToExcel || function(){}; 
+// Export Full Roster as printable PDF - exactly as shown on website - FIXED WORKING VERSION
 window.exportFullRosterToPDF = function(fortnight){
   try{
     if(!fortnight){ alert('No fortnight selected'); return; }
     
-    // Sort staff by last name like in UI
     let sortByLastName = (a,b)=>{
       let la=(a.lastName||'').toLowerCase(), lb=(b.lastName||'').toLowerCase();
       if(la<lb) return -1; if(la>lb) return 1;
@@ -906,45 +906,64 @@ window.exportFullRosterToPDF = function(fortnight){
     let fullStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='FULL').slice().sort(sortByLastName);
     let casualStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='CASUAL').slice().sort(sortByLastName);
     
-    // Build HTML exactly like website
-    let html = `
+    function calcHours(shift, employmentType, originalShift){
+      if(!shift || shift==='OFF') return 0;
+      if(shift==='ABSENT'){
+        if(employmentType==='FULL' && originalShift && originalShift!=='OFF' && originalShift!=='ABSENT'){
+          let p = originalShift.split('-');
+          if(p.length!==2) return 0;
+          let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+          let start = toMin(p[0]), end = toMin(p[1]);
+          if(end<=start) return 0;
+          let hrs = (end-start)/60;
+          return hrs>=5 ? hrs-0.5 : hrs;
+        }
+        return 0;
+      }
+      let parts = shift.split('-');
+      if(parts.length!==2) return 0;
+      let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+      let start = toMin(parts[0]), end = toMin(parts[1]);
+      if(end<=start) return 0;
+      let hrs = (end-start)/60;
+      return hrs>=5 ? hrs-0.5 : hrs;
+    }
+    
+    let originalShifts = {};
+    try{ originalShifts = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}'); }catch{}
+    
+    let htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>${fortnight.label} - ${fortnight.dateRange} - Full Roster</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Inter', Arial, sans-serif; background:white; color:#111; padding:20px; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  body{font-family:Arial,sans-serif;background:white;color:#111;padding:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   h1{font-size:22px;font-weight:800;margin-bottom:4px}
   .subtitle{font-size:13px;font-weight:700;color:#666;margin-bottom:16px}
-  .section{margin-bottom:24px; border:4px solid #111; border-radius:16px; overflow:hidden; background:white; box-shadow:6px 6px 0px #111;}
+  .section{margin-bottom:24px;border:4px solid #111;border-radius:16px;overflow:hidden;background:white;}
   .section-header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:white;border-bottom:3px solid #111}
   .section-title{font-weight:800;font-size:16px}
   .section-hours{font-size:12px;font-weight:700;color:#666}
-  .table-wrapper{width:100%; overflow:hidden;}
-  .table{display:grid; width:100%;}
-  .header-row{background:#FFF2B2; font-weight:800; font-size:10px;}
-  .header-row div{border:1px solid #222; padding:6px 4px; text-align:center; display:flex; align-items:center; justify-content:center;}
-  .staff-col{width:110px; min-width:110px; max-width:110px;}
-  .hrs-col{width:70px; min-width:70px; max-width:70px; background:#111; color:white;}
-  .day-col{flex:1; min-width:0;}
-  .row{font-size:9.5px;}
-  .row div{border:1px solid #222; padding:4px 2px; min-height:36px; display:flex; align-items:center; justify-content:center; text-align:center;}
-  .row .staff-cell{justify-content:flex-start; background:white; padding:4px; flex-direction:column; align-items:flex-start; line-height:1.1;}
-  .row .staff-cell .last{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-  .row .staff-cell .first{font-size:11px;font-weight:700;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-  .off{background:#f1f5f9; color:rgba(17,17,17,0.6)}
-  .absent{background:#fecaca; color:#be123c; font-weight:800}
-  .absent-p{background:#fecaca; color:#be123c; font-weight:800; border:2px dashed #be123c}
+  .table{width:100%;border-collapse:collapse;}
+  .table th{background:#FFF2B2;border:1px solid #222;padding:6px 4px;text-align:center;font-size:10px;font-weight:800;}
+  .table td{border:1px solid #222;padding:4px 2px;min-height:36px;text-align:center;font-size:9.5px;}
+  .staff-cell{text-align:left !important;background:white;padding:4px !important;}
+  .staff-cell .last{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;display:block;line-height:1.1}
+  .staff-cell .first{font-size:11px;font-weight:700;color:#111;display:block;line-height:1.1}
+  .off{background:#f1f5f9;color:rgba(17,17,17,0.6)}
+  .absent{background:#fecaca;color:#be123c;font-weight:800}
+  .absent-ab{background:#fecaca;color:#be123c;font-weight:800;border:2px dashed #be123c !important}
   .worked{background:white}
-  .totals-row{background:#FFF6EC; font-weight:800; font-size:10px;}
+  .totals{background:#FFF6EC;font-weight:800}
+  .totals-black{background:#111;color:white;font-weight:800}
   @media print{
     body{padding:0}
-    .section{box-shadow:none; break-inside:avoid; page-break-inside:avoid;}
+    .section{break-inside:avoid;page-break-inside:avoid;}
     .no-print{display:none}
-    @page{size:A4 landscape; margin:10mm}
+    @page{size:A4 landscape;margin:10mm}
   }
 </style>
 </head>
@@ -953,130 +972,110 @@ window.exportFullRosterToPDF = function(fortnight){
   <div class="subtitle">${fortnight.dateRange} - Printed ${new Date().toLocaleString()} - Repco Roster</div>
 `;
 
-    // Helper to render a section
     function renderSection(title, staffList, dates, dateRange){
       if(staffList.length===0) return '';
-      let totalHours = 0;
       let dayTotals = dates.map(()=>0);
+      let grandTotal = 0;
       
-      let header = `
-      <div class="section">
-        <div class="section-header">
-          <div class="section-title">${title}</div>
-          <div class="section-hours">${dateRange}</div>
-        </div>
-        <div class="table-wrapper">
-          <div class="table" style="grid-template-columns:110px repeat(14, 1fr) 70px">
-            <div class="header-row" style="display:contents">
-              <div class="staff-col">STAFF</div>
-              ${dates.map(d=>`<div class="day-col"><div style="display:flex;flex-direction:column;align-items:center"><span>${d.day}</span><span style="font-size:9px;font-weight:700">${d.date}</span></div></div>`).join('')}
-              <div class="hrs-col">HRS</div>
-            </div>
-      `;
-      
-      // Get original shifts for P symbol
-      let originalShifts = {};
-      try{
-        originalShifts = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}');
-      }catch{}
+      let headerRow = '<tr><th style="width:110px">STAFF</th>' + dates.map(d=>'<th><div style="display:flex;flex-direction:column"><span>'+d.day+'</span><span style="font-size:9px">'+d.date+'</span></div></th>').join('') + '<th style="width:70px;background:#111;color:white">HRS</th></tr>';
       
       let rows = staffList.map(st=>{
         let shifts = st.shifts||[];
-        let hours = 0;
-        // Simple hours calc for display
+        let staffTotal = 0;
         shifts.forEach((shift, idx)=>{
           let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
-          let effectiveShift = shift;
-          let isAbsentWithOrig = (shift==='ABSENT' && orig && orig!=='OFF' && orig!=='ABSENT');
-          
-          if(isAbsentWithOrig){
-            // For hours calc, use original shift but mark as paid absent
-            if(orig && orig.includes('-')){
-              let parts = orig.split('-');
-              if(parts.length===2){
-                let start = parts[0].split(':').map(Number);
-                let end = parts[1].split(':').map(Number);
-                let h = (end[0]+end[1]/60) - (start[0]+start[1]/60);
-                if(h<0) h+=24;
-                hours+=h;
-                if(dayTotals[idx]!==undefined) dayTotals[idx]+=h;
-              }
-            }
-          } else {
-            if(shift && shift!=='OFF' && shift!=='ABSENT' && shift.includes('-')){
-              let parts = shift.split('-');
-              if(parts.length===2){
-                let start = parts[0].split(':').map(Number);
-                let end = parts[1].split(':').map(Number);
-                let h = (end[0]+end[1]/60) - (start[0]+start[1]/60);
-                if(h<0) h+=24;
-                hours+=h;
-                if(dayTotals[idx]!==undefined) dayTotals[idx]+=h;
-              }
+          let h = calcHours(shift, st.employmentType, orig);
+          staffTotal+=h;
+          dayTotals[idx]+=h;
+        });
+        grandTotal+=staffTotal;
+        
+        let cells = shifts.map((shift, idx)=>{
+          let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
+          let displayShift = shift||'OFF';
+          let cls='worked';
+          if(shift==='OFF'){ cls='off'; }
+          else if(shift==='ABSENT'){
+            if(orig && orig!=='OFF' && orig!=='ABSENT'){
+              displayShift = orig + ' AB';
+              cls='absent-ab';
+            } else {
+              cls='absent';
             }
           }
-        });
-        totalHours+=hours;
+          return '<td class="'+cls+'">'+displayShift+'</td>';
+        }).join('');
         
-        return `
-            <div class="row" style="display:contents">
-              <div class="staff-cell">
-                <span class="last">${st.lastName||''}</span>
-                <span class="first">${st.firstName||''}</span>
-              </div>
-              ${shifts.map((shift, idx)=>{
-                let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
-                let cls='worked';
-                let displayShift = shift||'OFF';
-                
-                if(shift==='OFF'){
-                  cls='off';
-                } else if(shift==='ABSENT'){
-                  if(orig && orig!=='OFF' && orig!=='ABSENT'){
-                    // Show original shift + P symbol
-                    displayShift = orig + ' AB';
-                    cls='absent-p';
-                  } else {
-                    cls='absent';
-                  }
-                }
-                
-                return `<div class="${cls}">${displayShift}</div>`;
-              }).join('')}
-              <div style="background:white;font-weight:800">${hours.toFixed(1)}h</div>
-            </div>
-        `;
+        return '<tr><td class="staff-cell"><span class="last">'+(st.lastName||'')+'</span><span class="first">'+(st.firstName||'')+'</span></td>' + cells + '<td style="background:white;font-weight:800">'+staffTotal.toFixed(1)+'h</td></tr>';
       }).join('');
       
-      let footer = `
-            <div class="totals-row" style="display:contents">
-              <div class="staff-cell" style="background:#111;color:white;justify-content:center">TOTALS</div>
-              ${dayTotals.map(h=>`<div style="background:#FFF6EC">${h.toFixed(1)}h</div>`).join('')}
-              <div style="background:#111;color:white">${totalHours.toFixed(1)}h</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      `;
+      let footer = '<tr class="totals"><td style="background:#111;color:white">TOTALS</td>' + dayTotals.map(h=>'<td>'+h.toFixed(1)+'h</td>').join('') + '<td style="background:#111;color:white">'+grandTotal.toFixed(1)+'h</td></tr>';
       
-      return header + rows + footer;
+      return '<div class="section"><div class="section-header"><div class="section-title">'+title+'</div><div class="section-hours">'+dateRange+'</div></div><table class="table">'+headerRow+rows+footer+'</table></div>';
     }
     
-    html += renderSection('FULL TIME', fullStaff, fortnight.dates, fortnight.dateRange);
-    html += renderSection('CASUAL', casualStaff, fortnight.dates, fortnight.dateRange);
+    htmlContent += renderSection('FULL TIME', fullStaff, fortnight.dates, fortnight.dateRange);
+    htmlContent += renderSection('CASUAL', casualStaff, fortnight.dates, fortnight.dateRange);
     
-    html += `
+    htmlContent += `
   <div class="no-print" style="margin-top:20px;text-align:center">
     <button onclick="window.print()" style="background:#111;color:white;border:3px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer;margin-right:10px">🖨️ Print / Save as PDF</button>
     <button onclick="window.close()" style="background:white;color:#111;border:3px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Close</button>
   </div>
-  <script>window.onload=()=>{setTimeout(()=>window.print(), 500)}<\/script>
-<script>
-// Export Full Roster as Excel (xlsx) - EXACT same layout as uploaded files
-window.exportFullRosterToExcel = function(fortnight){
+  <script>window.onload=function(){setTimeout(function(){window.print()}, 800)}<\/script>
+</body>
+</html>
+    `;
+    
+    let blob = new Blob([htmlContent], {type:'text/html'});
+    let url = URL.createObjectURL(blob);
+    let win = window.open(url, '_blank');
+    if(!win){
+      // Fallback: download as html file that user can open and print
+      let a = document.createElement('a');
+      a.href = url;
+      a.download = fortnight.label + ' - Full Roster.html';
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      alert('Popup blocked - downloaded HTML file instead. Open it and press Ctrl+P to save as PDF');
+      return;
+    }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    
+  }catch(e){
+    console.error('PDF export failed', e);
+    alert('PDF export failed: ' + e.message);
+  }
+};
+
+// Export Full Roster as Excel (xlsx) - EXACT same layout as uploaded files - FIXED WORKING VERSION
+window.exportFullRosterToExcel = async function(fortnight){
   try{
     if(!fortnight){ alert('No fortnight selected'); return; }
-    if(typeof XLSX==='undefined'){ alert('Excel library not loaded - try PDF export instead'); return; }
+    
+    // Load XLSX library using the app's loader l2() if available, else dynamic import
+    let XLSXLib = null;
+    try{
+      if(typeof l2==='function'){
+        XLSXLib = await l2();
+      } else if(window.XLSX){
+        XLSXLib = window.XLSX;
+      } else {
+        // Fallback load
+        XLSXLib = await new Promise((resolve, reject)=>{
+          let s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+          s.onload = ()=>resolve(window.XLSX);
+          s.onerror = ()=>reject(new Error('Failed to load XLSX'));
+          document.head.appendChild(s);
+        });
+      }
+    }catch(err){
+      alert('Failed to load Excel library: ' + err.message + '. Check internet connection and try again.');
+      return;
+    }
+    
+    if(!XLSXLib){ alert('Excel library not available'); return; }
     
     let sortByLastName = (a,b)=>{
       let la=(a.lastName||'').toLowerCase(), lb=(b.lastName||'').toLowerCase();
@@ -1090,28 +1089,44 @@ window.exportFullRosterToExcel = function(fortnight){
     let casualStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='CASUAL').slice().sort(sortByLastName);
     let allStaff = [...fullStaff, ...casualStaff];
     
-    // Create workbook
-    let wb = XLSX.utils.book_new();
+    let originalShifts = {};
+    try{ originalShifts = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}'); }catch{}
     
-    // Build data as array of arrays matching original format
-    // Original: Row1 dates, Row2 day names, then staff rows with blank rows between
+    function calcHoursExcel(shift, employmentType, originalShift){
+      if(!shift || shift==='OFF') return 0;
+      if(shift==='ABSENT'){
+        if(employmentType==='FULL' && originalShift && originalShift!=='OFF' && originalShift!=='ABSENT'){
+          let p = originalShift.split('-');
+          if(p.length!==2) return 0;
+          let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+          let start = toMin(p[0]), end = toMin(p[1]);
+          if(end<=start) return 0;
+          let hrs = (end-start)/60;
+          return hrs>=5 ? hrs-0.5 : hrs;
+        }
+        return 0;
+      }
+      let parts = shift.split('-');
+      if(parts.length!==2) return 0;
+      let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+      let start = toMin(parts[0]), end = toMin(parts[1]);
+      if(end<=start) return 0;
+      let hrs = (end-start)/60;
+      return hrs>=5 ? hrs-0.5 : hrs;
+    }
+    
+    let wb = XLSXLib.utils.book_new();
     let data = [];
     
-    // Row 1: Dates - format like original: [empty, date1, empty, date2, empty, date3...]
     let dates = fortnight.dates||[];
     let row1 = [null];
     dates.forEach(d=>{
-      // Try to parse date - original had actual date objects
       let dateObj = null;
       try{
-        // d.date is like "21/10" or d.full is "2026-10-21"
-        if(d.full){
-          dateObj = new Date(d.full);
-        } else if(d.date){
+        if(d.full){ dateObj = new Date(d.full); }
+        else if(d.date){
           let parts = d.date.split('/');
-          if(parts.length===2){
-            dateObj = new Date(new Date().getFullYear(), parseInt(parts[1])-1, parseInt(parts[0]));
-          }
+          if(parts.length===2){ dateObj = new Date(new Date().getFullYear(), parseInt(parts[1])-1, parseInt(parts[0])); }
         }
       }catch{}
       row1.push(dateObj);
@@ -1120,111 +1135,73 @@ window.exportFullRosterToExcel = function(fortnight){
     row1.push('TOTAL HOURS Minus Breaks');
     data.push(row1);
     
-    // Row 2: Day names
     let row2 = [null];
-    dates.forEach(d=>{
-      row2.push((d.day||'').toUpperCase());
-      row2.push(null);
-    });
+    dates.forEach(d=>{ row2.push((d.day||'').toUpperCase()); row2.push(null); });
     row2.push(null);
     data.push(row2);
     
-    // Staff rows
     allStaff.forEach(st=>{
       let row = [];
-      // Name as "LAST, First" like original: "BLAIK, Michael"
-      let name = `${(st.lastName||'').toUpperCase()}, ${st.firstName||''}`;
+      let name = (st.lastName||'').toUpperCase() + ', ' + (st.firstName||'');
       row.push(name);
       
       let shifts = st.shifts||[];
       let totalHours = 0;
       
-      // Get original shifts for P symbol
-      let originalShiftsExcel = {};
-      try{
-        originalShiftsExcel = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}');
-      }catch{}
-      
       shifts.forEach((shift, idx)=>{
-        let orig = originalShiftsExcel[fortnight.id]?.[st.id]?.[idx];
+        let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
+        let h = calcHoursExcel(shift, st.employmentType, orig);
+        totalHours += h;
+        
         let isAbsentWithOrig = (shift==='ABSENT' && orig && orig!=='OFF' && orig!=='ABSENT');
         
         if(!shift || shift==='OFF'){
-          row.push(null);
-          row.push(null);
+          row.push(null); row.push(null);
         } else if(shift==='ABSENT'){
           if(isAbsentWithOrig){
-            // Show original shift with P - like "08:00 P" / "16:00 P" or "08:00-16:00 P" split
             if(orig && orig.includes('-')){
               let parts = orig.split('-');
               row.push(parts[0].trim() + ' AB');
               row.push(parts[1].trim() + ' AB');
             } else {
-              row.push(orig + ' AB');
-              row.push(null);
+              row.push(orig + ' AB'); row.push(null);
             }
           } else {
-            row.push('ABSENT');
-            row.push(null);
+            row.push('ABSENT'); row.push(null);
           }
         } else if(shift.includes('-')){
           let parts = shift.split('-');
-          if(parts.length===2){
-            // Convert "08:00" to time
-            let start = parts[0].trim();
-            let end = parts[1].trim();
-            // Keep as string for Excel, but also try to make time
-            row.push(start);
-            row.push(end);
-            
-            // Calc hours for total
-            try{
-              let s = start.split(':').map(Number);
-              let e = end.split(':').map(Number);
-              let h = (e[0]+e[1]/60) - (s[0]+s[1]/60);
-              if(h<0) h+=24;
-              // Minus break if >5h (original seems to subtract breaks)
-              if(h>5) h -= 0.5;
-              totalHours += h;
-            }catch{}
-          } else {
-            row.push(null);
-            row.push(null);
-          }
+          row.push(parts[0].trim());
+          row.push(parts[1].trim());
         } else {
-          row.push(null);
-          row.push(null);
+          row.push(null); row.push(null);
         }
       });
       
-      // Total hours
       row.push(totalHours);
       data.push(row);
       
-      // Blank row between staff (like original)
       let blankRow = new Array(row.length).fill(null);
       data.push(blankRow);
     });
     
-    // Create sheet
-    let ws = XLSX.utils.aoa_to_sheet(data);
+    let ws = XLSXLib.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch:18}];
+    for(let i=1;i<35;i++) ws['!cols'].push({wch:12});
     
-    // Set column widths to match original (approx)
-    ws['!cols'] = [{wch:18}]; // first col name
-    for(let i=1;i<30;i++) ws['!cols'].push({wch:10});
+    XLSXLib.utils.book_append_sheet(wb, ws, "Daily schedule");
     
-    XLSX.utils.book_append_sheet(wb, ws, "Daily schedule");
+    let fileName = fortnight.label + ' - Full Roster.xlsx';
+    XLSXLib.writeFile(wb, fileName);
     
-    // Download
-    let fileName = `${fortnight.label} - Full Roster.xlsx`;
-    XLSX.writeFile(wb, fileName);
-    
+    console.log('✅ Excel exported:', fileName);
   }catch(e){
     console.error('Excel export failed', e);
-    alert('Excel export failed: ' + e.message + ' - Use PDF export instead');
+    alert('Excel export failed: ' + e.message);
   }
 };
 </script>
+
 </body>
 </html>
     `;
@@ -1245,12 +1222,195 @@ window.exportFullRosterToExcel = function(fortnight){
 };
 </script>
 
+
+
 <script>
-// Export Full Roster as Excel (xlsx) - EXACT same layout as uploaded files
-window.exportFullRosterToExcel = function(fortnight){
+// Export Full Roster as printable PDF - exactly as shown on website - FIXED WORKING VERSION
+window.exportFullRosterToPDF = function(fortnight){
   try{
     if(!fortnight){ alert('No fortnight selected'); return; }
-    if(typeof XLSX==='undefined'){ alert('Excel library not loaded - try PDF export instead'); return; }
+    
+    let sortByLastName = (a,b)=>{
+      let la=(a.lastName||'').toLowerCase(), lb=(b.lastName||'').toLowerCase();
+      if(la<lb) return -1; if(la>lb) return 1;
+      let fa=(a.firstName||'').toLowerCase(), fb=(b.firstName||'').toLowerCase();
+      if(fa<fb) return -1; if(fa>fb) return 1;
+      return 0;
+    };
+    
+    let fullStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='FULL').slice().sort(sortByLastName);
+    let casualStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='CASUAL').slice().sort(sortByLastName);
+    
+    function calcHours(shift, employmentType, originalShift){
+      if(!shift || shift==='OFF') return 0;
+      if(shift==='ABSENT'){
+        if(employmentType==='FULL' && originalShift && originalShift!=='OFF' && originalShift!=='ABSENT'){
+          let p = originalShift.split('-');
+          if(p.length!==2) return 0;
+          let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+          let start = toMin(p[0]), end = toMin(p[1]);
+          if(end<=start) return 0;
+          let hrs = (end-start)/60;
+          return hrs>=5 ? hrs-0.5 : hrs;
+        }
+        return 0;
+      }
+      let parts = shift.split('-');
+      if(parts.length!==2) return 0;
+      let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+      let start = toMin(parts[0]), end = toMin(parts[1]);
+      if(end<=start) return 0;
+      let hrs = (end-start)/60;
+      return hrs>=5 ? hrs-0.5 : hrs;
+    }
+    
+    let originalShifts = {};
+    try{ originalShifts = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}'); }catch{}
+    
+    let htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${fortnight.label} - ${fortnight.dateRange} - Full Roster</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;background:white;color:#111;padding:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  .subtitle{font-size:13px;font-weight:700;color:#666;margin-bottom:16px}
+  .section{margin-bottom:24px;border:4px solid #111;border-radius:16px;overflow:hidden;background:white;}
+  .section-header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:white;border-bottom:3px solid #111}
+  .section-title{font-weight:800;font-size:16px}
+  .section-hours{font-size:12px;font-weight:700;color:#666}
+  .table{width:100%;border-collapse:collapse;}
+  .table th{background:#FFF2B2;border:1px solid #222;padding:6px 4px;text-align:center;font-size:10px;font-weight:800;}
+  .table td{border:1px solid #222;padding:4px 2px;min-height:36px;text-align:center;font-size:9.5px;}
+  .staff-cell{text-align:left !important;background:white;padding:4px !important;}
+  .staff-cell .last{font-size:10px;font-weight:800;color:#6b7280;text-transform:uppercase;display:block;line-height:1.1}
+  .staff-cell .first{font-size:11px;font-weight:700;color:#111;display:block;line-height:1.1}
+  .off{background:#f1f5f9;color:rgba(17,17,17,0.6)}
+  .absent{background:#fecaca;color:#be123c;font-weight:800}
+  .absent-ab{background:#fecaca;color:#be123c;font-weight:800;border:2px dashed #be123c !important}
+  .worked{background:white}
+  .totals{background:#FFF6EC;font-weight:800}
+  .totals-black{background:#111;color:white;font-weight:800}
+  @media print{
+    body{padding:0}
+    .section{break-inside:avoid;page-break-inside:avoid;}
+    .no-print{display:none}
+    @page{size:A4 landscape;margin:10mm}
+  }
+</style>
+</head>
+<body>
+  <h1>${fortnight.label} - Full Roster</h1>
+  <div class="subtitle">${fortnight.dateRange} - Printed ${new Date().toLocaleString()} - Repco Roster</div>
+`;
+
+    function renderSection(title, staffList, dates, dateRange){
+      if(staffList.length===0) return '';
+      let dayTotals = dates.map(()=>0);
+      let grandTotal = 0;
+      
+      let headerRow = '<tr><th style="width:110px">STAFF</th>' + dates.map(d=>'<th><div style="display:flex;flex-direction:column"><span>'+d.day+'</span><span style="font-size:9px">'+d.date+'</span></div></th>').join('') + '<th style="width:70px;background:#111;color:white">HRS</th></tr>';
+      
+      let rows = staffList.map(st=>{
+        let shifts = st.shifts||[];
+        let staffTotal = 0;
+        shifts.forEach((shift, idx)=>{
+          let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
+          let h = calcHours(shift, st.employmentType, orig);
+          staffTotal+=h;
+          dayTotals[idx]+=h;
+        });
+        grandTotal+=staffTotal;
+        
+        let cells = shifts.map((shift, idx)=>{
+          let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
+          let displayShift = shift||'OFF';
+          let cls='worked';
+          if(shift==='OFF'){ cls='off'; }
+          else if(shift==='ABSENT'){
+            if(orig && orig!=='OFF' && orig!=='ABSENT'){
+              displayShift = orig + ' AB';
+              cls='absent-ab';
+            } else {
+              cls='absent';
+            }
+          }
+          return '<td class="'+cls+'">'+displayShift+'</td>';
+        }).join('');
+        
+        return '<tr><td class="staff-cell"><span class="last">'+(st.lastName||'')+'</span><span class="first">'+(st.firstName||'')+'</span></td>' + cells + '<td style="background:white;font-weight:800">'+staffTotal.toFixed(1)+'h</td></tr>';
+      }).join('');
+      
+      let footer = '<tr class="totals"><td style="background:#111;color:white">TOTALS</td>' + dayTotals.map(h=>'<td>'+h.toFixed(1)+'h</td>').join('') + '<td style="background:#111;color:white">'+grandTotal.toFixed(1)+'h</td></tr>';
+      
+      return '<div class="section"><div class="section-header"><div class="section-title">'+title+'</div><div class="section-hours">'+dateRange+'</div></div><table class="table">'+headerRow+rows+footer+'</table></div>';
+    }
+    
+    htmlContent += renderSection('FULL TIME', fullStaff, fortnight.dates, fortnight.dateRange);
+    htmlContent += renderSection('CASUAL', casualStaff, fortnight.dates, fortnight.dateRange);
+    
+    htmlContent += `
+  <div class="no-print" style="margin-top:20px;text-align:center">
+    <button onclick="window.print()" style="background:#111;color:white;border:3px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer;margin-right:10px">🖨️ Print / Save as PDF</button>
+    <button onclick="window.close()" style="background:white;color:#111;border:3px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Close</button>
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print()}, 800)}<\/script>
+</body>
+</html>
+    `;
+    
+    let blob = new Blob([htmlContent], {type:'text/html'});
+    let url = URL.createObjectURL(blob);
+    let win = window.open(url, '_blank');
+    if(!win){
+      // Fallback: download as html file that user can open and print
+      let a = document.createElement('a');
+      a.href = url;
+      a.download = fortnight.label + ' - Full Roster.html';
+      a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      alert('Popup blocked - downloaded HTML file instead. Open it and press Ctrl+P to save as PDF');
+      return;
+    }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    
+  }catch(e){
+    console.error('PDF export failed', e);
+    alert('PDF export failed: ' + e.message);
+  }
+};
+
+// Export Full Roster as Excel (xlsx) - EXACT same layout as uploaded files - FIXED WORKING VERSION
+window.exportFullRosterToExcel = async function(fortnight){
+  try{
+    if(!fortnight){ alert('No fortnight selected'); return; }
+    
+    // Load XLSX library using the app's loader l2() if available, else dynamic import
+    let XLSXLib = null;
+    try{
+      if(typeof l2==='function'){
+        XLSXLib = await l2();
+      } else if(window.XLSX){
+        XLSXLib = window.XLSX;
+      } else {
+        // Fallback load
+        XLSXLib = await new Promise((resolve, reject)=>{
+          let s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+          s.onload = ()=>resolve(window.XLSX);
+          s.onerror = ()=>reject(new Error('Failed to load XLSX'));
+          document.head.appendChild(s);
+        });
+      }
+    }catch(err){
+      alert('Failed to load Excel library: ' + err.message + '. Check internet connection and try again.');
+      return;
+    }
+    
+    if(!XLSXLib){ alert('Excel library not available'); return; }
     
     let sortByLastName = (a,b)=>{
       let la=(a.lastName||'').toLowerCase(), lb=(b.lastName||'').toLowerCase();
@@ -1264,28 +1424,44 @@ window.exportFullRosterToExcel = function(fortnight){
     let casualStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='CASUAL').slice().sort(sortByLastName);
     let allStaff = [...fullStaff, ...casualStaff];
     
-    // Create workbook
-    let wb = XLSX.utils.book_new();
+    let originalShifts = {};
+    try{ originalShifts = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}'); }catch{}
     
-    // Build data as array of arrays matching original format
-    // Original: Row1 dates, Row2 day names, then staff rows with blank rows between
+    function calcHoursExcel(shift, employmentType, originalShift){
+      if(!shift || shift==='OFF') return 0;
+      if(shift==='ABSENT'){
+        if(employmentType==='FULL' && originalShift && originalShift!=='OFF' && originalShift!=='ABSENT'){
+          let p = originalShift.split('-');
+          if(p.length!==2) return 0;
+          let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+          let start = toMin(p[0]), end = toMin(p[1]);
+          if(end<=start) return 0;
+          let hrs = (end-start)/60;
+          return hrs>=5 ? hrs-0.5 : hrs;
+        }
+        return 0;
+      }
+      let parts = shift.split('-');
+      if(parts.length!==2) return 0;
+      let toMin = (t)=>{ let [h,m]=t.trim().split(':').map(Number); if(isNaN(h)||isNaN(m)) return 0; return h*60+m; };
+      let start = toMin(parts[0]), end = toMin(parts[1]);
+      if(end<=start) return 0;
+      let hrs = (end-start)/60;
+      return hrs>=5 ? hrs-0.5 : hrs;
+    }
+    
+    let wb = XLSXLib.utils.book_new();
     let data = [];
     
-    // Row 1: Dates - format like original: [empty, date1, empty, date2, empty, date3...]
     let dates = fortnight.dates||[];
     let row1 = [null];
     dates.forEach(d=>{
-      // Try to parse date - original had actual date objects
       let dateObj = null;
       try{
-        // d.date is like "21/10" or d.full is "2026-10-21"
-        if(d.full){
-          dateObj = new Date(d.full);
-        } else if(d.date){
+        if(d.full){ dateObj = new Date(d.full); }
+        else if(d.date){
           let parts = d.date.split('/');
-          if(parts.length===2){
-            dateObj = new Date(new Date().getFullYear(), parseInt(parts[1])-1, parseInt(parts[0]));
-          }
+          if(parts.length===2){ dateObj = new Date(new Date().getFullYear(), parseInt(parts[1])-1, parseInt(parts[0])); }
         }
       }catch{}
       row1.push(dateObj);
@@ -1294,110 +1470,72 @@ window.exportFullRosterToExcel = function(fortnight){
     row1.push('TOTAL HOURS Minus Breaks');
     data.push(row1);
     
-    // Row 2: Day names
     let row2 = [null];
-    dates.forEach(d=>{
-      row2.push((d.day||'').toUpperCase());
-      row2.push(null);
-    });
+    dates.forEach(d=>{ row2.push((d.day||'').toUpperCase()); row2.push(null); });
     row2.push(null);
     data.push(row2);
     
-    // Staff rows
     allStaff.forEach(st=>{
       let row = [];
-      // Name as "LAST, First" like original: "BLAIK, Michael"
-      let name = `${(st.lastName||'').toUpperCase()}, ${st.firstName||''}`;
+      let name = (st.lastName||'').toUpperCase() + ', ' + (st.firstName||'');
       row.push(name);
       
       let shifts = st.shifts||[];
       let totalHours = 0;
       
-      // Get original shifts for P symbol
-      let originalShiftsExcel = {};
-      try{
-        originalShiftsExcel = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}');
-      }catch{}
-      
       shifts.forEach((shift, idx)=>{
-        let orig = originalShiftsExcel[fortnight.id]?.[st.id]?.[idx];
+        let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
+        let h = calcHoursExcel(shift, st.employmentType, orig);
+        totalHours += h;
+        
         let isAbsentWithOrig = (shift==='ABSENT' && orig && orig!=='OFF' && orig!=='ABSENT');
         
         if(!shift || shift==='OFF'){
-          row.push(null);
-          row.push(null);
+          row.push(null); row.push(null);
         } else if(shift==='ABSENT'){
           if(isAbsentWithOrig){
-            // Show original shift with P - like "08:00 P" / "16:00 P" or "08:00-16:00 P" split
             if(orig && orig.includes('-')){
               let parts = orig.split('-');
               row.push(parts[0].trim() + ' AB');
               row.push(parts[1].trim() + ' AB');
             } else {
-              row.push(orig + ' AB');
-              row.push(null);
+              row.push(orig + ' AB'); row.push(null);
             }
           } else {
-            row.push('ABSENT');
-            row.push(null);
+            row.push('ABSENT'); row.push(null);
           }
         } else if(shift.includes('-')){
           let parts = shift.split('-');
-          if(parts.length===2){
-            // Convert "08:00" to time
-            let start = parts[0].trim();
-            let end = parts[1].trim();
-            // Keep as string for Excel, but also try to make time
-            row.push(start);
-            row.push(end);
-            
-            // Calc hours for total
-            try{
-              let s = start.split(':').map(Number);
-              let e = end.split(':').map(Number);
-              let h = (e[0]+e[1]/60) - (s[0]+s[1]/60);
-              if(h<0) h+=24;
-              // Minus break if >5h (original seems to subtract breaks)
-              if(h>5) h -= 0.5;
-              totalHours += h;
-            }catch{}
-          } else {
-            row.push(null);
-            row.push(null);
-          }
+          row.push(parts[0].trim());
+          row.push(parts[1].trim());
         } else {
-          row.push(null);
-          row.push(null);
+          row.push(null); row.push(null);
         }
       });
       
-      // Total hours
       row.push(totalHours);
       data.push(row);
       
-      // Blank row between staff (like original)
       let blankRow = new Array(row.length).fill(null);
       data.push(blankRow);
     });
     
-    // Create sheet
-    let ws = XLSX.utils.aoa_to_sheet(data);
+    let ws = XLSXLib.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch:18}];
+    for(let i=1;i<35;i++) ws['!cols'].push({wch:12});
     
-    // Set column widths to match original (approx)
-    ws['!cols'] = [{wch:18}]; // first col name
-    for(let i=1;i<30;i++) ws['!cols'].push({wch:10});
+    XLSXLib.utils.book_append_sheet(wb, ws, "Daily schedule");
     
-    XLSX.utils.book_append_sheet(wb, ws, "Daily schedule");
+    let fileName = fortnight.label + ' - Full Roster.xlsx';
+    XLSXLib.writeFile(wb, fileName);
     
-    // Download
-    let fileName = `${fortnight.label} - Full Roster.xlsx`;
-    XLSX.writeFile(wb, fileName);
-    
+    console.log('✅ Excel exported:', fileName);
   }catch(e){
     console.error('Excel export failed', e);
-    alert('Excel export failed: ' + e.message + ' - Use PDF export instead');
+    alert('Excel export failed: ' + e.message);
   }
 };
 </script>
+
 </body>
 </html>
