@@ -49,15 +49,62 @@
     flex-direction:column!important;
     width:100%!important;
   }
-  div[class*="hidden"]{
-    display:block!important;
-    visibility:visible!important;
-    opacity:1!important;
-  }
+  /* Removed broad hidden rule - was hiding buddies */
   /* Full roster view not crushed */
   .roster-card-fulltime, .roster-card{
     min-width:100%!important;
     overflow-x:auto!important;
+  }
+}
+</style>
+
+
+<style id="mobile-buddies-fix">
+@media (max-width: 768px){
+  /* Ensure Today's/Tomorrow's Buddies cards are visible on mobile, including hidden staff */
+  /* Buddies cards have class w-full bg-white rounded-[14px] border-[2.5px] */
+  div.w-full.bg-white.rounded-\[14px\].border-\[2\.5px\].border-\[\#111\]{
+    display:flex!important;
+    visibility:visible!important;
+    opacity:1!important;
+    min-height:auto!important;
+    height:auto!important;
+    max-height:none!important;
+    overflow:visible!important;
+    flex-wrap:wrap!important;
+  }
+  
+  /* Ensure HIDDEN badge shows */
+  span.bg-\[\#FFE066\].text-\[\#111\].border.border-\[\#111\].rounded-full{
+    display:inline-flex!important;
+    visibility:visible!important;
+  }
+  
+  /* Fix roster-row only for full roster, not buddies */
+  .roster-row{
+    overflow:visible!important;
+    min-height:44px!important;
+    height:auto!important;
+    max-height:none!important;
+  }
+  
+  /* Buddies container - ensure visible */
+  div.flex.flex-col.gap-3{
+    display:flex!important;
+    visibility:visible!important;
+    overflow:visible!important;
+  }
+  
+  /* Full roster table - keep horizontal scroll */
+  .roster-table-inner{
+    min-width:900px!important;
+    overflow-x:auto!important;
+  }
+  
+  /* Ensure hidden staff in buddies not filtered by isHidden logic on mobile */
+  /* The mA and fA arrays include hidden staff when overlap - ensure they render */
+  div[class*="buddies"] *{
+    overflow:visible!important;
   }
 }
 </style>
@@ -1391,11 +1438,15 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
       var allDivs = document.querySelectorAll('div');
       for(var i=0;i<allDivs.length;i++){
         var div = allDivs[i];
-        if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1 && div.querySelectorAll('button').length>=3){
-          // Check if this div contains only tab buttons (not the whole page)
-          if(div.textContent.length < 500 && div.querySelectorAll('button').length <= 10){
-            div.style.display = 'none';
-            div.classList.add('tab-bar-container', 'mobile-hidden');
+        // Only hide the specific tab bar: must contain Full Roster + My Schedule AND have class bg-[#FFE066] AND be sticky
+        if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1 && div.querySelectorAll('button').length>=3 && div.querySelectorAll('button').length<=10){
+          var className = div.className||'';
+          // Tab bar has bg-[#FFE066] and border-b-[3px] and sticky
+          if(className.indexOf('bg-[#FFE066]')>-1 || className.indexOf('border-b-[3px]')>-1 || className.indexOf('sticky')>-1){
+            if(div.textContent.length < 800){
+              div.style.display = 'none';
+              div.classList.add('tab-bar-container', 'mobile-hidden');
+            }
           }
         }
       }
@@ -1437,6 +1488,51 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
       document.body.style.overflow = '';
     }
   });
+})();
+</script>
+
+
+<script id="mobile-buddies-logic-fix">
+// Ensure hidden employees show on buddies pages on mobile when conditions met
+(function(){
+  function fixBuddiesHidden(){
+    if(window.innerWidth > 768) return;
+    try{
+      // Force re-render of buddies if hidden staff should be visible
+      var todayBuddies = document.querySelectorAll('div.w-full.bg-white.rounded-\[14px\]');
+      for(var i=0;i<todayBuddies.length;i++){
+        var card = todayBuddies[i];
+        // Ensure card is visible
+        card.style.display = 'flex';
+        card.style.visibility = 'visible';
+        card.style.opacity = '1';
+        // Ensure HIDDEN badge inside is visible
+        var hiddenBadges = card.querySelectorAll('span');
+        for(var j=0;j<hiddenBadges.length;j++){
+          if(hiddenBadges[j].textContent.indexOf('HIDDEN')>-1){
+            hiddenBadges[j].style.display = 'inline-flex';
+            hiddenBadges[j].style.visibility = 'visible';
+          }
+        }
+      }
+    }catch(e){ console.warn('Buddies fix failed', e); }
+  }
+  
+  // Run on load and on tab change
+  setTimeout(fixBuddiesHidden, 1000);
+  setTimeout(fixBuddiesHidden, 2500);
+  setTimeout(fixBuddiesHidden, 4000);
+  
+  // Observe for buddies page changes
+  var observer = new MutationObserver(function(){
+    if(window.innerWidth <= 768){
+      var isBuddiesPage = document.body.textContent.indexOf("Today's Buddies")>-1 || document.body.textContent.indexOf("Tomorrow's Buddies")>-1;
+      if(isBuddiesPage){
+        setTimeout(fixBuddiesHidden, 300);
+      }
+    }
+  });
+  observer.observe(document.body, {childList: true, subtree: true});
 })();
 </script>
 
