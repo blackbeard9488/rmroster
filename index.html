@@ -747,6 +747,9 @@ setTimeout(()=>{try{
     var allDivs = document.querySelectorAll('div');
     for(var i=0;i<allDivs.length;i++){
       var div = allDivs[i];
+      // V43 FIX: don't hide the mobile menu itself
+      if(div.id==='mobile-menu-drawer' || div.id==='mobile-menu-tabs' || div.id==='mobile-menu-overlay' || div.id==='mobile-hamburger-btn') continue;
+      if(div.closest && (div.closest('#mobile-menu-drawer') || div.closest('#mobile-menu-tabs'))) continue;
       if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1 && div.querySelectorAll('button').length>=3){
         if(div.textContent.length < 500 && div.querySelectorAll('button').length <= 10){
           div.style.display = 'none';
