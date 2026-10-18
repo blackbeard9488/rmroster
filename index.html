@@ -727,49 +727,104 @@ window.exportFullRosterToPDF = function(fortnight){
     let sortByLastName = (a,b)=>{ let aH=!!a.isHidden, bH=!!b.isHidden; if(aH&&!bH) return 1; if(!aH&&bH) return -1; let la=(a.lastName||'').toLowerCase(), lb=(b.lastName||'').toLowerCase(); if(la<lb) return -1; if(la>lb) return 1; let fa=(a.firstName||'').toLowerCase(), fb=(b.firstName||'').toLowerCase(); if(fa<fb) return -1; if(fa>fb) return 1; return 0; };
     let fullStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='FULL').slice().sort((a,b)=>sortByLastName(a,b));
     let casualStaff = (fortnight.staff||[]).filter(s=>s.employmentType==='CASUAL').slice().sort((a,b)=>sortByLastName(a,b));
+    function toMin(t){ let parts=t.trim().split(':').map(Number); if(isNaN(parts[0])||isNaN(parts[1])) return 0; return parts[0]*60+parts[1]; }
+    function calcHoursFromShift(shiftStr){
+      if(!shiftStr || shiftStr==='OFF' || shiftStr==='ABSENT') return 0;
+      let parts=shiftStr.split('-'); if(parts.length!==2) return 0;
+      let start=toMin(parts[0]), end=toMin(parts[1]); if(end<=start) end+=1440;
+      let hrs=(end-start)/60; return hrs>=5?hrs-0.5:hrs;
+    }
     function calcHours(shift, employmentType, originalShift){
       if(!shift || shift==='OFF') return 0;
-      if(shift==='ABSENT'){ if(employmentType==='FULL'&& originalShift && originalShift!=='OFF' && originalShift!=='ABSENT'){ let p = originalShift.split(':'); if(p.length===2) return 0; } return 0; }
-      let toMin=(t)=>{let parts=t.trim().split(':').map(Number); return parts[0]*60+parts[1]; };
-      let parts = shift.split('-'); if(parts.length!=2) return 0;
-      let start = toMin(parts[0]), end = toMin(parts[1]); if(end<=start) end+=1440;
-      let hrs = (end-start)/60; return hrs>=5 ? hrs-0.5 : hrs;
+      if(shift==='ABSENT'){
+        // FIXED: Use original shift for totals (e.g., 8:00-12:00) even when marked absent
+        if(originalShift && originalShift!=='OFF' && originalShift!=='ABSENT'){
+          return calcHoursFromShift(originalShift);
+        }
+        return 0;
+      }
+      return calcHoursFromShift(shift);
     }
     let originalShifts = {}; try{ originalShifts = JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}'); }catch{}
-    let htmlContent = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + fortnight.label + '</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:2px solid #111;padding:4px;text-align:center}th{background:#FFE066}</style></head><body onload="setTimeout(function(){window.print()},800)"><h1>' + fortnight.label + '</h1><div>' + fortnight.dateRange + '</div>';
+    let htmlContent = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + fortnight.label + '</title><style>body{font-family:Arial;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:2px solid #111;padding:4px;text-align:center}th{background:#FFE066}.absent{background:#FF4B4B;color:white}.absent-ab{background:#FFB6B6;color:#111;font-weight:800}.totals{font-weight:800;background:#FFF6EC}</style></head><body onload="setTimeout(function(){window.print()},800)"><h1>' + fortnight.label + ' - Full Roster</h1><div style="font-size:13px;color:#666;margin-bottom:16px;">' + fortnight.dateRange + ' - Printed ' + new Date().toLocaleString() + '</div>';
     function renderSection(title, staffList){
       if(staffList.length===0) return '';
+      let dayTotals = fortnight.dates.map(()=>0);
+      let grandTotal=0;
       let headerRow = '<tr><th>STAFF</th>' + fortnight.dates.map(d=>'<th>' + d.day + '<br>' + d.date + '</th>').join('') + '<th>HRS</th></tr>';
       let rows = staffList.map(st=>{
         let shifts = st.shifts||[];
-        let total = 0;
-        shifts.forEach(s=>{ if(s!=='OFF'&&s!=='ABSENT'){ let p=s.split('-'); if(p.length===2){ let a=p[0].split(':').map(Number); let b=p[1].split(':').map(Number); let hrs=(b[0]*60+b[1]-a[0]*60-a[1])/60; total+=hrs>=5?hrs-0.5:hrs; } } });
-        let cells = shifts.map(s=>'<td>'+s+'</td>').join('');
-        return '<tr><td style="text-align:left;font-weight:700">' + st.lastName + ', ' + st.firstName + '</td>' + cells + '<td>' + total.toFixed(1) + '</td></tr>';
+        let staffTotal=0;
+        shifts.forEach((shift, idx)=>{
+          let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
+          let h = calcHours(shift, st.employmentType, orig);
+          staffTotal+=h;
+          dayTotals[idx]+=h;
+        });
+        grandTotal+=staffTotal;
+        let cells = shifts.map((shift, idx)=>{
+          let orig = originalShifts[fortnight.id]?.[st.id]?.[idx];
+          let displayShift = shift;
+          let cls='worked';
+          if(shift==='OFF'){ cls='off'; displayShift='OFF'; }
+          else if(shift==='ABSENT'){
+            if(orig && orig!=='OFF' && orig!=='ABSENT'){
+              // FIXED: Show original shift + AB symbol, but total uses original hours
+              displayShift = orig + ' AB';
+              cls='absent-ab';
+            } else {
+              displayShift='ABSENT';
+              cls='absent';
+            }
+          }
+          return '<td class="'+cls+'">'+displayShift+'</td>';
+        }).join('');
+        return '<tr><td style="text-align:left;font-weight:700">' + st.lastName + ', ' + st.firstName + '</td>' + cells + '<td class="totals">' + staffTotal.toFixed(1) + '</td></tr>';
       }).join('');
-      return '<div style="border:4px solid #111;border-radius:12px;padding:12px;margin-bottom:20px;"><h2>' + title + '</h2><table>' + headerRow + rows + '</table></div>';
+      let footer = '<tr class="totals"><td>TOTALS</td>' + dayTotals.map(h=>'<td>'+h.toFixed(1)+'</td>').join('') + '<td>'+grandTotal.toFixed(1)+'</td></tr>';
+      return '<div style="border:4px solid #111;border-radius:12px;padding:12px;margin-bottom:20px;"><h2>' + title + '</h2><table>' + headerRow + rows + footer + '</table></div>';
     }
     htmlContent += renderSection('FULL TIME', fullStaff);
     htmlContent += renderSection('CASUAL', casualStaff);
-    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;padding:12px 24px;border-radius:9999px;font-weight:800;">Print / Save as PDF</button></div></body></html>';
+    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;padding:12px 24px;border-radius:9999px;font-weight:800;">Print / Save as PDF</button><div style="margin-top:10px;font-size:11px;color:#666;">AB = Absent - original shift hours included in totals</div></div></body></html>';
     let blob = new Blob([htmlContent], {type:'text/html'});
     let url = URL.createObjectURL(blob);
     let win = window.open(url, '_blank');
     if(!win){
-      let a = document.createElement('a'); a.href = url; a.download = fortnight.label + '.html'; a.click();
+      let a = document.createElement('a'); a.href = url; a.download = fortnight.label + ' - Full Roster.html'; a.click();
       setTimeout(()=>URL.revokeObjectURL(url), 1000);
-      alert('Popup blocked - downloaded HTML');
+      alert('Popup blocked - downloaded HTML file instead. Open it and press Ctrl+P to save as PDF');
       return;
     }
     setTimeout(()=>URL.revokeObjectURL(url), 60000);
-  }catch(e){ alert('PDF failed: '+e.message); }
+  }catch(e){ console.error('PDF export failed', e); alert('PDF failed: '+e.message); }
 };
 window.exportFullRosterToExcel = function(fortnight){
   try{
     if(!fortnight){ alert('No fortnight selected'); return; }
-    let staff = (fortnight.staff||[]).slice().sort((a,b)=>a.lastName.localeCompare(b.lastName));
+    let sortByLastName = (a,b)=>a.lastName.localeCompare(b.lastName);
+    let staff = (fortnight.staff||[]).slice().sort(sortByLastName);
+    function toMin(t){ let p=t.trim().split(':').map(Number); return p[0]*60+p[1]; }
+    function calcH(s){ if(!s || s==='OFF' || s==='ABSENT') return 0; let parts=s.split('-'); if(parts.length!==2) return 0; let a=toMin(parts[0]), b=toMin(parts[1]); if(b<=a) b+=1440; let hrs=(b-a)/60; return hrs>=5?hrs-0.5:hrs; }
+    let originalShifts={}; try{ originalShifts=JSON.parse(localStorage.getItem('retail_roster_originalShifts_v1')||'{}'); }catch{}
     let header = ['STAFF', ...fortnight.dates.map(d=>d.day+' '+d.date), 'HRS'];
-    let rows = staff.map(st=>[st.lastName+', '+st.firstName, ...(st.shifts||[]), '']);
+    let rows = staff.map(st=>{
+      let shifts=st.shifts||[];
+      let total=0;
+      let displayShifts=shifts.map((shift, idx)=>{
+        let orig=originalShifts[fortnight.id]?.[st.id]?.[idx];
+        if(shift==='ABSENT' && orig && orig!=='OFF' && orig!=='ABSENT'){
+          total+=calcH(orig);
+          return orig+' AB';
+        } else if(shift==='ABSENT'){
+          return 'ABSENT';
+        } else {
+          total+=calcH(shift);
+          return shift;
+        }
+      });
+      return [st.lastName+', '+st.firstName, ...displayShifts, total.toFixed(1)];
+    });
     let allRows = [header, ...rows];
     let csv = allRows.map(r=>r.map(c=>'"'+(c||'').toString().replace(/"/g,'""')+'"').join(',')).join('\n');
     let blob = new Blob([csv], {type:'text/csv'});
