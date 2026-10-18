@@ -478,7 +478,7 @@ ${w}`),A.target)A.target.value="";return}let Y=G[h]||[],q=[],H=Math.min(40,Y.len
   return result;
 }), (function(r){try{rmrosterPushLive(r);}catch{}})(Xl), l((w)=>{let g=new Set(w.map((Q)=>Q.id)),D=[];for(let Q of Ee)if(!g.has(Q.id)){let Rn=`${Q.firstName.toLowerCase()}.${Q.lastName.toLowerCase()}`.replace(/\s+/g,"");D.push({id:Q.id,username:Rn,password:"roster123",firstName:Q.firstName,lastName:Q.lastName,role:"employee",employmentType:Q.employmentType})}return D.length?[...w,...D]:w}),W((prev)=>{let next={...prev};let rosterMap={};for(let s of Ee){let clean=s.shifts.map((sh)=>sh==="ABSENT"?"OFF":sh);rosterMap[s.id]=clean}next[ne]=rosterMap;return next});let Ut={id:`file_${Date.now()}`,name:c.name,type:"excel",size:`${(c.size/1024).toFixed(0)}KB`,date:new Date().toLocaleDateString()};P((w)=>[Ut,...w]),o(ne),en(`Imported ${V.length} days, ${bn} matched, ${je} new • ${ae} • sample asset ${t2?"bundled":""}`)}catch(y){console.error(y),en(`Excel import failed: ${y?.message||String(y)}`)}finally{if(A.target)A.target.value=""}},fS=()=>{if(!C||!z)return;EA(!0)},JS=()=>{if(!z)return;let A=z.id,a=r.filter((c)=>c.id!==A);if(W((c)=>c.filter((y)=>y.rosterId!==A)),i(a),a.length>0)o(a[0].id);else o("");EA(!1),en(`Deleted fortnight ${z.dateRange} • ${a.length} left`)};function ua(A){if(!A)return null;let a=A.split("-");if(a.length!==3)return null;let c=parseInt(a[0],10),y=parseInt(a[1],10)-1,d=parseInt(a[2],10);if(isNaN(c)||isNaN(y)||isNaN(d))return null;return new Date(c,y,d)}function JA(A,a){let c=new Date(A);return c.setDate(c.getDate()+a),c}function NS(A){let a=["SUN","MON","TUE","WED","THU","FRI","SAT"],c=[];for(let y=0;y<14;y++){let d=JA(A,y),f=String(d.getDate()).padStart(2,"0"),U=String(d.getMonth()+1).padStart(2,"0"),G=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${f}`,h=a[d.getDay()];c.push({date:`${f}/${U}`,day:h,full:G})}return c}function oa(A){let a=A.dates[A.dates.length-1]?.full,c=a?ua(a):null;if(!c)return null;let y=JA(c,1),d=JA(y,13),f=NS(y);return{nextStart:y,nextEnd:d,newDates:f}}function R2(){let A=null;for(let a of r){let c=a.dates[a.dates.length-1]?.full,y=c?ua(c):null;if(y&&(!A||y>A))A=y}return A}let ue=s.useMemo(()=>{if(!_e)return null;let A=r.find((d)=>d.id===_e);if(!A)return null;let a=oa(A);if(!a)return null;let c=`${a.newDates[0].date} to ${a.newDates[13].date}`,y=`${a.newDates[0].day} ${a.newDates[0].date} to ${a.newDates[13].day} ${a.newDates[13].date}/${a.nextEnd.getFullYear()}`;return{src:A,...a,label:c,fullLabel:y}},[_e,r]),MS=()=>{if(!_e){en("Select a fortnight to duplicate");return}let A=r.find((G)=>G.id===_e);if(!A){en("Source not found");return}let a=oa(A);if(!a){en("Could not calculate next dates");return}let c=`r${Date.now()}_${Math.random().toString(36).slice(2,6)}`,y=`${a.newDates[0].date} to ${a.newDates[13].date}`,d=y,f=`${a.newDates[0].day} ${a.newDates[0].date} to ${a.newDates[13].day} ${a.newDates[13].date}/${a.nextEnd.getFullYear()}`,U=A.staff.map((G)=>{let orig=R[A.id]?.[G.id]||R[G.id]||null;let cleaned=G.shifts.map((sh,idx)=>{if(sh==="ABSENT"){if(orig&&orig[idx]&&orig[idx]!=="OFF"&&orig[idx]!=="ABSENT")return orig[idx];return "OFF"}return sh});return {...G,shifts:cleaned,hours:Xe(cleaned,G.employmentType,c,R,G.id)}}),X={id:c,label:y,dateRange:d,dates:a.newDates,staff:U};i((G)=>[...G,X]),o(c),Pr(!1),Tl(""),en(`Duplicated ${A.label} → ${y} • ${f}`)};s.useEffect(()=>{if(!z)return;let A=z.dates.length;if(E((c)=>c.map((y)=>{if(y.shifts.length===A)return y;if(y.shifts.length<A)return{...y,shifts:[...y.shifts,...Array(A-y.shifts.length).fill("OFF")]};return{...y,shifts:y.shifts.slice(0,A)}})),!z.dates.some((c)=>c.date===$.date)&&z.dates[0])Ae((c)=>({...c,date:z.dates[0].date}))},[u,z?.dates?.length]);let US=()=>{if(!z){en("No fortnight selected");return}if(!$.firstName||!$.lastName){en("Enter first & last name");return}let A=z.dates,a=A.findIndex((y)=>y.date===$.date);if(a===-1){en("Invalid date for this fortnight");return}let c;if($.off)c="OFF";else if($.absent)c="ABSENT";else c=`${$.start}-${$.end}`;if(Zr)E((y)=>y.map((d)=>{if(d.id!==Zr)return d;let f=[...d.shifts];while(f.length<A.length)f.push("OFF");if(f.length>A.length)f.length=A.length;return f[a]=c,{...d,firstName:$.firstName.trim(),lastName:$.lastName.trim(),employmentType:$.employmentType,shifts:f}})),vA(null),en(`Hidden staff updated • ${$.date} ${c}`);else{let y=x.find((d)=>d.firstName.toLowerCase()===$.firstName.toLowerCase().trim()&&d.lastName.toLowerCase()===$.lastName.toLowerCase().trim());if(y)E((d)=>d.map((f)=>{if(f.id!==y.id)return f;let U=[...f.shifts];while(U.length<A.length)U.push("OFF");if(U.length>A.length)U.length=A.length;return U[a]=c,{...f,shifts:U}})),en(`Added ${$.date} to existing hidden staff • ${y.firstName} ${y.lastName}`);else{let d=Array(A.length).fill("OFF");d[a]=c;let f={id:`hidden-${Date.now()}`,firstName:$.firstName.trim(),lastName:$.lastName.trim(),employmentType:$.employmentType,shifts:d};E((U)=>[...U,f]),en(`Hidden staff added • ${f.firstName} ${f.lastName} - shows in Full Roster (manager) + Buddies overlap`)}}Ae({firstName:"",lastName:"",employmentType:"CASUAL",date:A[0]?.date||"07/10",start:"09:00",end:"17:00",off:!1,absent:!1})},aa=(A)=>{let a=yA[A];if(!a){en("No changes");return}let c=a.username.trim(),y=a.password.trim();if(!c||!y){en("Username & password required");return}
 let updatedUsers=null, updatedRosters=null;
-l((d)=>{let nu=d.map((f)=>{if(f.id!==A)return f;return{...f,username:c,password:y,role:a.role,firstName:a.firstName,lastName:a.lastName,employmentType:a.employmentType}}); updatedUsers=nu; try{localStorage.setItem('retail_roster_users_v1', JSON.stringify(nu));}catch(e){} return nu;}),
+l((d)=>{let nu=d.map((f)=>{if(f.id!==A)return f;return{...f,username:c,password:y,role:a.role,firstName:a.firstName,lastName:a.lastName,employmentType:a.employmentType}}); updatedUsers=nu; try{localStorage.setItem('retail_roster_users_v1', JSON.stringify(nu));}catch(e){} try{let DB="https://rmroster-live-default-rtdb.asia-southeast1.firebasedatabase.app";fetch(DB+"/users.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(nu)}).then(r=>console.log("✅ Users live push (V41 self/manager)",r.ok)).catch(()=>{});}catch(e){} if(n&&n.id===A){try{e(f=>f?{...f,username:c,password:y,role:a.role,firstName:a.firstName,lastName:a.lastName,employmentType:a.employmentType}:f);}catch(e){} try{localStorage.setItem(Jt,JSON.stringify({username:c,lastActivity:Date.now()}));}catch(e){}} return nu;}),
 i((d)=>{let nr=d.map((f)=>({...f,staff:f.staff.map((U)=>U.id===A?{...U,firstName:a.firstName,lastName:a.lastName,displayName:`${a.lastName} ${a.firstName}`,employmentType:a.employmentType}:U)})); updatedRosters=nr; try{localStorage.setItem('retail_roster_fortnights_v1', JSON.stringify(nr));}catch(e){} return nr;}),
 en("Saved");
 setTimeout(()=>{try{
@@ -565,11 +565,18 @@ setTimeout(()=>{try{
     box-shadow:3px 3px 0px #111!important;
   }
   
-  /* Hide original tab bar container on mobile - target the brown bar */
-  /* The tab bar is the div containing Full Roster, My Schedule etc buttons */
-  /* We'll hide it via JS, but also CSS fallback: hide second dark bar after header */
-  body > div > div:nth-child(2){
-    /* This is the tab bar wrapper - hide on mobile, show hamburger instead */
+  /* Hide original tab bar container on mobile - V41 FIX: hide immediately via CSS so pills don't flash before JS */
+  div[class*="bg-[#FFE066]"][class*="border-b-"],
+  div[class*="bg-[#FFE066]"].border-b-\[3px\],
+  .tab-bar-container,
+  .tab-bar-container.mobile-hidden{
+    display:none!important;
+  }
+  /* Extra safety: hide the brown sticky bar that holds the pills */
+  @media (max-width:768px){
+    div.w-full.max-w-\[100vw\].border-b-\[3px\]{
+      display:none!important;
+    }
   }
   
   /* Make fortnight selector and device today more compact on mobile */
@@ -701,8 +708,14 @@ setTimeout(()=>{try{
     // Only run on mobile
     if(window.innerWidth > 768) return;
     
+    // V41 FIX: hide original tabs immediately so pills don't show before menu opens
+    try{ hideOriginalTabs(); }catch(e){}
+    
     // Check if already initialized
-    if(document.getElementById('mobile-hamburger-btn')) return;
+    if(document.getElementById('mobile-hamburger-btn')){
+      try{ hideOriginalTabs(); }catch(e){}
+      return;
+    }
     
     // Create hamburger button
     var hamburgerBtn = document.createElement('button');
@@ -887,7 +900,10 @@ setTimeout(()=>{try{
       }
     }
     
-    // Initial hide
+    // Initial hide - V41 FIX: immediate + fast retries so pills never show
+    try{ hideOriginalTabs(); }catch(e){}
+    setTimeout(hideOriginalTabs, 50);
+    setTimeout(hideOriginalTabs, 150);
     setTimeout(hideOriginalTabs, 500);
     setTimeout(hideOriginalTabs, 1500);
     setTimeout(hideOriginalTabs, 3000);
@@ -931,7 +947,7 @@ setTimeout(()=>{try{
 
 
 <script>
-// V40 - FIXED ACCOUNTS SYNC - pushes instantly on save + polls every 5s
+// V40 - FIXED ACCOUNTS SYNC - pushes instantly on save + polls every 5s - V41 FIX: don't overwrite pending local edits + session rename handling
 (function(){
   var DB = "https://rmroster-live-default-rtdb.asia-southeast1.firebasedatabase.app";
   var last = localStorage.getItem('retail_roster_users_v1')||'';
@@ -962,6 +978,9 @@ setTimeout(()=>{try{
       var editing=false;
       try{ if(document.querySelector('.fixed.inset-0.bg-black\/50')) editing=true; }catch(e){}
       if(editing) return;
+      // V41 FIX: don't overwrite if we have pending local changes (cur !== last) - prevents losing self-edit before push
+      var curCheck = localStorage.getItem('retail_roster_users_v1')||'';
+      if(curCheck && curCheck!==last) return;
       fetch(DB+"/users.json").then(function(r){return r.ok?r.json():null;}).then(function(live){
         if(!live || !Array.isArray(live) || live.length===0) return;
         var localStr = localStorage.getItem('retail_roster_users_v1')||'[]';
@@ -977,6 +996,27 @@ setTimeout(()=>{try{
           }
         }
         if(changed){
+          // V41: if session user was renamed on another device, update session so they stay logged in
+          try{
+            var sessStr = localStorage.getItem('retail_roster_session_v1');
+            if(sessStr){
+              var sess = JSON.parse(sessStr);
+              var sessLower = (sess.username||'').toLowerCase();
+              for(var k=0;k<live.length;k++){
+                if(live[k].username && live[k].username.toLowerCase()===sessLower) break;
+                // Check if this live entry is a rename of local entry that matches session
+                for(var j2=0;j2<local.length;j2++){
+                  if(local[j2].id===live[k].id && (local[j2].username||'').toLowerCase()===sessLower && (live[k].username||'').toLowerCase()!==sessLower){
+                    sess.username = live[k].username;
+                    sess.lastActivity = Date.now();
+                    localStorage.setItem('retail_roster_session_v1', JSON.stringify(sess));
+                    console.log("🔄 Session updated for renamed user", sess.username);
+                    break;
+                  }
+                }
+              }
+            }
+          }catch(e){}
           localStorage.setItem('retail_roster_users_v1', JSON.stringify(live));
           last = JSON.stringify(live);
           console.log("🔄 Accounts updated from other device", live);
