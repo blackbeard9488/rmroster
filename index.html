@@ -3,57 +3,40 @@
 <head>
 
 <script>
-// V42 PERMANENT LOGIN FIX - Restore from Firebase BEFORE React loads
+// V43 PERMANENT LOGIN FIX - Restore from Firebase BEFORE React
 (function(){
   const USERS_KEY = 'retail_roster_users_v1';
   const HIDDEN_KEY = 'retail_roster_hidden_v1';
   const DB = "https://rmroster-live-default-rtdb.asia-southeast1.firebasedatabase.app";
-  
-  // Immediately try to restore users from Firebase to localStorage so Kr defaults don't overwrite
   try {
-    // If localStorage empty, we need Firebase data fast
-    const existing = localStorage.getItem(USERS_KEY);
-    if(!existing || existing === '[]'){
-      console.log("No local users, fetching from Firebase...");
-    }
-    // Use synchronous fetch via async but set up early
     fetch(DB + "/users.json", {cache: "no-store"}).then(r=>r.ok?r.json():null).then(live=>{
       if(live && Array.isArray(live) && live.length > 0){
         const localStr = localStorage.getItem(USERS_KEY) || '[]';
         let shouldRestore = false;
         try{
           const local = JSON.parse(localStr);
-          // If local is default Kr (only 3-4 users) and live has more, or passwords differ, restore live
           if(local.length !== live.length) shouldRestore = true;
           else {
-            // Check if any password differs - indicates live has newer edits
             for(let i=0;i<live.length;i++){
               const lu = live[i];
               const found = local.find(l=>l.id===lu.id);
               if(!found || found.password !== lu.password || found.username !== lu.username){
-                shouldRestore = true;
-                break;
+                shouldRestore = true; break;
               }
             }
           }
-          // If local is empty or is Kr defaults, restore
           if(local.length===0) shouldRestore = true;
         }catch{ shouldRestore = true; }
-        
         if(shouldRestore){
           localStorage.setItem(USERS_KEY, JSON.stringify(live));
-          console.log("✅ Restored ALL accounts from Firebase permanently", live.length);
-          // Force React to reload if it already mounted with defaults
+          console.log("✅ Restored ALL accounts from Firebase", live.length);
           setTimeout(()=>{ window.dispatchEvent(new Event('storage')); }, 500);
         }
       }
-    }).catch(e=>console.warn("Firebase restore failed", e));
-    
-    // Also restore hidden
+    }).catch(()=>{});
     fetch(DB + "/hidden.json", {cache: "no-store"}).then(r=>r.ok?r.json():null).then(live=>{
       if(live && Array.isArray(live) && live.length > 0){
         localStorage.setItem(HIDDEN_KEY, JSON.stringify(live));
-        console.log("✅ Restored hidden staff from Firebase", live.length);
       }
     }).catch(()=>{});
   } catch(e){}
@@ -646,239 +629,6 @@ setTimeout(()=>{try{
 }
 </style>
 
-<script id="mobile-hamburger-script">
-// Mobile hamburger menu - ONLY for mobile, desktop unchanged
-(function(){
-  function initMobileMenu(){
-    // Only run on mobile
-    if(window.innerWidth > 768) return;
-    
-    // Check if already initialized
-    if(document.getElementById('mobile-hamburger-btn')) return;
-    
-    // Create hamburger button
-    var hamburgerBtn = document.createElement('button');
-    hamburgerBtn.id = 'mobile-hamburger-btn';
-    hamburgerBtn.innerHTML = '☰';
-    hamburgerBtn.setAttribute('aria-label', 'Open menu');
-    document.body.appendChild(hamburgerBtn);
-    
-    // Create overlay
-    var overlay = document.createElement('div');
-    overlay.id = 'mobile-menu-overlay';
-    document.body.appendChild(overlay);
-    
-    // Create drawer
-    var drawer = document.createElement('div');
-    drawer.id = 'mobile-menu-drawer';
-    drawer.innerHTML = '<div class="menu-header"><span>Menu</span><button id="mobile-menu-close" style="background:#111;color:white;border:2px solid #111;border-radius:8px;width:32px;height:32px;font-size:16px;font-weight:800;cursor:pointer;">✕</button></div><div id="mobile-menu-tabs" style="display:flex;flex-direction:column;gap:10px;"></div>';
-    document.body.appendChild(drawer);
-    
-    // Function to get current tabs from page
-    function getTabs(){
-      var tabs = [];
-      // Find all tab buttons in the page - look for buttons with specific text
-      var allButtons = document.querySelectorAll('button');
-      var tabNames = ['Full Roster', 'My Schedule', 'Today\'s Buddies', 'Tomorrow\'s Buddies', 'Requests', 'Custom Rosters', 'Hidden Staff', 'Archive', 'Accounts'];
-      var foundTabs = [];
-      
-      for(var i=0;i<allButtons.length;i++){
-        var btn = allButtons[i];
-        var text = (btn.textContent||'').trim();
-        // Check if this button is a tab (in the tab bar area)
-        for(var j=0;j<tabNames.length;j++){
-          if(text.indexOf(tabNames[j])>-1 || text===tabNames[j]){
-            // Check if it's in the tab bar (brown background area)
-            var parent = btn.parentElement;
-            var isTabBar = false;
-            while(parent && parent!==document.body){
-              if(parent.className && parent.className.indexOf('bg-')>-1){
-                isTabBar = true;
-                break;
-              }
-              // Check if parent has many tab buttons
-              if(parent.querySelectorAll('button').length>=3 && parent.querySelectorAll('button').length<=10){
-                // Likely tab bar
-                if(parent.textContent.indexOf('Full Roster')>-1){
-                  isTabBar = true;
-                  break;
-                }
-              }
-              parent = parent.parentElement;
-            }
-            if(isTabBar || text==='Full Roster' || text==='My Schedule' || text.indexOf('Buddies')>-1 || text.indexOf('Accounts')>-1 || text.indexOf('Custom')>-1 || text.indexOf('Hidden')>-1 || text.indexOf('Archive')>-1 || text.indexOf('Requests')>-1){
-              // Avoid duplicates
-              var exists = false;
-              for(var k=0;k<foundTabs.length;k++){
-                if(foundTabs[k].text===text) exists = true;
-              }
-              if(!exists && text.length>0 && text.length<30){
-                foundTabs.push({text: text, element: btn, isActive: btn.className.indexOf('bg-[#111]')>-1 || btn.style.backgroundColor==='rgb(17, 17, 17)' || btn.getAttribute('data-active')==='true'});
-              }
-            }
-          }
-        }
-      }
-      return foundTabs;
-    }
-    
-    function renderMenuTabs(){
-      var container = document.getElementById('mobile-menu-tabs');
-      if(!container) return;
-      var tabs = getTabs();
-      // If no tabs found via button scan, try to find tab bar container directly
-      if(tabs.length===0){
-        // Look for the brown tab bar
-        var possibleBars = document.querySelectorAll('div');
-        for(var i=0;i<possibleBars.length;i++){
-          var div = possibleBars[i];
-          if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1){
-            var btns = div.querySelectorAll('button');
-            if(btns.length>=2){
-              tabs = [];
-              for(var j=0;j<btns.length;j++){
-                var t = (btns[j].textContent||'').trim();
-                if(t) tabs.push({text: t, element: btns[j]});
-              }
-              break;
-            }
-          }
-        }
-      }
-      
-      var html = '';
-      // Icons for tabs
-      var icons = {
-        'Full Roster': '📋',
-        'My Schedule': '📅',
-        'Today': '👥',
-        'Tomorrow': '👥',
-        'Requests': '📩',
-        'Custom Rosters': '⭐',
-        'Hidden Staff': '🙈',
-        'Archive': '📦',
-        'Accounts': '👤'
-      };
-      
-      for(var i=0;i<tabs.length;i++){
-        var tab = tabs[i];
-        var icon = '•';
-        for(var key in icons){
-          if(tab.text.indexOf(key)>-1) icon = icons[key];
-        }
-        // Check if active - look for pink border or dark background
-        var isActive = tab.element && (tab.element.className.indexOf('bg-[#111]')>-1 || tab.element.className.indexOf('bg-black')>-1 || tab.element.style.backgroundColor==='rgb(17, 17, 17)' || tab.element.parentElement && tab.element.parentElement.querySelector && tab.element.textContent.indexOf('My Schedule')>-1 && document.querySelector('button[class*="My Schedule"]'));
-        // Better active detection: check if button has pink shadow or is selected
-        if(tab.element){
-          var style = window.getComputedStyle(tab.element);
-          if(style.boxShadow && style.boxShadow.indexOf('rgb(236, 72, 153)')>-1) isActive = true; // pink shadow
-          if(tab.element.className.indexOf('My Schedule')>-1 && tab.text.indexOf('My Schedule')>-1){
-            // Check if this is the active tab by looking at page content
-            var nextUp = document.querySelector('[class*="NEXT UP"]');
-            if(nextUp) isActive = true;
-          }
-        }
-        html += '<button class="menu-tab' + (isActive ? ' active' : '') + '" data-tab-index="' + i + '" data-tab-text="' + tab.text.replace(/"/g, '') + '"><span>' + icon + '</span><span>' + tab.text + '</span></button>';
-      }
-      container.innerHTML = html;
-      
-      // Add click handlers
-      var menuTabs = container.querySelectorAll('.menu-tab');
-      for(var i=0;i<menuTabs.length;i++){
-        menuTabs[i].addEventListener('click', function(){
-          var tabText = this.getAttribute('data-tab-text');
-          var idx = parseInt(this.getAttribute('data-tab-index'));
-          var originalTabs = getTabs();
-          if(originalTabs[idx] && originalTabs[idx].element){
-            originalTabs[idx].element.click();
-          } else {
-            // Fallback: find button by text and click
-            var allBtns = document.querySelectorAll('button');
-            for(var j=0;j<allBtns.length;j++){
-              if((allBtns[j].textContent||'').trim()===tabText){
-                allBtns[j].click();
-                break;
-              }
-            }
-          }
-          closeMenu();
-        });
-      }
-    }
-    
-    function openMenu(){
-      renderMenuTabs();
-      document.getElementById('mobile-menu-drawer').classList.add('active');
-      document.getElementById('mobile-menu-overlay').classList.add('active');
-      document.body.style.overflow = 'hidden';
-    }
-    
-    function closeMenu(){
-      document.getElementById('mobile-menu-drawer').classList.remove('active');
-      document.getElementById('mobile-menu-overlay').classList.remove('active');
-      document.body.style.overflow = '';
-    }
-    
-    hamburgerBtn.addEventListener('click', openMenu);
-    overlay.addEventListener('click', closeMenu);
-    document.getElementById('mobile-menu-close').addEventListener('click', closeMenu);
-    
-    // Hide original tab bar on mobile - find the container with tabs
-    function hideOriginalTabs(){
-      if(window.innerWidth > 768) return;
-      var allDivs = document.querySelectorAll('div');
-      for(var i=0;i<allDivs.length;i++){
-        var div = allDivs[i];
-        if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1 && div.querySelectorAll('button').length>=3){
-          // Check if this div contains only tab buttons (not the whole page)
-          if(div.textContent.length < 500 && div.querySelectorAll('button').length <= 10){
-            div.style.display = 'none';
-            div.classList.add('tab-bar-container', 'mobile-hidden');
-          }
-        }
-      }
-    }
-    
-    // Initial hide
-    setTimeout(hideOriginalTabs, 500);
-    setTimeout(hideOriginalTabs, 1500);
-    setTimeout(hideOriginalTabs, 3000);
-    
-    // Re-hide on navigation
-    var observer = new MutationObserver(function(){
-      if(window.innerWidth <= 768){
-        hideOriginalTabs();
-      }
-    });
-    observer.observe(document.body, {childList: true, subtree: true});
-  }
-  
-  // Init on load
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded', initMobileMenu);
-  } else {
-    initMobileMenu();
-  }
-  
-  // Re-init on resize
-  window.addEventListener('resize', function(){
-    if(window.innerWidth <= 768){
-      initMobileMenu();
-    } else {
-      // Desktop: remove mobile menu
-      var btn = document.getElementById('mobile-hamburger-btn');
-      var overlay = document.getElementById('mobile-menu-overlay');
-      var drawer = document.getElementById('mobile-menu-drawer');
-      if(btn) btn.style.display = 'none';
-      if(overlay) overlay.classList.remove('active');
-      if(drawer) drawer.classList.remove('active');
-      document.body.style.overflow = '';
-    }
-  });
-})();
-</script>
-
-
 <!-- removed old V39 sync -->
 
 
@@ -941,8 +691,59 @@ setTimeout(()=>{try{
 </script>
 
 
+<style>
+/* V43 HEADER FIX - Hamburger permanently on left of title, title scaled to fit row */
+#mobile-hamburger-btn {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  left: auto !important;
+  bottom: auto !important;
+  display: flex !important;
+  background: #111 !important;
+  color: white !important;
+  border: 2.5px solid #111 !important;
+  border-radius: 12px !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  box-shadow: none !important;
+}
+header {
+  gap: 8px !important;
+}
+/* Scale Repco Roster title to match other header contents (40px height) */
+header div.bg-\[\#111\].text-white {
+  min-height: 44px !important;
+  height: 44px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 16px !important;
+  font-size: 16px !important;
+  border-radius: 9999px !important;
+  line-height: 1 !important;
+}
+/* Ensure header left group doesn't wrap weirdly */
+header > div:first-child {
+  gap: 10px !important;
+  flex-wrap: nowrap !important;
+}
+/* Hide any leaked export code text at bottom */
+.leaked-code-remover {
+  display: none !important;
+}
+</style>
+
 <script>
-// V42 CLEAN EXPORTS - No leak, safe escaping
+// V43 CLEAN EXPORTS - No leak
 window.exportFullRosterToPDF = function(fortnight){
   try{
     if(!fortnight){ alert('No fortnight selected'); return; }
@@ -989,268 +790,7 @@ window.exportFullRosterToPDF = function(fortnight){
     }
     htmlContent += renderSection('FULL TIME', fullStaff, fortnight.dates, fortnight.dateRange);
     htmlContent += renderSection('CASUAL', casualStaff, fortnight.dates, fortnight.dateRange);
-    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;border:2px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Print / Save as PDF</button></div>
-<script>
-// V42 ENHANCED ACCOUNTS - Show hidden same as others + PERMANENT SAVE
-(function(){
-  const USERS_KEY = 'retail_roster_users_v1';
-  const HIDDEN_KEY = 'retail_roster_hidden_v1';
-  const DB = "https://rmroster-live-default-rtdb.asia-southeast1.firebasedatabase.app";
-  
-  function getUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'[]'); }catch{ return []; } }
-  function getHidden(){ try{ return JSON.parse(localStorage.getItem(HIDDEN_KEY)||'[]'); }catch{ return []; } }
-  
-  function saveAllPermanent(users, hidden, showToast){
-    try{
-      localStorage.setItem(USERS_KEY, JSON.stringify(users));
-      if(hidden) localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
-      
-      // Permanent Firebase save - ALL accounts
-      fetch(DB+"/users.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(users)})
-        .then(r=>{
-          console.log("✅ PERMANENT SAVE - ALL users to Firebase", r.ok, users.length);
-          if(showToast) console.log("Saved permanently");
-        }).catch(e=>console.warn("Firebase users save failed", e));
-      
-      if(hidden){
-        fetch(DB+"/hidden.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(hidden)})
-          .then(r=>console.log("✅ Hidden staff saved", r.ok))
-          .catch(()=>{});
-      }
-      
-      // Also trigger storage event for React
-      try{ window.dispatchEvent(new Event('storage')); }catch{}
-    }catch(e){ console.error("Save failed", e); }
-  }
-
-  function renderEnhancedAccounts(){
-    try{
-      const header = Array.from(document.querySelectorAll('h2')).find(h=>h.textContent.includes('Account Management'));
-      if(!header) return;
-      const container = header.parentElement;
-      if(!container) return;
-      if(container.querySelector('#enhanced-accounts-marker')) return; // already rendered
-      
-      let listDiv = container.querySelector('.flex.flex-col.gap-3');
-      if(!listDiv) return;
-
-      const users = getUsers();
-      const hidden = getHidden();
-      
-      let merged = [...users];
-      for(let h of hidden){
-        if(!merged.some(u=>u.id===h.id)){
-          merged.push({
-            id: h.id,
-            username: (h.firstName||'').toLowerCase(),
-            password: (h.firstName||'').toLowerCase(),
-            firstName: h.firstName,
-            lastName: h.lastName,
-            role: 'employee',
-            employmentType: h.employmentType||'CASUAL',
-            isHiddenAcct: true,
-            isNewHiddenAccount: true
-          });
-        }
-      }
-      for(let u of merged){ u._isHidden = hidden.some(h=>h.id===u.id); }
-      merged.sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
-      
-      let html = '<div id="enhanced-accounts-marker" style="background:#111;color:#FFE066;border:2.5px solid #111;border-radius:12px;padding:10px 14px;margin:10px 0;font-size:12px;font-weight:800;">✅ V42 FIXED: Showing ALL '+merged.length+' accounts including '+hidden.length+' hidden staff - Changes save PERMANENTLY to Firebase</div>';
-      html += '<div class="flex flex-col gap-3">';
-      
-      for(let acc of merged){
-        const isHidden = acc._isHidden;
-        const badge = isHidden ? '<span style="background:#FFE066;color:#111;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:6px;">HIDDEN STAFF</span>' : '';
-        const newBadge = acc.isNewHiddenAccount ? '<span style="background:#FF4B4B;color:white;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:4px;">NEW - SET LOGIN</span>' : '';
-        
-        html += `
-          <div class="bg-white rounded-[16px] border-[2.5px] border-[#111] p-3 tile-shadow text-[#111] max-w-full overflow-hidden" data-acc-id="${acc.id}">
-            <div class="flex flex-wrap items-end gap-[6px] max-w-full">
-              <div class="min-w-[140px] max-w-full">
-                <label class="text-[10px] font-[800] uppercase text-[#111]/60">Display ${badge}${newBadge}</label>
-                <div class="font-[800] text-[13px] text-[#111] break-words">${acc.lastName||''} ${acc.firstName||''} • ${acc.id}</div>
-                <div class="flex gap-1 mt-1 flex-wrap">
-                  <span class="bg-[#111] text-white rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.role||'employee'}</span>
-                  <span class="bg-[#A8D8FF] text-[#111] rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.employmentType||'CASUAL'}</span>
-                </div>
-              </div>
-              <div class="flex-1 min-w-[120px]">
-                <label class="text-[10px] font-[800] uppercase">First Name</label>
-                <input data-field="firstName" data-id="${acc.id}" value="${(acc.firstName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full">
-              </div>
-              <div class="flex-1 min-w-[120px]">
-                <label class="text-[10px] font-[800] uppercase">Last Name</label>
-                <input data-field="lastName" data-id="${acc.id}" value="${(acc.lastName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full">
-              </div>
-              <div class="flex-1 min-w-[140px]">
-                <label class="text-[10px] font-[800] uppercase">Username</label>
-                <input data-field="username" data-id="${acc.id}" value="${(acc.username||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full">
-              </div>
-              <div class="flex-1 min-w-[120px]">
-                <label class="text-[10px] font-[800] uppercase">Password</label>
-                <div style="display:flex;gap:4px;">
-                  <input data-field="password" data-id="${acc.id}" type="password" value="${(acc.password||'').replace(/"/g,'&quot;')}" class="enhanced-input flex-1 border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]">
-                  <button data-toggle="${acc.id}" style="border:2px solid #111;border-radius:8px;padding:2px 6px;font-size:12px;">👁️</button>
-                </div>
-              </div>
-              <div class="min-w-[110px]">
-                <label class="text-[10px] font-[800] uppercase">Role</label>
-                <select data-field="role" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]">
-                  <option value="employee" ${acc.role==='employee'?'selected':''}>employee</option>
-                  <option value="manager" ${acc.role==='manager'?'selected':''}>manager</option>
-                  <option value="admin" ${acc.role==='admin'?'selected':''}>admin</option>
-                  <option value="master" ${acc.role==='master'?'selected':''}>master</option>
-                </select>
-              </div>
-              <div class="min-w-[90px]">
-                <label class="text-[10px] font-[800] uppercase">Type</label>
-                <select data-field="employmentType" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]">
-                  <option value="FULL" ${acc.employmentType==='FULL'?'selected':''}>FULL</option>
-                  <option value="CASUAL" ${acc.employmentType==='CASUAL'?'selected':''}>CASUAL</option>
-                </select>
-              </div>
-              <button data-save="${acc.id}" class="bg-[#111] text-white border-[2px] border-[#111] rounded-full px-5 py-1.5 min-h-[36px] text-[12px] font-[800] hover:bg-black shrink-0">Save Permanently</button>
-            </div>
-          </div>
-        `;
-      }
-      html += '</div>';
-      
-      const existingEnhanced = container.querySelector('#enhanced-accounts-container');
-      if(existingEnhanced) existingEnhanced.remove();
-      const wrapper = document.createElement('div');
-      wrapper.id = 'enhanced-accounts-container';
-      wrapper.innerHTML = html;
-      const desc = container.children[1];
-      if(desc) desc.insertAdjacentElement('afterend', wrapper);
-      else container.appendChild(wrapper);
-      listDiv.style.display = 'none';
-      
-      // Live updates - save permanently on every change
-      container.querySelectorAll('.enhanced-input').forEach(inp=>{
-        inp.addEventListener('change', function(){ // use change not input to reduce Firebase spam, but also input for live
-          const id = this.getAttribute('data-id');
-          const field = this.getAttribute('data-field');
-          const val = this.value;
-          
-          let users = getUsers();
-          let hidden = getHidden();
-          
-          let uIdx = users.findIndex(u=>u.id===id);
-          if(uIdx>=0){
-            users[uIdx][field] = val;
-          } else {
-            let h = hidden.find(h=>h.id===id);
-            if(h){
-              users.push({
-                id: id,
-                username: field==='username'?val:(h.firstName||'').toLowerCase(),
-                password: field==='password'?val:(h.firstName||'').toLowerCase(),
-                firstName: field==='firstName'?val:h.firstName,
-                lastName: field==='lastName'?val:h.lastName,
-                role: field==='role'?val:'employee',
-                employmentType: field==='employmentType'?val:h.employmentType||'CASUAL'
-              });
-            }
-          }
-          
-          let hIdx = hidden.findIndex(h=>h.id===id);
-          if(hIdx>=0){
-            if(field==='firstName') hidden[hIdx].firstName = val;
-            if(field==='lastName') hidden[hIdx].lastName = val;
-            if(field==='employmentType') hidden[hIdx].employmentType = val;
-          }
-          
-          saveAllPermanent(users, hidden, false);
-        });
-      });
-      
-      container.querySelectorAll('[data-toggle]').forEach(btn=>{
-        btn.addEventListener('click', function(e){
-          e.preventDefault();
-          const id = this.getAttribute('data-toggle');
-          const input = container.querySelector(`input[data-field="password"][data-id="${id}"]`);
-          if(input) input.type = input.type==='password'?'text':'password';
-        });
-      });
-      
-      container.querySelectorAll('[data-save]').forEach(btn=>{
-        btn.addEventListener('click', function(){
-          const id = this.getAttribute('data-save');
-          let users = getUsers();
-          let hidden = getHidden();
-          
-          const firstName = container.querySelector(`input[data-field="firstName"][data-id="${id}"]`)?.value||'';
-          const lastName = container.querySelector(`input[data-field="lastName"][data-id="${id}"]`)?.value||'';
-          const username = container.querySelector(`input[data-field="username"][data-id="${id}"]`)?.value||'';
-          const password = container.querySelector(`input[data-field="password"][data-id="${id}"]`)?.value||'';
-          const role = container.querySelector(`select[data-field="role"][data-id="${id}"]`)?.value||'employee';
-          const empType = container.querySelector(`select[data-field="employmentType"][data-id="${id}"]`)?.value||'CASUAL';
-          
-          if(!username || !password){
-            alert('Username & password required');
-            return;
-          }
-          
-          let uIdx = users.findIndex(u=>u.id===id);
-          if(uIdx>=0){
-            users[uIdx] = {...users[uIdx], firstName, lastName, username, password, role, employmentType: empType};
-          } else {
-            users.push({id, firstName, lastName, username, password, role, employmentType: empType});
-          }
-          
-          let hIdx = hidden.findIndex(h=>h.id===id);
-          if(hIdx>=0){
-            hidden[hIdx].firstName = firstName;
-            hidden[hIdx].lastName = lastName;
-            hidden[hIdx].employmentType = empType;
-          }
-          
-          saveAllPermanent(users, hidden, true);
-          this.textContent = 'Saved Permanently ✅';
-          this.style.background = '#00C851';
-          setTimeout(()=>{ this.textContent='Save Permanently'; this.style.background='#111'; }, 2000);
-        });
-      });
-      
-      // Final leak cleanup - remove any visible export code at bottom
-      setTimeout(()=>{
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-        let node;
-        while(node = walker.nextNode()){
-          const text = (node.nodeValue||'');
-          if((text.includes('let blob = new Blob') || text.includes('URL.createObjectURL')) && text.length > 100){
-            if(node.parentElement && !['SCRIPT','STYLE'].includes(node.parentElement.tagName)){
-              if(node.parentElement.id !== 'root' || text.includes('htmlContent')){
-                node.nodeValue = '';
-              }
-            }
-          }
-        }
-      }, 500);
-      
-    }catch(e){ console.error("Enhanced accounts failed", e); }
-  }
-  
-  let observer = new MutationObserver(()=>{ 
-    if(document.body.textContent.includes('Account Management')){
-      setTimeout(renderEnhancedAccounts, 300);
-    }
-  });
-  observer.observe(document.body, {childList:true, subtree:true});
-  
-  setInterval(()=>{
-    if(document.body.innerHTML.includes('Account Management') && !document.getElementById('enhanced-accounts-marker')){
-      renderEnhancedAccounts();
-    }
-  }, 1500);
-  
-  console.log("✅ V42 Enhanced Accounts - Permanent Save Loaded");
-})();
-</script>
-
-</body></html>';
+    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;border:2px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Print / Save as PDF</button></div></body></html>';
     let blob = new Blob([htmlContent], {type:'text/html'});
     let url = URL.createObjectURL(blob);
     let win = window.open(url, '_blank');
@@ -1304,12 +844,264 @@ window.exportFullRosterToExcel = function(fortnight){
     setTimeout(()=>URL.revokeObjectURL(url), 1000);
   }catch(e){ console.error('Excel export failed', e); alert('Excel export failed: ' + e.message); }
 };
-console.log('V42 Exports loaded - clean, no leak');
+console.log('V43 Clean Exports loaded');
 </script>
 
+<script id="mobile-hamburger-script">
+// V43 FIXED MENU - Permanently on LEFT side of Repco Roster title, scaled to fit row
+(function(){
+  function initLeftMenu(){
+    if(document.getElementById('mobile-hamburger-btn')) return;
+    
+    // Find header
+    var header = document.querySelector('header');
+    if(!header){
+      setTimeout(initLeftMenu, 300);
+      return;
+    }
+    // Find left container that holds title
+    var leftDiv = header.querySelector('div.flex.items-center.gap-3');
+    if(!leftDiv){
+      // Fallback - find any div containing Repco Roster text
+      var allDivs = header.querySelectorAll('div');
+      for(var i=0;i<allDivs.length;i++){
+        if((allDivs[i].textContent||'').indexOf('Repco Roster')>-1){
+          leftDiv = allDivs[i].parentElement;
+          break;
+        }
+      }
+      if(!leftDiv){
+        setTimeout(initLeftMenu, 300);
+        return;
+      }
+    }
+    
+    // Create hamburger button - LEFT side of title, scaled to row
+    var btn = document.createElement('button');
+    btn.id = 'mobile-hamburger-btn';
+    btn.innerHTML = '☰';
+    btn.setAttribute('aria-label','Open menu');
+    // Style to match other header contents (44px height, same as bell)
+    btn.style.cssText = 'background:#111;color:white;border:2.5px solid #111;border-radius:12px;width:44px;height:44px;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;cursor:pointer;flex-shrink:0;';
+    
+    // Insert as FIRST child of leftDiv - permanently left of title
+    leftDiv.insertBefore(btn, leftDiv.firstChild);
+    
+    // Create overlay
+    var overlay = document.createElement('div');
+    overlay.id = 'mobile-menu-overlay';
+    document.body.appendChild(overlay);
+    
+    // Create drawer
+    var drawer = document.createElement('div');
+    drawer.id = 'mobile-menu-drawer';
+    drawer.innerHTML = '<div class="menu-header"><span>Menu</span><button id="mobile-menu-close" style="background:#111;color:white;border:2px solid #111;border-radius:8px;width:32px;height:32px;font-size:16px;font-weight:800;cursor:pointer;">✕</button></div><div id="mobile-menu-tabs" style="display:flex;flex-direction:column;gap:10px;"></div>';
+    document.body.appendChild(drawer);
+    
+    function getTabs(){
+      var tabs = [];
+      var allButtons = document.querySelectorAll('button');
+      var tabNames = ['Full Roster', 'My Schedule', "Today's Buddies", "Tomorrow's Buddies", 'Requests', 'Custom Rosters', 'Hidden Staff', 'Archive', 'Accounts'];
+      var foundTabs = [];
+      for(var i=0;i<allButtons.length;i++){
+        var btn = allButtons[i];
+        var text = (btn.textContent||'').trim();
+        for(var j=0;j<tabNames.length;j++){
+          if(text.indexOf(tabNames[j])>-1 || text===tabNames[j]){
+            var parent = btn.parentElement;
+            var isTabBar = false;
+            while(parent && parent!==document.body){
+              if(parent.className && parent.className.indexOf('bg-')>-1){ isTabBar = true; break; }
+              if(parent.querySelectorAll('button').length>=3 && parent.querySelectorAll('button').length<=10){
+                if(parent.textContent.indexOf('Full Roster')>-1){ isTabBar = true; break; }
+              }
+              parent = parent.parentElement;
+            }
+            if(isTabBar || text==='Full Roster' || text==='My Schedule' || text.indexOf('Buddies')>-1 || text.indexOf('Accounts')>-1 || text.indexOf('Custom')>-1 || text.indexOf('Hidden')>-1 || text.indexOf('Archive')>-1 || text.indexOf('Requests')>-1){
+              var exists = false;
+              for(var k=0;k<foundTabs.length;k++){ if(foundTabs[k].text===text) exists = true; }
+              if(!exists && text.length>0 && text.length<30){
+                foundTabs.push({text: text, element: btn});
+              }
+            }
+          }
+        }
+      }
+      return foundTabs;
+    }
+    
+    function renderMenuTabs(){
+      var container = document.getElementById('mobile-menu-tabs');
+      if(!container) return;
+      var tabs = getTabs();
+      if(tabs.length===0){
+        var possibleBars = document.querySelectorAll('div');
+        for(var i=0;i<possibleBars.length;i++){
+          var div = possibleBars[i];
+          if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1){
+            var btns = div.querySelectorAll('button');
+            if(btns.length>=2){
+              tabs = [];
+              for(var j=0;j<btns.length;j++){
+                var t = (btns[j].textContent||'').trim();
+                if(t) tabs.push({text: t, element: btns[j]});
+              }
+              break;
+            }
+          }
+        }
+      }
+      var html = '';
+      var icons = {'Full Roster':'📋','My Schedule':'📅','Today':'👥','Tomorrow':'👥','Requests':'📩','Custom Rosters':'⭐','Hidden Staff':'🙈','Archive':'📦','Accounts':'👤'};
+      for(var i=0;i<tabs.length;i++){
+        var tab = tabs[i];
+        var icon = '•';
+        for(var key in icons){ if(tab.text.indexOf(key)>-1) icon = icons[key]; }
+        var isActive = false;
+        if(tab.element){
+          var nextUp = document.querySelector('[class*="NEXT UP"]');
+          if(nextUp) isActive = true;
+        }
+        html += '<button class="menu-tab' + (isActive ? ' active' : '') + '" data-tab-index="' + i + '" data-tab-text="' + tab.text.replace(/"/g, '') + '"><span>' + icon + '</span><span>' + tab.text + '</span></button>';
+      }
+      container.innerHTML = html;
+      var menuTabs = container.querySelectorAll('.menu-tab');
+      for(var i=0;i<menuTabs.length;i++){
+        menuTabs[i].addEventListener('click', function(){
+          var tabText = this.getAttribute('data-tab-text');
+          var idx = parseInt(this.getAttribute('data-tab-index'));
+          var originalTabs = getTabs();
+          if(originalTabs[idx] && originalTabs[idx].element){
+            originalTabs[idx].element.click();
+          } else {
+            var allBtns = document.querySelectorAll('button');
+            for(var j=0;j<allBtns.length;j++){
+              if((allBtns[j].textContent||'').trim()===tabText){
+                allBtns[j].click();
+                break;
+              }
+            }
+          }
+          closeMenu();
+        });
+      }
+    }
+    
+    function openMenu(){
+      renderMenuTabs();
+      document.getElementById('mobile-menu-drawer').classList.add('active');
+      document.getElementById('mobile-menu-overlay').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    
+    function closeMenu(){
+      document.getElementById('mobile-menu-drawer').classList.remove('active');
+      document.getElementById('mobile-menu-overlay').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    
+    btn.addEventListener('click', openMenu);
+    overlay.addEventListener('click', closeMenu);
+    document.getElementById('mobile-menu-close').addEventListener('click', closeMenu);
+    
+    function hideOriginalTabs(){
+      // Keep original tab bar hidden on mobile, but NOT the header
+      if(window.innerWidth > 768) return;
+      var allDivs = document.querySelectorAll('div');
+      for(var i=0;i<allDivs.length;i++){
+        var div = allDivs[i];
+        if(div.textContent.indexOf('Full Roster')>-1 && div.textContent.indexOf('My Schedule')>-1 && div.querySelectorAll('button').length>=3){
+          if(div.textContent.length < 500 && div.querySelectorAll('button').length <= 10){
+            // Don't hide if it's inside header
+            if(div.closest('header')) continue;
+            div.style.display = 'none';
+            div.classList.add('tab-bar-container', 'mobile-hidden');
+          }
+        }
+      }
+    }
+    
+    setTimeout(hideOriginalTabs, 500);
+    setTimeout(hideOriginalTabs, 1500);
+    setTimeout(hideOriginalTabs, 3000);
+    
+    var observer = new MutationObserver(function(){
+      if(window.innerWidth <= 768){
+        hideOriginalTabs();
+      }
+    });
+    observer.observe(document.body, {childList: true, subtree: true});
+  }
+  
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', initLeftMenu);
+  } else {
+    initLeftMenu();
+  }
+  
+  window.addEventListener('resize', function(){
+    // Don't hide hamburger on desktop - it's permanent now
+    var btn = document.getElementById('mobile-hamburger-btn');
+    if(btn) btn.style.display = 'flex';
+  });
+})();
+</script>
 
 <script>
-// V42 ENHANCED ACCOUNTS - Show hidden same as others + PERMANENT SAVE
+// V43 LEAK REMOVER - Aggressively remove any visible export code at bottom
+(function(){
+  function removeLeaks(){
+    try{
+      // Remove text nodes containing export code
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let toRemove = [];
+      let node;
+      while(node = walker.nextNode()){
+        const text = (node.nodeValue||'');
+        if(text.length > 50 && (text.includes('let blob = new Blob') || text.includes('URL.createObjectURL') || text.includes('fornight.label') || text.includes('exportFullRoster'))){
+          const parent = node.parentElement;
+          if(parent && !['SCRIPT','STYLE','CODE','PRE'].includes(parent.tagName)){
+            // Check if parent is visible and not inside root app logic
+            if(parent.id !== 'root' && !parent.closest('#root')){
+              toRemove.push(node);
+            } else if(text.includes('let blob = new Blob([htmlContent]') || text.includes('let blob = new Blob([csvContent]')){
+              // Even inside root, if it's the leaked code block, remove
+              toRemove.push(node);
+            }
+          }
+        }
+      }
+      toRemove.forEach(n=>{ try{ n.nodeValue=''; if(n.parentElement) n.parentElement.style.display='none'; }catch{} });
+      
+      // Also hide any div that contains leaked code as innerText
+      const allDivs = document.querySelectorAll('div');
+      for(let div of allDivs){
+        const txt = (div.innerText||'');
+        if(txt.length > 200 && txt.includes('let blob = new Blob') && txt.includes('htmlContent')){
+          if(!div.closest('header') && div.id !== 'root'){
+            div.style.display='none';
+            div.textContent='';
+          }
+        }
+      }
+    }catch(e){}
+  }
+  
+  // Run multiple times
+  setTimeout(removeLeaks, 500);
+  setTimeout(removeLeaks, 1500);
+  setTimeout(removeLeaks, 3000);
+  setInterval(removeLeaks, 3000);
+  
+  // Also observe for new leaks
+  new MutationObserver(removeLeaks).observe(document.body, {childList:true, subtree:true});
+  
+  console.log('V43 Leak remover active');
+})();
+</script>
+
+<script>
+// V43 ENHANCED ACCOUNTS - Permanent save + hidden same as others
 (function(){
   const USERS_KEY = 'retail_roster_users_v1';
   const HIDDEN_KEY = 'retail_roster_hidden_v1';
@@ -1318,27 +1110,14 @@ console.log('V42 Exports loaded - clean, no leak');
   function getUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'[]'); }catch{ return []; } }
   function getHidden(){ try{ return JSON.parse(localStorage.getItem(HIDDEN_KEY)||'[]'); }catch{ return []; } }
   
-  function saveAllPermanent(users, hidden, showToast){
+  function saveAllPermanent(users, hidden){
     try{
       localStorage.setItem(USERS_KEY, JSON.stringify(users));
       if(hidden) localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
-      
-      // Permanent Firebase save - ALL accounts
-      fetch(DB+"/users.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(users)})
-        .then(r=>{
-          console.log("✅ PERMANENT SAVE - ALL users to Firebase", r.ok, users.length);
-          if(showToast) console.log("Saved permanently");
-        }).catch(e=>console.warn("Firebase users save failed", e));
-      
-      if(hidden){
-        fetch(DB+"/hidden.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(hidden)})
-          .then(r=>console.log("✅ Hidden staff saved", r.ok))
-          .catch(()=>{});
-      }
-      
-      // Also trigger storage event for React
+      fetch(DB+"/users.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(users)}).catch(()=>{});
+      if(hidden) fetch(DB+"/hidden.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(hidden)}).catch(()=>{});
       try{ window.dispatchEvent(new Event('storage')); }catch{}
-    }catch(e){ console.error("Save failed", e); }
+    }catch(e){}
   }
 
   function renderEnhancedAccounts(){
@@ -1347,94 +1126,26 @@ console.log('V42 Exports loaded - clean, no leak');
       if(!header) return;
       const container = header.parentElement;
       if(!container) return;
-      if(container.querySelector('#enhanced-accounts-marker')) return; // already rendered
-      
+      if(container.querySelector('#enhanced-accounts-marker')) return;
       let listDiv = container.querySelector('.flex.flex-col.gap-3');
       if(!listDiv) return;
-
       const users = getUsers();
       const hidden = getHidden();
-      
       let merged = [...users];
       for(let h of hidden){
         if(!merged.some(u=>u.id===h.id)){
-          merged.push({
-            id: h.id,
-            username: (h.firstName||'').toLowerCase(),
-            password: (h.firstName||'').toLowerCase(),
-            firstName: h.firstName,
-            lastName: h.lastName,
-            role: 'employee',
-            employmentType: h.employmentType||'CASUAL',
-            isHiddenAcct: true,
-            isNewHiddenAccount: true
-          });
+          merged.push({id:h.id,username:(h.firstName||'').toLowerCase(),password:(h.firstName||'').toLowerCase(),firstName:h.firstName,lastName:h.lastName,role:'employee',employmentType:h.employmentType||'CASUAL',isHiddenAcct:true,isNewHiddenAccount:true});
         }
       }
       for(let u of merged){ u._isHidden = hidden.some(h=>h.id===u.id); }
       merged.sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
-      
-      let html = '<div id="enhanced-accounts-marker" style="background:#111;color:#FFE066;border:2.5px solid #111;border-radius:12px;padding:10px 14px;margin:10px 0;font-size:12px;font-weight:800;">✅ V42 FIXED: Showing ALL '+merged.length+' accounts including '+hidden.length+' hidden staff - Changes save PERMANENTLY to Firebase</div>';
-      html += '<div class="flex flex-col gap-3">';
-      
+      let html = '<div id="enhanced-accounts-marker" style="background:#111;color:#FFE066;border:2.5px solid #111;border-radius:12px;padding:10px 14px;margin:10px 0;font-size:12px;font-weight:800;">✅ V43: '+merged.length+' accounts including '+hidden.length+' hidden staff - Permanent Firebase Save</div><div class="flex flex-col gap-3">';
       for(let acc of merged){
-        const isHidden = acc._isHidden;
-        const badge = isHidden ? '<span style="background:#FFE066;color:#111;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:6px;">HIDDEN STAFF</span>' : '';
-        const newBadge = acc.isNewHiddenAccount ? '<span style="background:#FF4B4B;color:white;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:4px;">NEW - SET LOGIN</span>' : '';
-        
-        html += `
-          <div class="bg-white rounded-[16px] border-[2.5px] border-[#111] p-3 tile-shadow text-[#111] max-w-full overflow-hidden" data-acc-id="${acc.id}">
-            <div class="flex flex-wrap items-end gap-[6px] max-w-full">
-              <div class="min-w-[140px] max-w-full">
-                <label class="text-[10px] font-[800] uppercase text-[#111]/60">Display ${badge}${newBadge}</label>
-                <div class="font-[800] text-[13px] text-[#111] break-words">${acc.lastName||''} ${acc.firstName||''} • ${acc.id}</div>
-                <div class="flex gap-1 mt-1 flex-wrap">
-                  <span class="bg-[#111] text-white rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.role||'employee'}</span>
-                  <span class="bg-[#A8D8FF] text-[#111] rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.employmentType||'CASUAL'}</span>
-                </div>
-              </div>
-              <div class="flex-1 min-w-[120px]">
-                <label class="text-[10px] font-[800] uppercase">First Name</label>
-                <input data-field="firstName" data-id="${acc.id}" value="${(acc.firstName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full">
-              </div>
-              <div class="flex-1 min-w-[120px]">
-                <label class="text-[10px] font-[800] uppercase">Last Name</label>
-                <input data-field="lastName" data-id="${acc.id}" value="${(acc.lastName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full">
-              </div>
-              <div class="flex-1 min-w-[140px]">
-                <label class="text-[10px] font-[800] uppercase">Username</label>
-                <input data-field="username" data-id="${acc.id}" value="${(acc.username||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full">
-              </div>
-              <div class="flex-1 min-w-[120px]">
-                <label class="text-[10px] font-[800] uppercase">Password</label>
-                <div style="display:flex;gap:4px;">
-                  <input data-field="password" data-id="${acc.id}" type="password" value="${(acc.password||'').replace(/"/g,'&quot;')}" class="enhanced-input flex-1 border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]">
-                  <button data-toggle="${acc.id}" style="border:2px solid #111;border-radius:8px;padding:2px 6px;font-size:12px;">👁️</button>
-                </div>
-              </div>
-              <div class="min-w-[110px]">
-                <label class="text-[10px] font-[800] uppercase">Role</label>
-                <select data-field="role" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]">
-                  <option value="employee" ${acc.role==='employee'?'selected':''}>employee</option>
-                  <option value="manager" ${acc.role==='manager'?'selected':''}>manager</option>
-                  <option value="admin" ${acc.role==='admin'?'selected':''}>admin</option>
-                  <option value="master" ${acc.role==='master'?'selected':''}>master</option>
-                </select>
-              </div>
-              <div class="min-w-[90px]">
-                <label class="text-[10px] font-[800] uppercase">Type</label>
-                <select data-field="employmentType" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]">
-                  <option value="FULL" ${acc.employmentType==='FULL'?'selected':''}>FULL</option>
-                  <option value="CASUAL" ${acc.employmentType==='CASUAL'?'selected':''}>CASUAL</option>
-                </select>
-              </div>
-              <button data-save="${acc.id}" class="bg-[#111] text-white border-[2px] border-[#111] rounded-full px-5 py-1.5 min-h-[36px] text-[12px] font-[800] hover:bg-black shrink-0">Save Permanently</button>
-            </div>
-          </div>
-        `;
+        const badge = acc._isHidden ? '<span style="background:#FFE066;color:#111;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:6px;">HIDDEN STAFF</span>' : '';
+        const newBadge = acc.isNewHiddenAccount ? '<span style="background:#FF4B4B;color:white;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:4px;">NEW</span>' : '';
+        html += `<div class="bg-white rounded-[16px] border-[2.5px] border-[#111] p-3 tile-shadow text-[#111] max-w-full overflow-hidden" data-acc-id="${acc.id}"><div class="flex flex-wrap items-end gap-[6px] max-w-full"><div class="min-w-[140px] max-w-full"><label class="text-[10px] font-[800] uppercase text-[#111]/60">Display ${badge}${newBadge}</label><div class="font-[800] text-[13px] text-[#111] break-words">${acc.lastName||''} ${acc.firstName||''} • ${acc.id}</div><div class="flex gap-1 mt-1 flex-wrap"><span class="bg-[#111] text-white rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.role||'employee'}</span><span class="bg-[#A8D8FF] text-[#111] rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.employmentType||'CASUAL'}</span></div></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">First Name</label><input data-field="firstName" data-id="${acc.id}" value="${(acc.firstName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Last Name</label><input data-field="lastName" data-id="${acc.id}" value="${(acc.lastName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[140px]"><label class="text-[10px] font-[800] uppercase">Username</label><input data-field="username" data-id="${acc.id}" value="${(acc.username||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Password</label><div style="display:flex;gap:4px;"><input data-field="password" data-id="${acc.id}" type="password" value="${(acc.password||'').replace(/"/g,'&quot;')}" class="enhanced-input flex-1 border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><button data-toggle="${acc.id}" style="border:2px solid #111;border-radius:8px;padding:2px 6px;font-size:12px;">👁️</button></div></div><div class="min-w-[110px]"><label class="text-[10px] font-[800] uppercase">Role</label><select data-field="role" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="employee" ${acc.role==='employee'?'selected':''}>employee</option><option value="manager" ${acc.role==='manager'?'selected':''}>manager</option><option value="admin" ${acc.role==='admin'?'selected':''}>admin</option><option value="master" ${acc.role==='master'?'selected':''}>master</option></select></div><div class="min-w-[90px]"><label class="text-[10px] font-[800] uppercase">Type</label><select data-field="employmentType" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="FULL" ${acc.employmentType==='FULL'?'selected':''}>FULL</option><option value="CASUAL" ${acc.employmentType==='CASUAL'?'selected':''}>CASUAL</option></select></div><button data-save="${acc.id}" class="bg-[#111] text-white border-[2px] border-[#111] rounded-full px-5 py-1.5 min-h-[36px] text-[12px] font-[800] hover:bg-black shrink-0">Save Permanently</button></div></div>`;
       }
       html += '</div>';
-      
       const existingEnhanced = container.querySelector('#enhanced-accounts-container');
       if(existingEnhanced) existingEnhanced.remove();
       const wrapper = document.createElement('div');
@@ -1445,42 +1156,25 @@ console.log('V42 Exports loaded - clean, no leak');
       else container.appendChild(wrapper);
       listDiv.style.display = 'none';
       
-      // Live updates - save permanently on every change
       container.querySelectorAll('.enhanced-input').forEach(inp=>{
-        inp.addEventListener('change', function(){ // use change not input to reduce Firebase spam, but also input for live
+        inp.addEventListener('change', function(){
           const id = this.getAttribute('data-id');
           const field = this.getAttribute('data-field');
           const val = this.value;
-          
           let users = getUsers();
           let hidden = getHidden();
-          
           let uIdx = users.findIndex(u=>u.id===id);
-          if(uIdx>=0){
-            users[uIdx][field] = val;
-          } else {
+          if(uIdx>=0){ users[uIdx][field] = val; } else {
             let h = hidden.find(h=>h.id===id);
-            if(h){
-              users.push({
-                id: id,
-                username: field==='username'?val:(h.firstName||'').toLowerCase(),
-                password: field==='password'?val:(h.firstName||'').toLowerCase(),
-                firstName: field==='firstName'?val:h.firstName,
-                lastName: field==='lastName'?val:h.lastName,
-                role: field==='role'?val:'employee',
-                employmentType: field==='employmentType'?val:h.employmentType||'CASUAL'
-              });
-            }
+            if(h){ users.push({id:id,username:field==='username'?val:(h.firstName||'').toLowerCase(),password:field==='password'?val:(h.firstName||'').toLowerCase(),firstName:field==='firstName'?val:h.firstName,lastName:field==='lastName'?val:h.lastName,role:field==='role'?val:'employee',employmentType:field==='employmentType'?val:h.employmentType||'CASUAL'}); }
           }
-          
           let hIdx = hidden.findIndex(h=>h.id===id);
           if(hIdx>=0){
             if(field==='firstName') hidden[hIdx].firstName = val;
             if(field==='lastName') hidden[hIdx].lastName = val;
             if(field==='employmentType') hidden[hIdx].employmentType = val;
           }
-          
-          saveAllPermanent(users, hidden, false);
+          saveAllPermanent(users, hidden);
         });
       });
       
@@ -1498,73 +1192,30 @@ console.log('V42 Exports loaded - clean, no leak');
           const id = this.getAttribute('data-save');
           let users = getUsers();
           let hidden = getHidden();
-          
           const firstName = container.querySelector(`input[data-field="firstName"][data-id="${id}"]`)?.value||'';
           const lastName = container.querySelector(`input[data-field="lastName"][data-id="${id}"]`)?.value||'';
           const username = container.querySelector(`input[data-field="username"][data-id="${id}"]`)?.value||'';
           const password = container.querySelector(`input[data-field="password"][data-id="${id}"]`)?.value||'';
           const role = container.querySelector(`select[data-field="role"][data-id="${id}"]`)?.value||'employee';
           const empType = container.querySelector(`select[data-field="employmentType"][data-id="${id}"]`)?.value||'CASUAL';
-          
-          if(!username || !password){
-            alert('Username & password required');
-            return;
-          }
-          
+          if(!username || !password){ alert('Username & password required'); return; }
           let uIdx = users.findIndex(u=>u.id===id);
-          if(uIdx>=0){
-            users[uIdx] = {...users[uIdx], firstName, lastName, username, password, role, employmentType: empType};
-          } else {
-            users.push({id, firstName, lastName, username, password, role, employmentType: empType});
-          }
-          
+          if(uIdx>=0){ users[uIdx] = {...users[uIdx], firstName, lastName, username, password, role, employmentType: empType}; }
+          else { users.push({id, firstName, lastName, username, password, role, employmentType: empType}); }
           let hIdx = hidden.findIndex(h=>h.id===id);
-          if(hIdx>=0){
-            hidden[hIdx].firstName = firstName;
-            hidden[hIdx].lastName = lastName;
-            hidden[hIdx].employmentType = empType;
-          }
-          
-          saveAllPermanent(users, hidden, true);
+          if(hIdx>=0){ hidden[hIdx].firstName = firstName; hidden[hIdx].lastName = lastName; hidden[hIdx].employmentType = empType; }
+          saveAllPermanent(users, hidden);
           this.textContent = 'Saved Permanently ✅';
           this.style.background = '#00C851';
           setTimeout(()=>{ this.textContent='Save Permanently'; this.style.background='#111'; }, 2000);
         });
       });
-      
-      // Final leak cleanup - remove any visible export code at bottom
-      setTimeout(()=>{
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-        let node;
-        while(node = walker.nextNode()){
-          const text = (node.nodeValue||'');
-          if((text.includes('let blob = new Blob') || text.includes('URL.createObjectURL')) && text.length > 100){
-            if(node.parentElement && !['SCRIPT','STYLE'].includes(node.parentElement.tagName)){
-              if(node.parentElement.id !== 'root' || text.includes('htmlContent')){
-                node.nodeValue = '';
-              }
-            }
-          }
-        }
-      }, 500);
-      
     }catch(e){ console.error("Enhanced accounts failed", e); }
   }
   
-  let observer = new MutationObserver(()=>{ 
-    if(document.body.textContent.includes('Account Management')){
-      setTimeout(renderEnhancedAccounts, 300);
-    }
-  });
+  let observer = new MutationObserver(()=>{ if(document.body.textContent.includes('Account Management')){ setTimeout(renderEnhancedAccounts, 300); } });
   observer.observe(document.body, {childList:true, subtree:true});
-  
-  setInterval(()=>{
-    if(document.body.innerHTML.includes('Account Management') && !document.getElementById('enhanced-accounts-marker')){
-      renderEnhancedAccounts();
-    }
-  }, 1500);
-  
-  console.log("✅ V42 Enhanced Accounts - Permanent Save Loaded");
+  setInterval(()=>{ if(document.body.innerHTML.includes('Account Management') && !document.getElementById('enhanced-accounts-marker')){ renderEnhancedAccounts(); } }, 1500);
 })();
 </script>
 
