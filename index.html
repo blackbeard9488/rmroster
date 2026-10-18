@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>REPCO ROSTER V101 - Original Login Clean</title>
+<title>REPCO ROSTER</title>
 <style>
 * { box-sizing: border-box; }
 body { margin:0; font-family: Arial Black, sans-serif; background: #f5f5f5; }
@@ -793,24 +793,20 @@ function showTodayWorkers(){ alert('Today workers'); }
 </script>
 <div id="toast-v106" class="toast-v106"></div>
 
+
+
+
 <script>
-let fullStaff = [
-  {lastName:'BLAIK', firstName:'Michael', type:'FULL', role:'employee', shifts:['08:00-16:00','08:00-16:00','08:00-12:00','OFF','08:00-16:30','08:00-12:00','OFF','08:00-16:00','08:00-16:00','08:00-12:00','OFF','08:00-16:30','08:00-12:00','OFF']},
-  {lastName:'CULLING', firstName:'Chris', type:'FULL', role:'employee', shifts:['08:00-16:00 AB','08:00-16:00','08:00-16:00','08:00-12:00','08:00-16:00','OFF','OFF','08:00-16:00 AB','08:00-16:00','08:00-16:00','08:00-12:00','08:00-16:00','OFF','OFF']},
-  {lastName:'DIXON', firstName:'Luke', type:'FULL', role:'employee', shifts:['10:00-17:30','10:00-17:30','10:00-17:30','10:00-17:30','08:00-16:00','OFF','OFF','10:00-17:30','10:00-17:30','10:00-17:30','10:00-17:30','08:00-16:00','OFF','OFF']},
-  {lastName:'DUFFIELD', firstName:'Daniel', type:'FULL', role:'manager', shifts:['08:00-16:30','08:00-16:30','OFF','08:00-16:30','08:00-16:30','08:00-12:00','OFF','08:00-16:30','08:00-16:30','OFF','08:00-16:30','08:00-16:30','08:00-12:00','OFF']},
-  {lastName:'DUNN', firstName:'Shane', type:'FULL', role:'admin', shifts:['08:00-16:00','08:00-16:00','08:00-16:00','OFF','08:00-16:00','08:00-12:00','OFF','08:00-16:00','08:00-16:00','08:00-16:00','OFF','08:00-16:00','08:00-12:00','OFF']},
-  {lastName:'PIPER', firstName:'Darcy', type:'FULL', role:'employee', shifts:['08:00-15:30','OFF','08:00-15:30','08:00-15:30','OFF','09:00-13:00','OFF','08:00-15:30','OFF','08:00-15:30','08:00-15:30','OFF','09:00-13:00','OFF']},
-  {lastName:'SANDER', firstName:'Jody', type:'FULL', role:'employee', shifts:['08:00-16:30','08:00-16:30','08:00-12:00','08:00-16:30','OFF','08:00-12:00','OFF','08:00-16:30','08:00-16:30','08:00-12:00','08:00-16:30','OFF','08:00-12:00','OFF']},
-  {lastName:'CLIST', firstName:'TreJann', type:'FULL', role:'employee', shifts:['08:00-12:00','OFF','08:00-12:00','08:00-12:00','OFF','10:00-14:00','OFF','08:00-12:00','OFF','08:00-12:00','08:00-12:00','OFF','10:00-14:00','OFF']}
-];
-let casualStaff = [
-  {lastName:'BATCHELOR', firstName:'Jamie', type:'CASUAL', role:'employee', shifts:['OFF','08:00-12:00','08:00-12:00','08:00-12:00','OFF','09:00-13:00','OFF','OFF','08:00-12:00','08:00-12:00','08:00-12:00','OFF','09:00-13:00','OFF']},
-  {lastName:'EVANS', firstName:'Michael', type:'CASUAL', role:'employee', shifts:['08:00-12:00','OFF','08:00-12:00','08:00-12:00','OFF','10:00-14:00','OFF','08:00-12:00','OFF','08:00-12:00','OFF','08:00-12:00','10:00-14:00','OFF']}
-];
+const BY_KEY = 'retail_roster_byFortnight_v1';
+const ORIG_KEY = 'retail_roster_originalShifts_v1';
+const SESSION_KEY = 'retail_roster_session_v1';
+
+function getForts(){ try{ return JSON.parse(localStorage.getItem(BY_KEY)||'[]'); }catch{ return []; } }
+function getOrig(){ try{ return JSON.parse(localStorage.getItem(ORIG_KEY)||'{}'); }catch{ return {}; } }
+function getCurrentFortnightId(){ try{ return localStorage.getItem('retail_roster_currentFortnightId')||''; }catch{ return ''; } }
 
 function getBrisbaneNow(){ return new Date(); }
-function parseShiftTimeV106(timeStr){
+function parseShiftTimeV107(timeStr){
   if(!timeStr || timeStr==='OFF') return null;
   if(timeStr.toUpperCase().indexOf('ABSENT')>-1) return null;
   let clean = timeStr.replace(/AB/g, '').trim();
@@ -823,10 +819,10 @@ function parseShiftTimeV106(timeStr){
   }
   return {end: toMin(parts[1])};
 }
-function isShiftWorkedV106(dateStr, timeStr, now){
+function isShiftWorkedV107(dateStr, timeStr, now){
   if(!timeStr || timeStr==='OFF') return false;
   if(timeStr.toUpperCase().indexOf('AB')>-1) return false;
-  let parsed = parseShiftTimeV106(timeStr);
+  let parsed = parseShiftTimeV107(timeStr);
   if(!parsed || parsed.end===null) return false;
   let dm = dateStr.split('/');
   if(dm.length!==2) return false;
@@ -842,11 +838,51 @@ function isShiftWorkedV106(dateStr, timeStr, now){
 }
 
 function renderRoster(){
-  let now=getBrisbaneNow();
-  let timeStr=now.toLocaleTimeString('en-AU', {hour: '2-digit', minute:'2-digit', hour12:false, timeZone: 'Australia/Brisbane'});
-  let dateStr=now.toLocaleDateString('en-AU', {day:'2-digit', month:'2-digit', timeZone: 'Australia/Brisbane'});
-  let fortEl=document.getElementById('fort-label');
-  if(fortEl) fortEl.textContent='FORTNIGHT: 07/10 TO 20/10 | DEVICE: '+dateStr+' '+timeStr+' (Brisbane +10)';
+  let forts = getForts();
+  let current = null;
+  let dates = [];
+  let staffList = [];
+  let now = getBrisbaneNow();
+  let timeStr = now.toLocaleTimeString('en-AU', {hour:'2-digit', minute:'2-digit', hour12:false, timeZone: 'Australia/Brisbane'});
+  let dateStr = now.toLocaleDateString('en-AU', {day:'2-digit', month:'2-digit', timeZone: 'Australia/Brisbane'});
+  let fortLabel = document.getElementById('fort-label');
+  
+  if(forts.length){
+    let curId = getCurrentFortnightId() || forts[0].id;
+    current = forts.find(f=>f.id===curId) || forts[0];
+    dates = current.dates || [];
+    staffList = current.staff || [];
+    if(fortLabel) fortLabel.textContent = 'FORTNIGHT: ' + (current.name || dates[0].date + ' TO ' + dates[dates.length-1].date) + ' | DEVICE: ' + dateStr + ' ' + timeStr + ' (Brisbane +10) - LIVE DATA ('+staffList.length+' staff)';
+  } else {
+    // Fallback sample if no backup
+    dates = sampleDates;
+    staffList = fullStaff.concat(casualStaff);
+    if(fortLabel) fortLabel.textContent = 'FORTNIGHT: 07/10 TO 20/10 | DEVICE: ' + dateStr + ' ' + timeStr + ' (Brisbane +10) - SAMPLE (No backup found: '+BY_KEY+')';
+  }
+  
+  // Split FULL/CASUAL from live data
+  let fullList = staffList.filter(s => (s.employmentType||'').toUpperCase().indexOf('FULL')>-1 || (s.type||'').toUpperCase().indexOf('FULL')>-1 || !s.employmentType);
+  let casualList = staffList.filter(s => (s.employmentType||'').toUpperCase().indexOf('CASUAL')>-1 || (s.type||'').toUpperCase().indexOf('CASUAL')>-1);
+  // If no split detected (all FULL), keep original full/casual sample logic
+  if(fullList.length===0) fullList = staffList;
+  if(casualList.length===0 && staffList.length>8){
+    // Keep as is
+  }
+  
+  // If we have live data, use it, else use sample full/casual
+  let useFull = fullList.length ? fullList : fullStaff;
+  let useCasual = casualList.length ? casualList : casualStaff;
+  
+  // If live data exists, override full/casual with live split
+  if(forts.length){
+    useFull = fullList;
+    useCasual = casualList;
+    // Update section titles with live counts
+    let fullSec = document.querySelector('#full-section .section-title-v106');
+    let casSec = document.querySelector('#casual-section .section-title-v106');
+    if(fullSec) fullSec.textContent = 'FULL TIME • ' + useFull.length + (forts.length ? ' (LIVE)' : '');
+    if(casSec) casSec.textContent = 'CASUAL • ' + useCasual.length + (forts.length ? ' (LIVE)' : ' (Sample: 2 shown)');
+  }
   
   let headFull=document.getElementById('roster-head-full');
   let bodyFull=document.getElementById('roster-body-full');
@@ -854,7 +890,7 @@ function renderRoster(){
   let bodyCasual=document.getElementById('roster-body-casual');
   
   let htmlHead='<tr><th>Staff</th>';
-  sampleDates.forEach(function(d){
+  dates.forEach(function(d){
     let isWeekend = d.day==='SAT' || d.day==='SUN';
     htmlHead+='<th class="'+(isWeekend?'weekend':'')+'">'+d.day+'<br>'+d.date+'</th>';
   });
@@ -866,21 +902,29 @@ function renderRoster(){
     if(!bodyEl) return;
     let html='';
     staffList.forEach(function(s){
-      html+='<tr><td>'+s.lastName+', '+s.firstName+'</td>';
-      s.shifts.forEach(function(shift, idx){
+      let lastName = s.lastName || s.lastName || '';
+      let firstName = s.firstName || s.firstName || '';
+      if(!lastName && s.name){ // fallback
+        let parts = s.name.split(' ');
+        lastName = parts[0] || '';
+        firstName = parts.slice(1).join(' ') || '';
+      }
+      html+='<tr><td>'+lastName+', '+firstName+'</td>';
+      (s.shifts||[]).forEach(function(shift, idx){
+        if(idx>=dates.length) return;
         let cls='';
         let display=shift;
-        let isWeekend = sampleDates[idx].day==='SAT' || sampleDates[idx].day==='SUN';
+        let isWeekend = dates[idx].day==='SAT' || dates[idx].day==='SUN';
         if(isWeekend) cls+=' weekend';
         if(shift==='OFF') cls+=' off';
-        else if(shift.toUpperCase().indexOf('AB')>-1) cls+=' abs';
-        if(shift!=='OFF') display=formatTime(shift);
-        let worked=isShiftWorkedV106(sampleDates[idx].date, shift, now);
+        else if(shift && shift.toString().toUpperCase().indexOf('AB')>-1) cls+=' abs';
+        if(shift!=='OFF' && shift) display=formatTime(shift);
+        let worked=isShiftWorkedV107(dates[idx].date, shift, now);
         let title=worked ? 'WORKED (device '+timeStr+')' : 'UPCOMING';
-        if(shift.toUpperCase().indexOf('AB')>-1){
+        if(shift && shift.toString().toUpperCase().indexOf('AB')>-1){
           html+='<td class="'+cls.trim()+'" title="'+title+'"><div class="cell-inner"><span>'+display.replace(' AB','').trim()+'</span><span class="ab-badge">AB</span></div></td>';
         } else {
-          html+='<td class="'+cls.trim()+'" title="'+title+'">'+display+'</td>';
+          html+='<td class="'+cls.trim()+'" title="'+title+'">'+(display||'')+'</td>';
         }
       });
       html+='</tr>';
@@ -888,8 +932,8 @@ function renderRoster(){
     bodyEl.innerHTML=html;
   }
   
-  renderSection(fullStaff, bodyFull);
-  renderSection(casualStaff, bodyCasual);
+  renderSection(useFull, bodyFull);
+  renderSection(useCasual, bodyCasual);
   
   let btn12=document.getElementById('btn-12h');
   let btn24=document.getElementById('btn-24h');
@@ -912,63 +956,20 @@ function renderRoster(){
 }
 
 function changeFortnightV106(){
-  showToastV106('Fortnight changed - loading...');
-  setTimeout(function(){ renderRoster(); showToastV106('Fortnight loaded'); }, 300);
-}
-
-function showToastV106(msg){
-  let t=document.getElementById('toast-v106');
-  if(!t) return;
-  t.textContent=msg;
-  t.classList.add('show');
-  setTimeout(function(){ t.classList.remove('show'); }, 3000);
-}
-
-function nav(page){
-  if(page==='roster'){
-    document.getElementById('custom-login-page').style.display='none';
-    document.body.style.overflow='';
-    document.getElementById('roster-page').classList.add('show'); 
-    document.getElementById('roster-page').style.display='block';
-    document.getElementById('requests-page').classList.remove('show'); 
-    document.getElementById('requests-page').style.display='none';
-    document.getElementById('options-page').classList.remove('show'); 
-    document.getElementById('options-page').style.display='none';
-  } else if(page==='requests'){
-    document.getElementById('custom-login-page').style.display='none';
-    document.body.style.overflow='auto';
-    document.getElementById('roster-page').classList.remove('show'); 
-    document.getElementById('roster-page').style.display='none';
-    document.getElementById('requests-page').classList.add('show'); 
-    document.getElementById('requests-page').style.display='block';
-    document.getElementById('options-page').classList.remove('show'); 
-    document.getElementById('options-page').style.display='none';
-    renderRequests();
-  } else if(page==='options'){
-    document.getElementById('custom-login-page').style.display='none';
-    document.body.style.overflow='auto';
-    document.getElementById('roster-page').classList.remove('show'); 
-    document.getElementById('roster-page').style.display='none';
-    document.getElementById('requests-page').classList.remove('show'); 
-    document.getElementById('requests-page').style.display='none';
-    document.getElementById('options-page').classList.add('show'); 
-    document.getElementById('options-page').style.display='block';
-  } else if(page==='logout'){
-    let uEl=document.getElementById('custom-username');
-    let pEl=document.getElementById('custom-password');
-    if(uEl) uEl.value='';
-    if(pEl) pEl.value='';
-    let err=document.getElementById('custom-error-v2');
-    if(err) err.style.display='none';
-    let btn=document.getElementById('custom-signin');
-    if(btn){ btn.textContent='SIGN IN'; btn.style.background='#C4C4C4'; btn.style.color='#0a0a0a'; }
-    try{ localStorage.removeItem('retail_roster_session_v1'); }catch(e){}
-    document.getElementById('custom-login-page').style.display='block';
-    document.body.style.overflow='hidden';
-    document.getElementById('roster-page').style.display='none';
-    document.getElementById('requests-page').style.display='none';
-    document.getElementById('options-page').style.display='none';
-    showToastV106('Logged out - username/password cleared');
+  let forts = getForts();
+  if(forts.length>1){
+    let sel = document.getElementById('fort-select-v106');
+    let selected = sel.value;
+    if(selected==='next' && forts[1]){
+      localStorage.setItem('retail_roster_currentFortnightId', forts[1].id);
+    } else {
+      localStorage.setItem('retail_roster_currentFortnightId', forts[0].id);
+    }
+    renderRoster();
+    showToastV106('Fortnight changed to live data');
+  } else {
+    showToastV106('Fortnight changed - loading...');
+    setTimeout(function(){ renderRoster(); showToastV106('Fortnight loaded'); }, 300);
   }
 }
 </script>
