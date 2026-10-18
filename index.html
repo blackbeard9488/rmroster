@@ -790,7 +790,287 @@ window.exportFullRosterToPDF = function(fortnight){
     }
     htmlContent += renderSection('FULL TIME', fullStaff, fortnight.dates, fortnight.dateRange);
     htmlContent += renderSection('CASUAL', casualStaff, fortnight.dates, fortnight.dateRange);
-    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;border:2px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Print / Save as PDF</button></div></body></html>';
+    htmlContent += '<div style="text-align:center;margin-top:20px;"><button onclick="window.print()" style="background:#111;color:white;border:2px solid #111;border-radius:9999px;padding:12px 24px;font-weight:800;font-size:14px;cursor:pointer">Print / Save as PDF</button></div>
+<script>
+// V44 SEARCHABLE ACCOUNTS - Dropdown + Search Bar for Manager/Master/Admin
+(function(){
+  const USERS_KEY = 'retail_roster_users_v1';
+  const HIDDEN_KEY = 'retail_roster_hidden_v1';
+  const DB = "https://rmroster-live-default-rtdb.asia-southeast1.firebasedatabase.app";
+  
+  function getUsers(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'[]'); }catch{ return []; } }
+  function getHidden(){ try{ return JSON.parse(localStorage.getItem(HIDDEN_KEY)||'[]'); }catch{ return []; } }
+  
+  function saveAllPermanent(users, hidden){
+    try{
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+      if(hidden) localStorage.setItem(HIDDEN_KEY, JSON.stringify(hidden));
+      fetch(DB+"/users.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(users)}).catch(()=>{});
+      if(hidden) fetch(DB+"/hidden.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(hidden)}).catch(()=>{});
+      try{ window.dispatchEvent(new Event('storage')); }catch{}
+    }catch(e){}
+  }
+
+  let currentFilter = '';
+  let selectedId = '';
+
+  function renderSearchableAccounts(){
+    try{
+      const header = Array.from(document.querySelectorAll('h2')).find(h=>h.textContent.includes('Account Management'));
+      if(!header) return;
+      const container = header.parentElement;
+      if(!container) return;
+      
+      // Only render once, then update list on search
+      let existing = container.querySelector('#enhanced-accounts-container');
+      if(existing && document.getElementById('accounts-search')){
+        // Already rendered, just refilter
+        updateFilteredList();
+        return;
+      }
+      if(container.querySelector('#enhanced-accounts-marker') && !existing){
+        // Old marker exists but no new UI, remove marker
+        const oldMarker = container.querySelector('#enhanced-accounts-marker');
+        if(oldMarker) oldMarker.remove();
+      }
+
+      let listDiv = container.querySelector('.flex.flex-col.gap-3');
+      if(!listDiv) return;
+
+      const users = getUsers();
+      const hidden = getHidden();
+      let merged = [...users];
+      for(let h of hidden){
+        if(!merged.some(u=>u.id===h.id)){
+          merged.push({id:h.id,username:(h.firstName||'').toLowerCase(),password:(h.firstName||'').toLowerCase(),firstName:h.firstName,lastName:h.lastName,role:'employee',employmentType:h.employmentType||'CASUAL',isHiddenAcct:true,isNewHiddenAccount:true});
+        }
+      }
+      for(let u of merged){ u._isHidden = hidden.some(h=>h.id===u.id); }
+      merged.sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
+
+      // Build searchable UI
+      let html = `
+        <div id="enhanced-accounts-marker" style="background:#111;color:#FFE066;border:2.5px solid #111;border-radius:12px;padding:10px 14px;margin:10px 0;font-size:12px;font-weight:800;">
+          ✅ V44 Searchable: ${merged.length} accounts including ${hidden.length} hidden - Search or dropdown to edit, saves permanently
+        </div>
+        <div style="background:white;border:3px solid #111;border-radius:16px;padding:16px;margin-bottom:16px;">
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px;">
+            <div style="flex:1;min-width:240px;">
+              <label style="font-size:11px;font-weight:800;text-transform:uppercase;">🔍 Search Accounts</label>
+              <input id="accounts-search" placeholder="Search by name, username, role, ID..." value="${currentFilter.replace(/"/g,'&quot;')}" style="width:100%;border:2.5px solid #111;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:700;background:#FFF6EC;">
+            </div>
+            <div style="flex:1;min-width:240px;">
+              <label style="font-size:11px;font-weight:800;text-transform:uppercase;">📋 Or Select From Dropdown</label>
+              <select id="accounts-dropdown" style="width:100%;border:2.5px solid #111;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:700;background:white;">
+                <option value="">-- Select account to edit --</option>
+                ${merged.map(acc=>{
+                  const hiddenLabel = acc._isHidden ? ' [HIDDEN]' : '';
+                  const newLabel = acc.isNewHiddenAccount ? ' [NEW]' : '';
+                  return `<option value="${acc.id}" ${selectedId===acc.id?'selected':''}>${(acc.lastName||'')}, ${(acc.firstName||'')} - ${acc.username||''} (${acc.role||''})${hiddenLabel}${newLabel} - ${acc.id}</option>`;
+                }).join('')}
+              </select>
+            </div>
+            <div style="display:flex;gap:6px;align-items:end;">
+              <button id="accounts-clear" style="background:white;color:#111;border:2.5px solid #111;border-radius:9999px;padding:10px 16px;font-size:12px;font-weight:800;min-height:44px;">Clear</button>
+              <button id="accounts-show-all" style="background:#FFE066;color:#111;border:2.5px solid #111;border-radius:9999px;padding:10px 16px;font-size:12px;font-weight:800;min-height:44px;">Show All (${merged.length})</button>
+            </div>
+          </div>
+          <div id="accounts-results-info" style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px;"></div>
+        </div>
+        <div id="accounts-filtered-list" class="flex flex-col gap-3"></div>
+      `;
+
+      const existingEnhanced = container.querySelector('#enhanced-accounts-container');
+      if(existingEnhanced) existingEnhanced.remove();
+      const wrapper = document.createElement('div');
+      wrapper.id = 'enhanced-accounts-container';
+      wrapper.innerHTML = html;
+      const desc = container.children[1];
+      if(desc) desc.insertAdjacentElement('afterend', wrapper);
+      else container.appendChild(wrapper);
+      listDiv.style.display = 'none';
+
+      // Wire up events
+      const searchInput = document.getElementById('accounts-search');
+      const dropdown = document.getElementById('accounts-dropdown');
+      const clearBtn = document.getElementById('accounts-clear');
+      const showAllBtn = document.getElementById('accounts-show-all');
+
+      if(searchInput){
+        searchInput.addEventListener('input', function(){
+          currentFilter = this.value.toLowerCase();
+          selectedId = '';
+          if(dropdown) dropdown.value = '';
+          updateFilteredList();
+        });
+      }
+      if(dropdown){
+        dropdown.addEventListener('change', function(){
+          selectedId = this.value;
+          if(selectedId){
+            currentFilter = '';
+            if(searchInput) searchInput.value = '';
+          }
+          updateFilteredList();
+        });
+      }
+      if(clearBtn){
+        clearBtn.addEventListener('click', function(){
+          currentFilter = '';
+          selectedId = '';
+          if(searchInput) searchInput.value = '';
+          if(dropdown) dropdown.value = '';
+          updateFilteredList();
+        });
+      }
+      if(showAllBtn){
+        showAllBtn.addEventListener('click', function(){
+          currentFilter = '';
+          selectedId = '';
+          if(searchInput) searchInput.value = '';
+          if(dropdown) dropdown.value = '';
+          updateFilteredList(true);
+        });
+      }
+
+      updateFilteredList();
+    }catch(e){ console.error("Searchable accounts render failed", e); }
+  }
+
+  function updateFilteredList(showAllOverride){
+    try{
+      const container = document.getElementById('accounts-filtered-list');
+      const info = document.getElementById('accounts-results-info');
+      if(!container) return;
+
+      const users = getUsers();
+      const hidden = getHidden();
+      let merged = [...users];
+      for(let h of hidden){
+        if(!merged.some(u=>u.id===h.id)){
+          merged.push({id:h.id,username:(h.firstName||'').toLowerCase(),password:(h.firstName||'').toLowerCase(),firstName:h.firstName,lastName:h.lastName,role:'employee',employmentType:h.employmentType||'CASUAL',isHiddenAcct:true,isNewHiddenAccount:true});
+        }
+      }
+      for(let u of merged){ u._isHidden = hidden.some(h=>h.id===u.id); }
+      merged.sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
+
+      let filtered = merged;
+      
+      if(selectedId){
+        filtered = merged.filter(acc=>acc.id===selectedId);
+      } else if(currentFilter && !showAllOverride){
+        const f = currentFilter.toLowerCase();
+        filtered = merged.filter(acc=>{
+          return (acc.firstName||'').toLowerCase().includes(f) ||
+                 (acc.lastName||'').toLowerCase().includes(f) ||
+                 (acc.username||'').toLowerCase().includes(f) ||
+                 (acc.id||'').toLowerCase().includes(f) ||
+                 (acc.role||'').toLowerCase().includes(f) ||
+                 (acc.employmentType||'').toLowerCase().includes(f);
+        });
+      } else if(!showAllOverride && !selectedId && !currentFilter){
+        // Default: show none, prompt to search/select - avoids long scroll
+        filtered = [];
+      }
+
+      if(info){
+        if(selectedId){
+          info.textContent = `Editing 1 account (selected from dropdown)`;
+        } else if(currentFilter){
+          info.textContent = `Showing ${filtered.length} of ${merged.length} accounts matching "${currentFilter}"`;
+        } else if(showAllOverride){
+          info.textContent = `Showing all ${filtered.length} accounts`;
+        } else {
+          info.textContent = `Search or select from dropdown to edit. ${merged.length} total accounts. Click "Show All" to see all (may be long).`;
+        }
+      }
+
+      if(filtered.length===0){
+        container.innerHTML = `<div style="background:#FFF6EC;border:2.5px dashed #111;border-radius:16px;padding:32px;text-align:center;font-weight:700;color:#666;">
+          ${selectedId || currentFilter ? 'No accounts found. Try different search.' : '👆 Use search bar or dropdown above to find and edit accounts. No more scrolling long list!'}
+        </div>`;
+        return;
+      }
+
+      let html = '';
+      for(let acc of filtered){
+        const badge = acc._isHidden ? '<span style="background:#FFE066;color:#111;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:6px;">HIDDEN STAFF</span>' : '';
+        const newBadge = acc.isNewHiddenAccount ? '<span style="background:#FF4B4B;color:white;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:4px;">NEW</span>' : '';
+        html += `<div class="bg-white rounded-[16px] border-[2.5px] border-[#111] p-3 tile-shadow text-[#111] max-w-full overflow-hidden" data-acc-id="${acc.id}"><div class="flex flex-wrap items-end gap-[6px] max-w-full"><div class="min-w-[140px] max-w-full"><label class="text-[10px] font-[800] uppercase text-[#111]/60">Display ${badge}${newBadge}</label><div class="font-[800] text-[13px] text-[#111] break-words">${acc.lastName||''} ${acc.firstName||''} • ${acc.id}</div><div class="flex gap-1 mt-1 flex-wrap"><span class="bg-[#111] text-white rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.role||'employee'}</span><span class="bg-[#A8D8FF] text-[#111] rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.employmentType||'CASUAL'}</span></div></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">First Name</label><input data-field="firstName" data-id="${acc.id}" value="${(acc.firstName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Last Name</label><input data-field="lastName" data-id="${acc.id}" value="${(acc.lastName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[140px]"><label class="text-[10px] font-[800] uppercase">Username</label><input data-field="username" data-id="${acc.id}" value="${(acc.username||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Password</label><div style="display:flex;gap:4px;"><input data-field="password" data-id="${acc.id}" type="password" value="${(acc.password||'').replace(/"/g,'&quot;')}" class="enhanced-input flex-1 border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><button data-toggle="${acc.id}" style="border:2px solid #111;border-radius:8px;padding:2px 6px;font-size:12px;">👁️</button></div></div><div class="min-w-[110px]"><label class="text-[10px] font-[800] uppercase">Role</label><select data-field="role" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="employee" ${acc.role==='employee'?'selected':''}>employee</option><option value="manager" ${acc.role==='manager'?'selected':''}>manager</option><option value="admin" ${acc.role==='admin'?'selected':''}>admin</option><option value="master" ${acc.role==='master'?'selected':''}>master</option></select></div><div class="min-w-[90px]"><label class="text-[10px] font-[800] uppercase">Type</label><select data-field="employmentType" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="FULL" ${acc.employmentType==='FULL'?'selected':''}>FULL</option><option value="CASUAL" ${acc.employmentType==='CASUAL'?'selected':''}>CASUAL</option></select></div><button data-save="${acc.id}" class="bg-[#111] text-white border-[2px] border-[#111] rounded-full px-5 py-1.5 min-h-[36px] text-[12px] font-[800] hover:bg-black shrink-0">Save Permanently</button></div></div>`;
+      }
+
+      container.innerHTML = html;
+
+      // Wire up inputs for filtered list
+      const parent = document.getElementById('enhanced-accounts-container');
+      if(!parent) return;
+
+      parent.querySelectorAll('#accounts-filtered-list .enhanced-input').forEach(inp=>{
+        inp.addEventListener('change', function(){
+          const id = this.getAttribute('data-id');
+          const field = this.getAttribute('data-field');
+          const val = this.value;
+          let users = getUsers();
+          let hidden = getHidden();
+          let uIdx = users.findIndex(u=>u.id===id);
+          if(uIdx>=0){ users[uIdx][field] = val; } else {
+            let h = hidden.find(h=>h.id===id);
+            if(h){ users.push({id:id,username:field==='username'?val:(h.firstName||'').toLowerCase(),password:field==='password'?val:(h.firstName||'').toLowerCase(),firstName:field==='firstName'?val:h.firstName,lastName:field==='lastName'?val:h.lastName,role:field==='role'?val:'employee',employmentType:field==='employmentType'?val:h.employmentType||'CASUAL'}); }
+          }
+          let hIdx = hidden.findIndex(h=>h.id===id);
+          if(hIdx>=0){
+            if(field==='firstName') hidden[hIdx].firstName = val;
+            if(field==='lastName') hidden[hIdx].lastName = val;
+            if(field==='employmentType') hidden[hIdx].employmentType = val;
+          }
+          saveAllPermanent(users, hidden);
+        });
+      });
+
+      parent.querySelectorAll('#accounts-filtered-list [data-toggle]').forEach(btn=>{
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          const id = this.getAttribute('data-toggle');
+          const input = parent.querySelector(`#accounts-filtered-list input[data-field="password"][data-id="${id}"]`);
+          if(input) input.type = input.type==='password'?'text':'password';
+        });
+      });
+
+      parent.querySelectorAll('#accounts-filtered-list [data-save]').forEach(btn=>{
+        btn.addEventListener('click', function(){
+          const id = this.getAttribute('data-save');
+          let users = getUsers();
+          let hidden = getHidden();
+          const firstName = parent.querySelector(`#accounts-filtered-list input[data-field="firstName"][data-id="${id}"]`)?.value||'';
+          const lastName = parent.querySelector(`#accounts-filtered-list input[data-field="lastName"][data-id="${id}"]`)?.value||'';
+          const username = parent.querySelector(`#accounts-filtered-list input[data-field="username"][data-id="${id}"]`)?.value||'';
+          const password = parent.querySelector(`#accounts-filtered-list input[data-field="password"][data-id="${id}"]`)?.value||'';
+          const role = parent.querySelector(`#accounts-filtered-list select[data-field="role"][data-id="${id}"]`)?.value||'employee';
+          const empType = parent.querySelector(`#accounts-filtered-list select[data-field="employmentType"][data-id="${id}"]`)?.value||'CASUAL';
+          if(!username || !password){ alert('Username & password required'); return; }
+          let uIdx = users.findIndex(u=>u.id===id);
+          if(uIdx>=0){ users[uIdx] = {...users[uIdx], firstName, lastName, username, password, role, employmentType: empType}; }
+          else { users.push({id, firstName, lastName, username, password, role, employmentType: empType}); }
+          let hIdx = hidden.findIndex(h=>h.id===id);
+          if(hIdx>=0){ hidden[hIdx].firstName = firstName; hidden[hIdx].lastName = lastName; hidden[hIdx].employmentType = empType; }
+          saveAllPermanent(users, hidden);
+          this.textContent = 'Saved Permanently ✅';
+          this.style.background = '#00C851';
+          setTimeout(()=>{ this.textContent='Save Permanently'; this.style.background='#111'; }, 2000);
+        });
+      });
+    }catch(e){ console.error("Filtered list update failed", e); }
+  }
+
+  let observer = new MutationObserver(()=>{ if(document.body.textContent.includes('Account Management')){ setTimeout(renderSearchableAccounts, 300); } });
+  observer.observe(document.body, {childList:true, subtree:true});
+  setInterval(()=>{ if(document.body.innerHTML.includes('Account Management') && !document.getElementById('enhanced-accounts-container')){ renderSearchableAccounts(); } }, 1500);
+  
+  console.log('V44 Searchable Accounts loaded');
+})();
+</script>
+
+</body></html>';
     let blob = new Blob([htmlContent], {type:'text/html'});
     let url = URL.createObjectURL(blob);
     let win = window.open(url, '_blank');
@@ -1100,8 +1380,9 @@ console.log('V43 Clean Exports loaded');
 })();
 </script>
 
+
 <script>
-// V43 ENHANCED ACCOUNTS - Permanent save + hidden same as others
+// V44 SEARCHABLE ACCOUNTS - Dropdown + Search Bar for Manager/Master/Admin
 (function(){
   const USERS_KEY = 'retail_roster_users_v1';
   const HIDDEN_KEY = 'retail_roster_hidden_v1';
@@ -1120,15 +1401,32 @@ console.log('V43 Clean Exports loaded');
     }catch(e){}
   }
 
-  function renderEnhancedAccounts(){
+  let currentFilter = '';
+  let selectedId = '';
+
+  function renderSearchableAccounts(){
     try{
       const header = Array.from(document.querySelectorAll('h2')).find(h=>h.textContent.includes('Account Management'));
       if(!header) return;
       const container = header.parentElement;
       if(!container) return;
-      if(container.querySelector('#enhanced-accounts-marker')) return;
+      
+      // Only render once, then update list on search
+      let existing = container.querySelector('#enhanced-accounts-container');
+      if(existing && document.getElementById('accounts-search')){
+        // Already rendered, just refilter
+        updateFilteredList();
+        return;
+      }
+      if(container.querySelector('#enhanced-accounts-marker') && !existing){
+        // Old marker exists but no new UI, remove marker
+        const oldMarker = container.querySelector('#enhanced-accounts-marker');
+        if(oldMarker) oldMarker.remove();
+      }
+
       let listDiv = container.querySelector('.flex.flex-col.gap-3');
       if(!listDiv) return;
+
       const users = getUsers();
       const hidden = getHidden();
       let merged = [...users];
@@ -1139,13 +1437,39 @@ console.log('V43 Clean Exports loaded');
       }
       for(let u of merged){ u._isHidden = hidden.some(h=>h.id===u.id); }
       merged.sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
-      let html = '<div id="enhanced-accounts-marker" style="background:#111;color:#FFE066;border:2.5px solid #111;border-radius:12px;padding:10px 14px;margin:10px 0;font-size:12px;font-weight:800;">✅ V43: '+merged.length+' accounts including '+hidden.length+' hidden staff - Permanent Firebase Save</div><div class="flex flex-col gap-3">';
-      for(let acc of merged){
-        const badge = acc._isHidden ? '<span style="background:#FFE066;color:#111;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:6px;">HIDDEN STAFF</span>' : '';
-        const newBadge = acc.isNewHiddenAccount ? '<span style="background:#FF4B4B;color:white;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:4px;">NEW</span>' : '';
-        html += `<div class="bg-white rounded-[16px] border-[2.5px] border-[#111] p-3 tile-shadow text-[#111] max-w-full overflow-hidden" data-acc-id="${acc.id}"><div class="flex flex-wrap items-end gap-[6px] max-w-full"><div class="min-w-[140px] max-w-full"><label class="text-[10px] font-[800] uppercase text-[#111]/60">Display ${badge}${newBadge}</label><div class="font-[800] text-[13px] text-[#111] break-words">${acc.lastName||''} ${acc.firstName||''} • ${acc.id}</div><div class="flex gap-1 mt-1 flex-wrap"><span class="bg-[#111] text-white rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.role||'employee'}</span><span class="bg-[#A8D8FF] text-[#111] rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.employmentType||'CASUAL'}</span></div></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">First Name</label><input data-field="firstName" data-id="${acc.id}" value="${(acc.firstName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Last Name</label><input data-field="lastName" data-id="${acc.id}" value="${(acc.lastName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[140px]"><label class="text-[10px] font-[800] uppercase">Username</label><input data-field="username" data-id="${acc.id}" value="${(acc.username||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Password</label><div style="display:flex;gap:4px;"><input data-field="password" data-id="${acc.id}" type="password" value="${(acc.password||'').replace(/"/g,'&quot;')}" class="enhanced-input flex-1 border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><button data-toggle="${acc.id}" style="border:2px solid #111;border-radius:8px;padding:2px 6px;font-size:12px;">👁️</button></div></div><div class="min-w-[110px]"><label class="text-[10px] font-[800] uppercase">Role</label><select data-field="role" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="employee" ${acc.role==='employee'?'selected':''}>employee</option><option value="manager" ${acc.role==='manager'?'selected':''}>manager</option><option value="admin" ${acc.role==='admin'?'selected':''}>admin</option><option value="master" ${acc.role==='master'?'selected':''}>master</option></select></div><div class="min-w-[90px]"><label class="text-[10px] font-[800] uppercase">Type</label><select data-field="employmentType" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="FULL" ${acc.employmentType==='FULL'?'selected':''}>FULL</option><option value="CASUAL" ${acc.employmentType==='CASUAL'?'selected':''}>CASUAL</option></select></div><button data-save="${acc.id}" class="bg-[#111] text-white border-[2px] border-[#111] rounded-full px-5 py-1.5 min-h-[36px] text-[12px] font-[800] hover:bg-black shrink-0">Save Permanently</button></div></div>`;
-      }
-      html += '</div>';
+
+      // Build searchable UI
+      let html = `
+        <div id="enhanced-accounts-marker" style="background:#111;color:#FFE066;border:2.5px solid #111;border-radius:12px;padding:10px 14px;margin:10px 0;font-size:12px;font-weight:800;">
+          ✅ V44 Searchable: ${merged.length} accounts including ${hidden.length} hidden - Search or dropdown to edit, saves permanently
+        </div>
+        <div style="background:white;border:3px solid #111;border-radius:16px;padding:16px;margin-bottom:16px;">
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px;">
+            <div style="flex:1;min-width:240px;">
+              <label style="font-size:11px;font-weight:800;text-transform:uppercase;">🔍 Search Accounts</label>
+              <input id="accounts-search" placeholder="Search by name, username, role, ID..." value="${currentFilter.replace(/"/g,'&quot;')}" style="width:100%;border:2.5px solid #111;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:700;background:#FFF6EC;">
+            </div>
+            <div style="flex:1;min-width:240px;">
+              <label style="font-size:11px;font-weight:800;text-transform:uppercase;">📋 Or Select From Dropdown</label>
+              <select id="accounts-dropdown" style="width:100%;border:2.5px solid #111;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:700;background:white;">
+                <option value="">-- Select account to edit --</option>
+                ${merged.map(acc=>{
+                  const hiddenLabel = acc._isHidden ? ' [HIDDEN]' : '';
+                  const newLabel = acc.isNewHiddenAccount ? ' [NEW]' : '';
+                  return `<option value="${acc.id}" ${selectedId===acc.id?'selected':''}>${(acc.lastName||'')}, ${(acc.firstName||'')} - ${acc.username||''} (${acc.role||''})${hiddenLabel}${newLabel} - ${acc.id}</option>`;
+                }).join('')}
+              </select>
+            </div>
+            <div style="display:flex;gap:6px;align-items:end;">
+              <button id="accounts-clear" style="background:white;color:#111;border:2.5px solid #111;border-radius:9999px;padding:10px 16px;font-size:12px;font-weight:800;min-height:44px;">Clear</button>
+              <button id="accounts-show-all" style="background:#FFE066;color:#111;border:2.5px solid #111;border-radius:9999px;padding:10px 16px;font-size:12px;font-weight:800;min-height:44px;">Show All (${merged.length})</button>
+            </div>
+          </div>
+          <div id="accounts-results-info" style="font-size:12px;font-weight:700;color:#666;margin-bottom:8px;"></div>
+        </div>
+        <div id="accounts-filtered-list" class="flex flex-col gap-3"></div>
+      `;
+
       const existingEnhanced = container.querySelector('#enhanced-accounts-container');
       if(existingEnhanced) existingEnhanced.remove();
       const wrapper = document.createElement('div');
@@ -1155,8 +1479,123 @@ console.log('V43 Clean Exports loaded');
       if(desc) desc.insertAdjacentElement('afterend', wrapper);
       else container.appendChild(wrapper);
       listDiv.style.display = 'none';
+
+      // Wire up events
+      const searchInput = document.getElementById('accounts-search');
+      const dropdown = document.getElementById('accounts-dropdown');
+      const clearBtn = document.getElementById('accounts-clear');
+      const showAllBtn = document.getElementById('accounts-show-all');
+
+      if(searchInput){
+        searchInput.addEventListener('input', function(){
+          currentFilter = this.value.toLowerCase();
+          selectedId = '';
+          if(dropdown) dropdown.value = '';
+          updateFilteredList();
+        });
+      }
+      if(dropdown){
+        dropdown.addEventListener('change', function(){
+          selectedId = this.value;
+          if(selectedId){
+            currentFilter = '';
+            if(searchInput) searchInput.value = '';
+          }
+          updateFilteredList();
+        });
+      }
+      if(clearBtn){
+        clearBtn.addEventListener('click', function(){
+          currentFilter = '';
+          selectedId = '';
+          if(searchInput) searchInput.value = '';
+          if(dropdown) dropdown.value = '';
+          updateFilteredList();
+        });
+      }
+      if(showAllBtn){
+        showAllBtn.addEventListener('click', function(){
+          currentFilter = '';
+          selectedId = '';
+          if(searchInput) searchInput.value = '';
+          if(dropdown) dropdown.value = '';
+          updateFilteredList(true);
+        });
+      }
+
+      updateFilteredList();
+    }catch(e){ console.error("Searchable accounts render failed", e); }
+  }
+
+  function updateFilteredList(showAllOverride){
+    try{
+      const container = document.getElementById('accounts-filtered-list');
+      const info = document.getElementById('accounts-results-info');
+      if(!container) return;
+
+      const users = getUsers();
+      const hidden = getHidden();
+      let merged = [...users];
+      for(let h of hidden){
+        if(!merged.some(u=>u.id===h.id)){
+          merged.push({id:h.id,username:(h.firstName||'').toLowerCase(),password:(h.firstName||'').toLowerCase(),firstName:h.firstName,lastName:h.lastName,role:'employee',employmentType:h.employmentType||'CASUAL',isHiddenAcct:true,isNewHiddenAccount:true});
+        }
+      }
+      for(let u of merged){ u._isHidden = hidden.some(h=>h.id===u.id); }
+      merged.sort((a,b)=>(a.lastName||'').localeCompare(b.lastName||''));
+
+      let filtered = merged;
       
-      container.querySelectorAll('.enhanced-input').forEach(inp=>{
+      if(selectedId){
+        filtered = merged.filter(acc=>acc.id===selectedId);
+      } else if(currentFilter && !showAllOverride){
+        const f = currentFilter.toLowerCase();
+        filtered = merged.filter(acc=>{
+          return (acc.firstName||'').toLowerCase().includes(f) ||
+                 (acc.lastName||'').toLowerCase().includes(f) ||
+                 (acc.username||'').toLowerCase().includes(f) ||
+                 (acc.id||'').toLowerCase().includes(f) ||
+                 (acc.role||'').toLowerCase().includes(f) ||
+                 (acc.employmentType||'').toLowerCase().includes(f);
+        });
+      } else if(!showAllOverride && !selectedId && !currentFilter){
+        // Default: show none, prompt to search/select - avoids long scroll
+        filtered = [];
+      }
+
+      if(info){
+        if(selectedId){
+          info.textContent = `Editing 1 account (selected from dropdown)`;
+        } else if(currentFilter){
+          info.textContent = `Showing ${filtered.length} of ${merged.length} accounts matching "${currentFilter}"`;
+        } else if(showAllOverride){
+          info.textContent = `Showing all ${filtered.length} accounts`;
+        } else {
+          info.textContent = `Search or select from dropdown to edit. ${merged.length} total accounts. Click "Show All" to see all (may be long).`;
+        }
+      }
+
+      if(filtered.length===0){
+        container.innerHTML = `<div style="background:#FFF6EC;border:2.5px dashed #111;border-radius:16px;padding:32px;text-align:center;font-weight:700;color:#666;">
+          ${selectedId || currentFilter ? 'No accounts found. Try different search.' : '👆 Use search bar or dropdown above to find and edit accounts. No more scrolling long list!'}
+        </div>`;
+        return;
+      }
+
+      let html = '';
+      for(let acc of filtered){
+        const badge = acc._isHidden ? '<span style="background:#FFE066;color:#111;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:6px;">HIDDEN STAFF</span>' : '';
+        const newBadge = acc.isNewHiddenAccount ? '<span style="background:#FF4B4B;color:white;border:2px solid #111;border-radius:9999px;padding:2px 8px;font-size:9px;font-weight:800;margin-left:4px;">NEW</span>' : '';
+        html += `<div class="bg-white rounded-[16px] border-[2.5px] border-[#111] p-3 tile-shadow text-[#111] max-w-full overflow-hidden" data-acc-id="${acc.id}"><div class="flex flex-wrap items-end gap-[6px] max-w-full"><div class="min-w-[140px] max-w-full"><label class="text-[10px] font-[800] uppercase text-[#111]/60">Display ${badge}${newBadge}</label><div class="font-[800] text-[13px] text-[#111] break-words">${acc.lastName||''} ${acc.firstName||''} • ${acc.id}</div><div class="flex gap-1 mt-1 flex-wrap"><span class="bg-[#111] text-white rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.role||'employee'}</span><span class="bg-[#A8D8FF] text-[#111] rounded-full px-2 py-0.5 text-[10px] font-bold border border-[#111]">${acc.employmentType||'CASUAL'}</span></div></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">First Name</label><input data-field="firstName" data-id="${acc.id}" value="${(acc.firstName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Last Name</label><input data-field="lastName" data-id="${acc.id}" value="${(acc.lastName||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[140px]"><label class="text-[10px] font-[800] uppercase">Username</label><input data-field="username" data-id="${acc.id}" value="${(acc.username||'').replace(/"/g,'&quot;')}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111] max-w-full"></div><div class="flex-1 min-w-[120px]"><label class="text-[10px] font-[800] uppercase">Password</label><div style="display:flex;gap:4px;"><input data-field="password" data-id="${acc.id}" type="password" value="${(acc.password||'').replace(/"/g,'&quot;')}" class="enhanced-input flex-1 border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><button data-toggle="${acc.id}" style="border:2px solid #111;border-radius:8px;padding:2px 6px;font-size:12px;">👁️</button></div></div><div class="min-w-[110px]"><label class="text-[10px] font-[800] uppercase">Role</label><select data-field="role" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="employee" ${acc.role==='employee'?'selected':''}>employee</option><option value="manager" ${acc.role==='manager'?'selected':''}>manager</option><option value="admin" ${acc.role==='admin'?'selected':''}>admin</option><option value="master" ${acc.role==='master'?'selected':''}>master</option></select></div><div class="min-w-[90px]"><label class="text-[10px] font-[800] uppercase">Type</label><select data-field="employmentType" data-id="${acc.id}" class="enhanced-input w-full border-[2px] border-[#111] rounded-[8px] px-2 py-1 text-[12px] font-bold bg-white text-[#111]"><option value="FULL" ${acc.employmentType==='FULL'?'selected':''}>FULL</option><option value="CASUAL" ${acc.employmentType==='CASUAL'?'selected':''}>CASUAL</option></select></div><button data-save="${acc.id}" class="bg-[#111] text-white border-[2px] border-[#111] rounded-full px-5 py-1.5 min-h-[36px] text-[12px] font-[800] hover:bg-black shrink-0">Save Permanently</button></div></div>`;
+      }
+
+      container.innerHTML = html;
+
+      // Wire up inputs for filtered list
+      const parent = document.getElementById('enhanced-accounts-container');
+      if(!parent) return;
+
+      parent.querySelectorAll('#accounts-filtered-list .enhanced-input').forEach(inp=>{
         inp.addEventListener('change', function(){
           const id = this.getAttribute('data-id');
           const field = this.getAttribute('data-field');
@@ -1177,27 +1616,27 @@ console.log('V43 Clean Exports loaded');
           saveAllPermanent(users, hidden);
         });
       });
-      
-      container.querySelectorAll('[data-toggle]').forEach(btn=>{
+
+      parent.querySelectorAll('#accounts-filtered-list [data-toggle]').forEach(btn=>{
         btn.addEventListener('click', function(e){
           e.preventDefault();
           const id = this.getAttribute('data-toggle');
-          const input = container.querySelector(`input[data-field="password"][data-id="${id}"]`);
+          const input = parent.querySelector(`#accounts-filtered-list input[data-field="password"][data-id="${id}"]`);
           if(input) input.type = input.type==='password'?'text':'password';
         });
       });
-      
-      container.querySelectorAll('[data-save]').forEach(btn=>{
+
+      parent.querySelectorAll('#accounts-filtered-list [data-save]').forEach(btn=>{
         btn.addEventListener('click', function(){
           const id = this.getAttribute('data-save');
           let users = getUsers();
           let hidden = getHidden();
-          const firstName = container.querySelector(`input[data-field="firstName"][data-id="${id}"]`)?.value||'';
-          const lastName = container.querySelector(`input[data-field="lastName"][data-id="${id}"]`)?.value||'';
-          const username = container.querySelector(`input[data-field="username"][data-id="${id}"]`)?.value||'';
-          const password = container.querySelector(`input[data-field="password"][data-id="${id}"]`)?.value||'';
-          const role = container.querySelector(`select[data-field="role"][data-id="${id}"]`)?.value||'employee';
-          const empType = container.querySelector(`select[data-field="employmentType"][data-id="${id}"]`)?.value||'CASUAL';
+          const firstName = parent.querySelector(`#accounts-filtered-list input[data-field="firstName"][data-id="${id}"]`)?.value||'';
+          const lastName = parent.querySelector(`#accounts-filtered-list input[data-field="lastName"][data-id="${id}"]`)?.value||'';
+          const username = parent.querySelector(`#accounts-filtered-list input[data-field="username"][data-id="${id}"]`)?.value||'';
+          const password = parent.querySelector(`#accounts-filtered-list input[data-field="password"][data-id="${id}"]`)?.value||'';
+          const role = parent.querySelector(`#accounts-filtered-list select[data-field="role"][data-id="${id}"]`)?.value||'employee';
+          const empType = parent.querySelector(`#accounts-filtered-list select[data-field="employmentType"][data-id="${id}"]`)?.value||'CASUAL';
           if(!username || !password){ alert('Username & password required'); return; }
           let uIdx = users.findIndex(u=>u.id===id);
           if(uIdx>=0){ users[uIdx] = {...users[uIdx], firstName, lastName, username, password, role, employmentType: empType}; }
@@ -1210,12 +1649,14 @@ console.log('V43 Clean Exports loaded');
           setTimeout(()=>{ this.textContent='Save Permanently'; this.style.background='#111'; }, 2000);
         });
       });
-    }catch(e){ console.error("Enhanced accounts failed", e); }
+    }catch(e){ console.error("Filtered list update failed", e); }
   }
-  
-  let observer = new MutationObserver(()=>{ if(document.body.textContent.includes('Account Management')){ setTimeout(renderEnhancedAccounts, 300); } });
+
+  let observer = new MutationObserver(()=>{ if(document.body.textContent.includes('Account Management')){ setTimeout(renderSearchableAccounts, 300); } });
   observer.observe(document.body, {childList:true, subtree:true});
-  setInterval(()=>{ if(document.body.innerHTML.includes('Account Management') && !document.getElementById('enhanced-accounts-marker')){ renderEnhancedAccounts(); } }, 1500);
+  setInterval(()=>{ if(document.body.innerHTML.includes('Account Management') && !document.getElementById('enhanced-accounts-container')){ renderSearchableAccounts(); } }, 1500);
+  
+  console.log('V44 Searchable Accounts loaded');
 })();
 </script>
 
