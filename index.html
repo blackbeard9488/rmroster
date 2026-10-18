@@ -91,6 +91,22 @@
   #admin-login-modal-v126 > div { margin: 10px !important; max-width: 95vw !important; }
 }
 
+
+/* V128 FIX: 14 days must be fully visible, never hidden outside cell, no exceeding border */
+#repco-v65 .r-table-wrap { overflow: auto !important; width: 100vw !important; max-width: 100vw !important; }
+#repco-v65 .r-table { width: auto !important; min-width: 100% !important; max-width: none !important; table-layout: auto !important; border-collapse: collapse !important; }
+#repco-v65 .r-table th { min-width: 78px !important; width: 78px !important; max-width: 78px !important; font-size: 8px !important; padding: 4px 2px !important; height: auto !important; overflow: visible !important; white-space: normal !important; word-break: break-word !important; text-align: center !important; }
+#repco-v65 .r-table th:first-child { min-width: 110px !important; max-width: 110px !important; width: 110px !important; font-size: 9px !important; text-align: left !important; position: sticky !important; left: 0 !important; background: #EDEDED !important; z-index: 3 !important; }
+#repco-v65 .r-table td { min-width: 78px !important; width: 78px !important; max-width: 78px !important; font-size: 8px !important; padding: 2px 3px !important; height: 32px !important; overflow: visible !important; white-space: normal !important; word-break: break-word !important; text-align: center !important; line-height: 1.2 !important; }
+#repco-v65 .r-table td:first-child { min-width: 110px !important; max-width: 110px !important; width: 110px !important; font-size: 9px !important; white-space: nowrap !important; text-align: left !important; position: sticky !important; left: 0 !important; background: white !important; z-index: 2 !important; }
+#repco-v65 .r-table td .shift-inner { font-size: 7px !important; line-height: 1.1 !important; white-space: normal !important; word-break: break-all !important; display: block !important; max-width: 100% !important; }
+@media (max-width: 768px){
+  #repco-v65 .r-table th { min-width: 62px !important; width: 62px !important; max-width: 62px !important; font-size: 7px !important; }
+  #repco-v65 .r-table th:first-child { min-width: 75px !important; max-width: 75px !important; width: 75px !important; }
+  #repco-v65 .r-table td { min-width: 62px !important; width: 62px !important; max-width: 62px !important; font-size: 7px !important; }
+  #repco-v65 .r-table td:first-child { min-width: 75px !important; max-width: 75px !important; width: 75px !important; font-size: 8px !important; }
+}
+
 </style>
 
 <style id="minimal-margin-fix">
@@ -3980,7 +3996,7 @@ header { display: none !important; }
 <div id="admin-login-modal-v126" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:999999999; display:none; align-items:center; justify-content:center; padding:20px;">
   <div style="background:white; border:3px solid #111; border-radius:16px; padding:20px; max-width:420px; width:100%; box-shadow:6px 6px 0 #111; font-family:'Arial Black', sans-serif;">
     <div style="font-weight:900; font-size:16px; margin-bottom:8px;">Admin Login Required</div>
-    <div style="font-size:11px; font-family:Arial; color:#666; margin-bottom:12px;">Manager/Master/Admin only - Toggle syncs live across ALL devices via live-rmroster</div>
+    
     <input id="admin-user-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" placeholder="Username (e.g. Chris)" />
     <input id="admin-pass-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" type="password" placeholder="Password" />
     <div id="admin-login-status-v126" style="margin-top:8px; padding:8px; border-radius:8px; font-size:11px; font-family:Arial; display:none;"></div>
@@ -4381,6 +4397,118 @@ header { display: none !important; }
       };
     }
   }, 800);
+})();
+</script>
+
+
+<script>
+// V128 FIX - Remove popups, 14 days fully visible, no exceeding border
+(function(){
+  // Remove all old alert handlers for options buttons
+  setTimeout(function(){
+    // Override all opt-* buttons to NOT show alert popups - each has its own page or does nothing
+    const optButtons = {
+      'opt-today': function(){ if(window.openTodayWorkersV126) openTodayWorkersV126(); },
+      'opt-excel': function(){ if(typeof window.exportFullRosterToExcel==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToExcel(cur); }catch(e){ console.log(e); } } },
+      'opt-pdf': function(){ if(typeof window.exportFullRosterToPDF==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToPDF(cur); }catch(e){ console.log(e); } } },
+      'opt-hidden': function(){ /* Hidden employees page */ 
+        let hiddenStr=localStorage.getItem('retail_roster_hidden_v1');
+        let hidden=hiddenStr?JSON.parse(hiddenStr):[];
+        if(window.showToastV126) showToastV126('Hidden employees: '+hidden.length+' staff');
+      },
+      'opt-import': function(){ /* Import - trigger file input without alert */ 
+        let fileInput=document.createElement('input'); fileInput.type='file'; fileInput.accept='.xlsx,.xls,.csv';
+        fileInput.onchange=function(e){ let file=e.target.files[0]; if(file && window.showToastV126) showToastV126('Selected: '+file.name); };
+        fileInput.click();
+      },
+      'opt-duplicate': function(){
+        try{
+          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
+          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to duplicate'); return; }
+          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
+          let cur=forts.find(f=>f.id===id)||forts[0];
+          let newFort=JSON.parse(JSON.stringify(cur));
+          newFort.id='fort_'+Date.now(); newFort.label=cur.label+' (Copy)';
+          forts.push(newFort);
+          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
+          if(window.showToastV126) showToastV126('Duplicated: '+newFort.label);
+          if(typeof window.renderRoster==='function') renderRoster();
+        }catch(e){ if(window.showToastV126) showToastV126('Duplicate failed'); }
+      },
+      'opt-archive': function(){
+        let archStr=localStorage.getItem('retail_roster_archive_files')||'[]';
+        let arch=JSON.parse(archStr);
+        if(window.showToastV126) showToastV126('Archive: '+arch.length+' files');
+      },
+      'opt-delete': function(){
+        try{
+          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
+          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to delete'); return; }
+          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
+          let cur=forts.find(f=>f.id===id)||forts[0];
+          if(!confirm('Delete roster '+cur.label+'?')) return;
+          forts=forts.filter(f=>f.id!==cur.id);
+          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
+          if(window.showToastV126) showToastV126('Deleted '+cur.label);
+          if(typeof window.renderRoster==='function') renderRoster();
+        }catch(e){}
+      },
+      'opt-custom': function(){ if(window.showToastV126) showToastV126('Custom rosters - Use main app Custom Rosters tab'); },
+      'opt-accounts': function(){ if(window.showToastV126) showToastV126('Accounts management - Use Accounts tab'); }
+    };
+    
+    Object.keys(optButtons).forEach(btnId=>{
+      let btn=document.getElementById(btnId);
+      if(btn){
+        // Remove all old listeners by cloning
+        let newBtn=btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopImmediatePropagation();
+          optButtons[btnId]();
+          return false;
+        }, true);
+        // Also override onclick
+        newBtn.onclick = function(e){ e.preventDefault(); optButtons[btnId](); return false; };
+      }
+    });
+    
+    // Fix REQUESTS popup - ensure it goes to requests page, not alert
+    document.querySelectorAll('[data-a="requests"], [data-opt-a="requests"]').forEach(btn=>{
+      let newBtn=btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', function(e){
+        e.preventDefault(); e.stopImmediatePropagation();
+        if(window.openRequestsV126) openRequestsV126();
+        return false;
+      }, true);
+    });
+    
+    // Fix 14 days table - ensure contents never hidden outside cell
+    if(typeof window.renderRoster==='function'){
+      let origRenderRoster = window.renderRoster;
+      window.renderRoster = function(){
+        origRenderRoster();
+        setTimeout(function(){
+          document.querySelectorAll('#repco-v65 .r-table td').forEach(td=>{
+            td.style.overflow='visible';
+            td.style.whiteSpace='normal';
+            td.style.wordBreak='break-word';
+            // Ensure inner divs also visible
+            let inner=td.querySelector('div');
+            if(inner){
+              inner.style.whiteSpace='normal';
+              inner.style.wordBreak='break-word';
+              inner.style.overflow='visible';
+              inner.style.maxWidth='100%';
+            }
+          });
+        }, 200);
+      };
+    }
+    
+    console.log('V128: Popups removed, 14 days fixed to show all contents inside cells');
+  }, 1000);
 })();
 </script>
 
@@ -6953,7 +7081,7 @@ header { display: none !important; }
 <div id="admin-login-modal-v126" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:999999999; display:none; align-items:center; justify-content:center; padding:20px;">
   <div style="background:white; border:3px solid #111; border-radius:16px; padding:20px; max-width:420px; width:100%; box-shadow:6px 6px 0 #111; font-family:'Arial Black', sans-serif;">
     <div style="font-weight:900; font-size:16px; margin-bottom:8px;">Admin Login Required</div>
-    <div style="font-size:11px; font-family:Arial; color:#666; margin-bottom:12px;">Manager/Master/Admin only - Toggle syncs live across ALL devices via live-rmroster</div>
+    
     <input id="admin-user-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" placeholder="Username (e.g. Chris)" />
     <input id="admin-pass-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" type="password" placeholder="Password" />
     <div id="admin-login-status-v126" style="margin-top:8px; padding:8px; border-radius:8px; font-size:11px; font-family:Arial; display:none;"></div>
@@ -7354,6 +7482,118 @@ header { display: none !important; }
       };
     }
   }, 800);
+})();
+</script>
+
+
+<script>
+// V128 FIX - Remove popups, 14 days fully visible, no exceeding border
+(function(){
+  // Remove all old alert handlers for options buttons
+  setTimeout(function(){
+    // Override all opt-* buttons to NOT show alert popups - each has its own page or does nothing
+    const optButtons = {
+      'opt-today': function(){ if(window.openTodayWorkersV126) openTodayWorkersV126(); },
+      'opt-excel': function(){ if(typeof window.exportFullRosterToExcel==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToExcel(cur); }catch(e){ console.log(e); } } },
+      'opt-pdf': function(){ if(typeof window.exportFullRosterToPDF==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToPDF(cur); }catch(e){ console.log(e); } } },
+      'opt-hidden': function(){ /* Hidden employees page */ 
+        let hiddenStr=localStorage.getItem('retail_roster_hidden_v1');
+        let hidden=hiddenStr?JSON.parse(hiddenStr):[];
+        if(window.showToastV126) showToastV126('Hidden employees: '+hidden.length+' staff');
+      },
+      'opt-import': function(){ /* Import - trigger file input without alert */ 
+        let fileInput=document.createElement('input'); fileInput.type='file'; fileInput.accept='.xlsx,.xls,.csv';
+        fileInput.onchange=function(e){ let file=e.target.files[0]; if(file && window.showToastV126) showToastV126('Selected: '+file.name); };
+        fileInput.click();
+      },
+      'opt-duplicate': function(){
+        try{
+          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
+          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to duplicate'); return; }
+          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
+          let cur=forts.find(f=>f.id===id)||forts[0];
+          let newFort=JSON.parse(JSON.stringify(cur));
+          newFort.id='fort_'+Date.now(); newFort.label=cur.label+' (Copy)';
+          forts.push(newFort);
+          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
+          if(window.showToastV126) showToastV126('Duplicated: '+newFort.label);
+          if(typeof window.renderRoster==='function') renderRoster();
+        }catch(e){ if(window.showToastV126) showToastV126('Duplicate failed'); }
+      },
+      'opt-archive': function(){
+        let archStr=localStorage.getItem('retail_roster_archive_files')||'[]';
+        let arch=JSON.parse(archStr);
+        if(window.showToastV126) showToastV126('Archive: '+arch.length+' files');
+      },
+      'opt-delete': function(){
+        try{
+          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
+          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to delete'); return; }
+          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
+          let cur=forts.find(f=>f.id===id)||forts[0];
+          if(!confirm('Delete roster '+cur.label+'?')) return;
+          forts=forts.filter(f=>f.id!==cur.id);
+          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
+          if(window.showToastV126) showToastV126('Deleted '+cur.label);
+          if(typeof window.renderRoster==='function') renderRoster();
+        }catch(e){}
+      },
+      'opt-custom': function(){ if(window.showToastV126) showToastV126('Custom rosters - Use main app Custom Rosters tab'); },
+      'opt-accounts': function(){ if(window.showToastV126) showToastV126('Accounts management - Use Accounts tab'); }
+    };
+    
+    Object.keys(optButtons).forEach(btnId=>{
+      let btn=document.getElementById(btnId);
+      if(btn){
+        // Remove all old listeners by cloning
+        let newBtn=btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopImmediatePropagation();
+          optButtons[btnId]();
+          return false;
+        }, true);
+        // Also override onclick
+        newBtn.onclick = function(e){ e.preventDefault(); optButtons[btnId](); return false; };
+      }
+    });
+    
+    // Fix REQUESTS popup - ensure it goes to requests page, not alert
+    document.querySelectorAll('[data-a="requests"], [data-opt-a="requests"]').forEach(btn=>{
+      let newBtn=btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', function(e){
+        e.preventDefault(); e.stopImmediatePropagation();
+        if(window.openRequestsV126) openRequestsV126();
+        return false;
+      }, true);
+    });
+    
+    // Fix 14 days table - ensure contents never hidden outside cell
+    if(typeof window.renderRoster==='function'){
+      let origRenderRoster = window.renderRoster;
+      window.renderRoster = function(){
+        origRenderRoster();
+        setTimeout(function(){
+          document.querySelectorAll('#repco-v65 .r-table td').forEach(td=>{
+            td.style.overflow='visible';
+            td.style.whiteSpace='normal';
+            td.style.wordBreak='break-word';
+            // Ensure inner divs also visible
+            let inner=td.querySelector('div');
+            if(inner){
+              inner.style.whiteSpace='normal';
+              inner.style.wordBreak='break-word';
+              inner.style.overflow='visible';
+              inner.style.maxWidth='100%';
+            }
+          });
+        }, 200);
+      };
+    }
+    
+    console.log('V128: Popups removed, 14 days fixed to show all contents inside cells');
+  }, 1000);
 })();
 </script>
 
