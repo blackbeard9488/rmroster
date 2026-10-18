@@ -367,6 +367,140 @@ body { margin:0; font-family: Arial Black, sans-serif; background: #f5f5f5; }
 .section-title-v106 { font-family:'Arial Black', sans-serif; font-weight:900; font-size:14px; background:#111; color:white; padding:8px 12px; border-radius:8px; margin:16px 0 8px; }
 
 </style>
+
+<meta name="app-version" content="V108-20251018-auto-refresh">
+<meta name="build-time" content="V108-20251018-auto-refresh">
+<style>
+#update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background: #E30613;
+  color: white;
+  text-align: center;
+  padding: 10px 20px;
+  font-family: 'Arial Black', sans-serif;
+  font-weight: 900;
+  font-size: 13px;
+  z-index: 999999;
+  display: none;
+  box-shadow: 0 4px 0 #111;
+}
+#update-banner.show { display: block; animation: slideDown 0.3s; }
+@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+</style>
+<div id="update-banner">🔄 New version available - Refreshing to latest roster...</div>
+
+<script>
+// V108 - AUTO-REFRESH ON GITHUB PUSH - Keeps browser current
+(function(){
+  const VERSION_KEY = 'repco_app_version';
+  const CHECK_INTERVAL = 2 * 60 * 1000; // Check every 2 minutes
+  const currentVersion = document.querySelector('meta[name="app-version"]')?.content || 'V108-20251018-auto-refresh';
+  const banner = document.getElementById('update-banner');
+  
+  // Save current version
+  try { localStorage.setItem(VERSION_KEY, currentVersion); } catch(e){}
+  
+  console.log('[Auto-Update] Current version:', currentVersion);
+  
+  async function checkForUpdate(){
+    try {
+      // Fetch current index.html with cache busting - GitHub Pages serves new file after push
+      const url = window.location.href.split('?')[0] + '?_v=' + Date.now();
+      const resp = await fetch(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+      if(!resp.ok) return false;
+      const text = await resp.text();
+      
+      // Extract version meta from fetched HTML
+      const match = text.match(/<meta name="app-version" content="([^"]+)"/);
+      if(!match) return false;
+      const remoteVersion = match[1];
+      
+      console.log('[Auto-Update] Remote version:', remoteVersion, 'Local:', currentVersion);
+      
+      if(remoteVersion && remoteVersion !== currentVersion){
+        console.log('[Auto-Update] NEW VERSION DETECTED!');
+        return true;
+      }
+      return false;
+    } catch(e){
+      console.log('[Auto-Update] Check failed', e);
+      return false;
+    }
+  }
+  
+  async function doUpdate(){
+    if(banner) banner.classList.add('show');
+    try {
+      // Clear caches if any service worker
+      if('caches' in window){
+        const keys = await caches.keys();
+        for(let k of keys) await caches.delete(k);
+      }
+    } catch(e){}
+    
+    // Notify other tabs via BroadcastChannel
+    try {
+      const bc = new BroadcastChannel('repco_update');
+      bc.postMessage({type: 'update'});
+      bc.close();
+    } catch(e){}
+    
+    setTimeout(()=>{
+      // Force hard reload
+      window.location.reload(true);
+      // Fallback
+      setTimeout(()=>{ window.location.href = window.location.href.split('?')[0] + '?updated=' + Date.now(); }, 500);
+    }, 1200);
+  }
+  
+  // Periodic check
+  let intervalId = setInterval(async ()=>{
+    let hasUpdate = await checkForUpdate();
+    if(hasUpdate) doUpdate();
+  }, CHECK_INTERVAL);
+  
+  // Check on visibility change (when user returns to tab)
+  document.addEventListener('visibilitychange', async ()=>{
+    if(document.visibilityState==='visible'){
+      let hasUpdate = await checkForUpdate();
+      if(hasUpdate) doUpdate();
+    }
+  });
+  
+  // Check on focus
+  window.addEventListener('focus', async ()=>{
+    let hasUpdate = await checkForUpdate();
+    if(hasUpdate) doUpdate();
+  });
+  
+  // Listen for update from other tabs
+  try {
+    const bc = new BroadcastChannel('repco_update');
+    bc.onmessage = (e)=>{
+      if(e.data.type==='update'){
+        if(banner) banner.classList.add('show');
+        setTimeout(()=>{ window.location.reload(true); }, 800);
+      }
+    };
+  } catch(e){}
+  
+  // Expose manual check for debugging
+  window.checkForUpdate = checkForUpdate;
+  window.forceUpdate = doUpdate;
+  
+  // Initial check after 30s (in case they loaded old cached version)
+  setTimeout(async ()=>{
+    let hasUpdate = await checkForUpdate();
+    if(hasUpdate) doUpdate();
+  }, 30000);
+  
+  console.log('[Auto-Update] Monitoring every '+ (CHECK_INTERVAL/60000) +' minutes + on focus/visibility');
+})();
+</script>
+
 </head>
 <body>
 
