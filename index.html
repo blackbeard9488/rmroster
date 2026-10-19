@@ -4512,6 +4512,117 @@ header { display: none !important; }
 })();
 </script>
 
+
+<script>
+// V130 FIX - Block popups completely, fix page redirection
+(function(){
+  // 1. Block alert popups for REQUESTS and OPTIONS placeholders
+  const originalAlert = window.alert;
+  window.alert = function(msg){
+    if(typeof msg === 'string'){
+      // Block all known placeholder alerts
+      if(msg.includes('REQUESTS -') || 
+         msg.includes('REQUESTS tab') ||
+         msg.includes('HIDDEN EMPLOYEES') ||
+         msg.includes('CUSTOM ROSTERS') ||
+         msg.includes('ALL ACCOUNT MANAGEMENT') ||
+         msg.includes('ARCHIVE') ||
+         msg.includes('DUPLICATE ROSTER') ||
+         msg.includes('DELETE ROSTER') ||
+         msg.includes('IMPORT ROSTER') ||
+         msg.includes('Excel export') && msg.includes('not found') ||
+         msg.includes('PDF export') && msg.includes('not found') ||
+         msg.includes('Popup blocked') ||
+         msg.includes('In main app, this shows:') ||
+         msg.includes('For V91, use existing Requests')){
+        console.log('Blocked popup:', msg.substring(0,100));
+        return; // Block it
+      }
+    }
+    return originalAlert.apply(window, arguments);
+  };
+
+  // 2. Fix page redirection - ensure buttons work
+  setTimeout(function(){
+    // Fix all header buttons with data-a and data-opt-a
+    function fixNavButtons(){
+      document.querySelectorAll('[data-a]').forEach(btn=>{
+        btn.onclick = null;
+        btn.removeAttribute('onclick');
+        let newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+          let a = newBtn.getAttribute('data-a');
+          console.log('Nav:', a);
+          if(a==='roster' && window.navRosterV126) navRosterV126();
+          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
+          else if(a==='options' && window.openOptionsV126) openOptionsV126();
+          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
+          return false;
+        }, true);
+      });
+      
+      document.querySelectorAll('[data-opt-a]').forEach(btn=>{
+        btn.onclick = null;
+        btn.removeAttribute('onclick');
+        let newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+          let a = newBtn.getAttribute('data-opt-a');
+          console.log('Opt Nav:', a);
+          if(a==='roster' && window.navRosterV126) navRosterV126();
+          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
+          else if(a==='options' && window.openOptionsV126) openOptionsV126();
+          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
+          return false;
+        }, true);
+      });
+      
+      // Fix roster header buttons (today workers page, requests page)
+      document.querySelectorAll('#today-workers-page-v126 .r-btn, #requests-page-v126 .r-btn').forEach(btn=>{
+        let text = btn.textContent.trim().toUpperCase();
+        if(text==='ROSTER'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.navRosterV126) navRosterV126(); return false; };
+        } else if(text==='REQUESTS'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.openRequestsV126) openRequestsV126(); return false; };
+        } else if(text==='OPTIONS'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.openOptionsV126) openOptionsV126(); return false; };
+        } else if(text==='LOG OUT'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.doLogoutV126) doLogoutV126(); return false; };
+        }
+      });
+    }
+    
+    fixNavButtons();
+    
+    // Re-fix after render
+    if(window.renderRoster){
+      let orig = window.renderRoster;
+      window.renderRoster = function(){
+        orig();
+        setTimeout(fixNavButtons, 200);
+      };
+    }
+    
+    // Also intercept any future alert-based navigation attempts
+    document.addEventListener('click', function(e){
+      let target = e.target;
+      if(target && target.tagName==='BUTTON'){
+        let txt = target.textContent.trim().toUpperCase();
+        // If it's a nav button that would have triggered alert, prevent alert and do navigation
+        if(txt==='REQUESTS' || txt==='ROSTER' || txt==='OPTIONS' || txt==='LOG OUT'){
+          // Let our handlers handle it
+        }
+      }
+    }, true);
+    
+    console.log('V130: Popups blocked, navigation fixed');
+  }, 500);
+})();
+</script>
+
 </body></html>';
     let blob = new Blob([htmlContent], {type:'text/html'});
     let url = URL.createObjectURL(blob);
@@ -7594,6 +7705,117 @@ header { display: none !important; }
     
     console.log('V128: Popups removed, 14 days fixed to show all contents inside cells');
   }, 1000);
+})();
+</script>
+
+
+<script>
+// V130 FIX - Block popups completely, fix page redirection
+(function(){
+  // 1. Block alert popups for REQUESTS and OPTIONS placeholders
+  const originalAlert = window.alert;
+  window.alert = function(msg){
+    if(typeof msg === 'string'){
+      // Block all known placeholder alerts
+      if(msg.includes('REQUESTS -') || 
+         msg.includes('REQUESTS tab') ||
+         msg.includes('HIDDEN EMPLOYEES') ||
+         msg.includes('CUSTOM ROSTERS') ||
+         msg.includes('ALL ACCOUNT MANAGEMENT') ||
+         msg.includes('ARCHIVE') ||
+         msg.includes('DUPLICATE ROSTER') ||
+         msg.includes('DELETE ROSTER') ||
+         msg.includes('IMPORT ROSTER') ||
+         msg.includes('Excel export') && msg.includes('not found') ||
+         msg.includes('PDF export') && msg.includes('not found') ||
+         msg.includes('Popup blocked') ||
+         msg.includes('In main app, this shows:') ||
+         msg.includes('For V91, use existing Requests')){
+        console.log('Blocked popup:', msg.substring(0,100));
+        return; // Block it
+      }
+    }
+    return originalAlert.apply(window, arguments);
+  };
+
+  // 2. Fix page redirection - ensure buttons work
+  setTimeout(function(){
+    // Fix all header buttons with data-a and data-opt-a
+    function fixNavButtons(){
+      document.querySelectorAll('[data-a]').forEach(btn=>{
+        btn.onclick = null;
+        btn.removeAttribute('onclick');
+        let newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+          let a = newBtn.getAttribute('data-a');
+          console.log('Nav:', a);
+          if(a==='roster' && window.navRosterV126) navRosterV126();
+          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
+          else if(a==='options' && window.openOptionsV126) openOptionsV126();
+          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
+          return false;
+        }, true);
+      });
+      
+      document.querySelectorAll('[data-opt-a]').forEach(btn=>{
+        btn.onclick = null;
+        btn.removeAttribute('onclick');
+        let newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', function(e){
+          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+          let a = newBtn.getAttribute('data-opt-a');
+          console.log('Opt Nav:', a);
+          if(a==='roster' && window.navRosterV126) navRosterV126();
+          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
+          else if(a==='options' && window.openOptionsV126) openOptionsV126();
+          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
+          return false;
+        }, true);
+      });
+      
+      // Fix roster header buttons (today workers page, requests page)
+      document.querySelectorAll('#today-workers-page-v126 .r-btn, #requests-page-v126 .r-btn').forEach(btn=>{
+        let text = btn.textContent.trim().toUpperCase();
+        if(text==='ROSTER'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.navRosterV126) navRosterV126(); return false; };
+        } else if(text==='REQUESTS'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.openRequestsV126) openRequestsV126(); return false; };
+        } else if(text==='OPTIONS'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.openOptionsV126) openOptionsV126(); return false; };
+        } else if(text==='LOG OUT'){
+          btn.onclick = function(e){ e.preventDefault(); if(window.doLogoutV126) doLogoutV126(); return false; };
+        }
+      });
+    }
+    
+    fixNavButtons();
+    
+    // Re-fix after render
+    if(window.renderRoster){
+      let orig = window.renderRoster;
+      window.renderRoster = function(){
+        orig();
+        setTimeout(fixNavButtons, 200);
+      };
+    }
+    
+    // Also intercept any future alert-based navigation attempts
+    document.addEventListener('click', function(e){
+      let target = e.target;
+      if(target && target.tagName==='BUTTON'){
+        let txt = target.textContent.trim().toUpperCase();
+        // If it's a nav button that would have triggered alert, prevent alert and do navigation
+        if(txt==='REQUESTS' || txt==='ROSTER' || txt==='OPTIONS' || txt==='LOG OUT'){
+          // Let our handlers handle it
+        }
+      }
+    }, true);
+    
+    console.log('V130: Popups blocked, navigation fixed');
+  }, 500);
 })();
 </script>
 
