@@ -99,25 +99,51 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-</head>
+<script>window.addEventListener("unhandledrejection", function(e){ if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")){ e.preventDefault(); console.log("Suppressed extension error: message channel closed"); } });</script></head>
 <body>
 <div class="global-bg"><div class="red-corner-global"></div><div class="black-corner-global"></div></div>
 
-<div id="login-page">
-  <div class="red-corner"></div><div class="black-corner"></div>
-  <div class="center">
-    <div class="repco-logo"><div class="repco-stripes"><div class="repco-stripe s1"></div><div class="repco-stripe s2"></div><div class="repco-stripe s3"></div><div class="repco-stripe s4"></div><div class="repco-stripe s5"></div></div><div class="repco-text">Repco</div></div>
-    <div class="title">REPCO ROSTER</div>
-    <div class="login-row"><label>USERNAME:</label><input id="login-user" type="text"></div>
-    <div class="login-row"><label>PASSWORD:</label><input id="login-pass" type="password"></div>
-    <button id="login-signin-btn" type="button" onclick="doLogin()">SIGN IN</button>
-    <div id="login-err"></div>
-    <button id="admin-cog" onclick="openAdmin()" title="Admin" style="position:absolute;bottom:18px;left:18px;z-index:1000000;width:44px;height:44px;border-radius:50%;background:#fff;border:2px solid #111;display:flex;align-items:center;justify-content:center;box-shadow:2px 2px 0 #111;cursor:pointer"><span style="font-size:20px">⚙️</span></button>
-    </div>
-  <button onclick="openAdmin()" style="position:fixed;bottom:16px;left:16px;z-index:10;background:rgba(0,0,0,0.08);border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px" title="Admin">⚙️</button>
-</div>
 
-<div id="global-header"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><div class="r-btns-consistent">
+<div id="login-page" style="position:fixed;inset:0;width:100vw;height:100vh;background:#fff;z-index:999999;display:flex;align-items:center;justify-content:center;overflow:hidden">
+  <div class="red-corner" style="position:absolute;top:0;left:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#E30613;clip-path:polygon(0 0,100% 0,0 100%);z-index:1"></div>
+  <div class="black-corner" style="position:absolute;bottom:0;right:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#0a0a0a;clip-path:polygon(100% 0,100% 100%,0 100%);z-index:1"></div>
+  <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;width:100%;max-width:500px">
+    <div class="repco-logo" style="display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:32px;transform:skewX(-12deg)">
+      <div style="display:flex;gap:6px;align-items:center">
+        <div style="width:48px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
+        <div style="width:14px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
+        <div style="width:14px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
+        <div style="width:14px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
+        <div style="width:14px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
+      </div>
+      <div style="font-family:'Arial Black',Impact,sans-serif;font-weight:900;font-size:52px;letter-spacing:-1px;color:#000;margin-left:12px;transform:skewX(-12deg);font-style:italic">Repco</div>
+    </div>
+    <div class="title" style="font-family:'Arial Black',Impact,sans-serif;font-weight:900;font-size:22px;letter-spacing:0.5px;color:#000;margin-bottom:28px;text-transform:uppercase">REPCO ROSTER</div>
+    <div class="login-form" style="display:flex;flex-direction:column;gap:14px;align-items:center;width:100%;max-width:360px">
+      <div class="login-row" style="display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between">
+        <label style="font-weight:900;font-size:13px;color:#000;letter-spacing:0.3px;white-space:nowrap">USERNAME:</label>
+        <input id="login-user" type="text" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
+      </div>
+      <div class="login-row" style="display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between">
+        <label style="font-weight:900;font-size:13px;color:#000;letter-spacing:0.3px;white-space:nowrap">PASSWORD:</label>
+        <input id="login-pass" type="password" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
+      </div>
+      <button id="login-signin-btn" type="button" onclick="doLogin()" style="margin-top:10px;background:#C4C4C4;color:#000;border:none;border-radius:9999px;padding:12px 0;font-weight:900;font-size:16px;letter-spacing:0.5px;width:100%;max-width:280px;cursor:pointer;box-shadow:none">SIGN IN</button>
+      <div id="login-err" class="login-error" style="color:#E30613;font-weight:900;font-size:12px;min-height:18px;margin-top:4px;text-align:center"></div>
+    </div>
+  </div>
+  <button id="admin-cog" onclick="openAdmin()" title="Admin Maintenance" style="position:absolute;bottom:18px;left:18px;z-index:1000000;width:32px;height:32px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(-10deg)">
+      <!-- Gear -->
+      <circle cx="14" cy="10" r="3" stroke-width="1.2"/>
+      <path d="M14 7.5V6M14 14V12.5M11.2 8.2L10.2 7.2M16.8 12.8L17.8 13.8M10.5 10H9M17 10H18.5M11.2 11.8L10.2 12.8M16.8 7.2L17.8 6.2"/>
+      <!-- Wrench -->
+      <path d="M7 16L3 20M6 19L8 17C8 17 9.5 18.5 11 18.5C12.5 18.5 13 17 13 17L11 15C11 15 9.5 15.5 8 14C6.5 12.5 7 11 7 11L5 13C5 13 3.5 13.5 3.5 15C3.5 16.5 5 18 5 18L7 16Z" fill="white" stroke="#000"/>
+    </svg>
+  </button>
+</div>
+<div id="global-header">
+<div class="r-title-consistent"><span>REPCO</span> ROSTER</div><div class="r-btns-consistent">
 <button class="r-btn-consistent active" id="btn-roster" onclick="showMain()">ROSTER</button>
 <button class="r-btn-consistent" id="btn-requests" onclick="openPage('requests-page')">REQUESTS</button>
 <button class="r-btn-consistent" id="btn-unavail" onclick="openPage('unavail-page')">STAFF UNAVAILABLE</button>
@@ -168,7 +194,7 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261021233500_SECURITY_FIX_V4";
+const BUILD_ID="20261022000000_FIX_ALL_V5";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -438,7 +464,7 @@ function doLogin(){
   const users=safeGetJSON('retail_roster_users_v1',[]);
   let found=users.find(x=>x.username.toLowerCase()===u.toLowerCase() && (x.password===p || x.password.toLowerCase()===p.toLowerCase()));
   if(!found) found=users.find(x=>x.username===u && x.password===p);
-  if(!found){ if(err) err.textContent='Invalid login: '+u+' - Available: '+users.map(x=>x.username).join(', '); return; }
+  if(!found){ if(err) err.textContent='Incorrect password or username'; return; }
   safeSetJSON('retail_roster_session_v1',{username:found.username,firstName:found.firstName,lastName:found.lastName,role:found.role});
   safeSet('repco_username',found.username);
   safeSet('repco_currentRole',found.role);
@@ -648,13 +674,87 @@ function renderRosterSafe(){
 }
 
 function editStaffType(globalIdx){ if(!isManagerRole()) return; showCustomSelect('Set employment type for '+getCurrentFortnight().staff[globalIdx].firstName+' '+getCurrentFortnight().staff[globalIdx].lastName, ['Full time','Casual'], (choice)=>{ if(!choice) return; let norm=choice.toLowerCase().includes('casual')?'casual':'fulltime'; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let fn=fns.find(f=>f.id===safeGet('retail_roster_currentFortnightId')); if(fn){ fn.staff[globalIdx].employmentType=norm; safeSetJSON('retail_roster_byFortnight_v1',fns); } toast(fn.staff[globalIdx].firstName+' set to '+norm+' - synced'); renderRosterSafe(); applyRoleVisibility(); }); }
-function editCell(td, staffIdxInList, dateIdx, sectionTitle){
-  if(!isManagerRole()) return; if(td.classList.contains('staff-cell')){ editStaffType(staffIdxInList); return; } if(td.querySelector('input')) return;
-  const cur=getCurrentFortnight(); let staff=cur.staff[staffIdxInList]; if(!staff) return; let globalIdx=staffIdxInList; const oldVal=staff.shifts[dateIdx]||'OFF'; const origStored=staff.originalShifts && staff.originalShifts[dateIdx] ? staff.originalShifts[dateIdx] : null;
-  td.innerHTML='<input class="edit-input" value="'+oldVal+'" autofocus placeholder="HH:MM-HH:MM or G">'; const input=td.querySelector('input'); input.focus(); input.select();
-  function save(){ let raw=(input.value||'').trim(); let upRaw=raw.toUpperCase(); if(upRaw==='G'){ let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let fn=fns.find(f=>f.id===safeGet('retail_roster_currentFortnightId')); if(fn){ let s=fn.staff[globalIdx]; if(!s.cellGreen) s.cellGreen={}; s.cellGreen[dateIdx]=!s.cellGreen[dateIdx]; safeSetJSON('retail_roster_byFortnight_v1',fns); } if(!staff.cellGreen) staff.cellGreen={}; staff.cellGreen[dateIdx]=!staff.cellGreen[dateIdx]; toast('Green toggled - synced'); renderRosterSafe(); applyRoleVisibility(); return; } let isGreenMark=false; let val=raw; if(upRaw.endsWith(' G')){ isGreenMark=true; val=raw.slice(0,-2).trim(); } upRaw=val.toUpperCase(); if((val==='' || upRaw==='OFF') && origStored && origStored!=='OFF' && origStored!=='AB' && origStored!=='NA' && origStored!==''){ if(oldVal==='OFF' || oldVal==='' ){ val=origStored; upRaw=val.toUpperCase(); } } if(val==='') val='OFF'; if(upRaw==='AB' || upRaw==='ABSENT'){ val='AB'; } else if(upRaw==='OFF'){ val='OFF'; } else if(upRaw==='NA'){ val='NA'; } else { let m=val.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/); if(!m){ toast('Use HH:MM-HH:MM or OFF/AB or G'); td.textContent=fmt(oldVal); renderRosterSafe(); applyRoleVisibility(); return; } } let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let fn=fns.find(f=>f.id===safeGet('retail_roster_currentFortnightId')); if(fn){ let s=fn.staff[globalIdx]; if(!s.originalShifts) s.originalShifts={}; if(!s.absentApproved) s.absentApproved={}; if(!s.unavailable) s.unavailable=Array(fn.dates.length).fill(false); if(!s.cellGreen) s.cellGreen={}; if(val==='AB'){ if(!s.originalShifts[dateIdx] || s.originalShifts[dateIdx]==='AB'){ s.originalShifts[dateIdx]= origStored && origStored!=='AB'?origStored:oldVal; } s.absentApproved[dateIdx]=true; s.shifts[dateIdx]='AB'; s.unavailable[dateIdx]=false; } else { if(val==='OFF' || val==='NA'){ if(!s.originalShifts[dateIdx] && oldVal!=='OFF') s.originalShifts[dateIdx]=oldVal; } else { if(s.shifts[dateIdx]!=='AB') s.originalShifts[dateIdx]=s.shifts[dateIdx]; } s.absentApproved[dateIdx]=false; s.shifts[dateIdx]=val; s.unavailable[dateIdx]=(val==='NA'); } if(isGreenMark) s.cellGreen[dateIdx]=true; safeSetJSON('retail_roster_byFortnight_v1',fns); } toast('Saved '+staff.firstName+' '+cur.dates[dateIdx].date+' -> '+val+' - synced live'); renderRosterSafe(); applyRoleVisibility(); }
-  input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } if(e.key==='Escape'){ td.textContent=fmt(oldVal); renderRosterSafe(); applyRoleVisibility(); } });
+
+function editCell(el,rowIdx,colIdx,sectionTitle){
+  try{
+    if(!isManagerRole(getActualRole())){ toast('Manager only'); return; }
+    var cur=getSelectedFortnight(); if(!cur) cur=getCurrentFortnight();
+    if(!cur) return;
+    var staff=cur.staff[rowIdx];
+    if(!staff) return;
+    
+    // Check if this cell has an approved absent request
+    var hasApprovedAbsent=false;
+    var approvedReq=null;
+    try{
+      var reqs=safeGetJSON('retail_roster_requests_v2',[]);
+      var shiftDate=cur.dates[colIdx]?.date||'';
+      for(var i=0;i<reqs.length;i++){
+        var r=reqs[i];
+        if(r && r.status==='approved' && r.type==='shift-correction' && r.shiftIdx===colIdx){
+          var s=cur.staff.find(function(st){ return st.firstName===staff.firstName && st.lastName===staff.lastName; });
+          if(s && r.username && (r.username.toLowerCase()===s.firstName.toLowerCase() || r.username.toLowerCase()===(s.firstName+' '+s.lastName).toLowerCase() || r.username.toLowerCase()===s.lastName.toLowerCase())){
+            if(r.newShift && r.newShift.toUpperCase()==='AB'){
+              hasApprovedAbsent=true;
+              approvedReq=r;
+              break;
+            }
+          }
+        }
+      }
+    }catch(e){}
+    
+    if(hasApprovedAbsent){
+      showCustomConfirm('Approved Absent Request', '<div style="font-size:11px">This shift was approved as ABSENT (AB) for '+staff.firstName+' '+staff.lastName+' on '+approvedReq.shiftDate+'<br><br>Reason: '+(approvedReq.reason||'No reason')+'<br><br>Do you want to override and remove AB status?</div>', function(confirmed){
+        if(!confirmed) return;
+        try{
+          staff.absentApproved[colIdx]=false;
+          staff.shifts[colIdx]=staff.originalShifts && staff.originalShifts[colIdx] ? staff.originalShifts[colIdx] : 'OFF';
+          safeSetJSON('retail_roster_byFortnight_v1',safeGetJSON('retail_roster_byFortnight_v1',[]));
+          renderRosterSafe();
+          toast('AB removed - override approved request');
+          // Update request status to overridden
+          var all=safeGetJSON('retail_roster_requests_v2',[]);
+          for(var i=0;i<all.length;i++){
+            if(all[i]===approvedReq){
+              all[i].status='overridden';
+              all[i].overriddenBy=safeGet('repco_username')||'admin';
+              all[i].overriddenTs=Date.now();
+              break;
+            }
+          }
+          safeSetJSON('retail_roster_requests_v2',all);
+        }catch(e){ console.error(e); }
+      });
+      return;
+    }
+    
+    var current=staff.shifts[colIdx]||'OFF';
+    showCustomPrompt('Edit Shift', '<div style="font-size:11px">Edit shift for '+staff.firstName+' '+staff.lastName+' on '+cur.dates[colIdx].day+' '+cur.dates[colIdx].date+'<br>Current: '+current+'</div><input id="edit-shift-input" value="'+current+'" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin-top:8px">', function(val){
+      if(val===null) return;
+      var newVal=val.trim();
+      if(!newVal) newVal='OFF';
+      // Save original if not saved
+      if(!staff.originalShifts) staff.originalShifts=[];
+      if(!staff.originalShifts[colIdx]) staff.originalShifts[colIdx]=staff.shifts[colIdx];
+      staff.shifts[colIdx]=newVal;
+      if(newVal.toUpperCase()==='AB' || newVal.toUpperCase()==='ABSENT'){
+        if(!staff.absentApproved) staff.absentApproved=[];
+        staff.absentApproved[colIdx]=true;
+      } else {
+        if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+      }
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      safeSetJSON('retail_roster_byFortnight_v1',fns);
+      renderRosterSafe();
+      toast('Shift updated: '+newVal);
+    });
+  }catch(e){
+    console.error('editCell error', e);
+    toast('Edit error: '+e.message);
+  }
 }
+
 function prevFortnight(){const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);let idx=fns.findIndex(f=>f.id===safeGet('retail_roster_currentFortnightId'));if(idx<=0)idx=fns.length-1;else idx--;safeSet('retail_roster_currentFortnightId',fns[idx].id);populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();}
 function nextFortnight(){const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);let idx=fns.findIndex(f=>f.id===safeGet('retail_roster_currentFortnightId'));if(idx<0||idx>=fns.length-1)idx=0;else idx++;safeSet('retail_roster_currentFortnightId',fns[idx].id);populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();}
 function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur==='24h'?'12h':'24h';safeSet('timeFormat',nxt);toast('Time: '+nxt);renderRosterSafe(); applyRoleVisibility();}
@@ -873,7 +973,7 @@ function importExcelFile(file){
           if(!isNaN(d) && d.getFullYear()>2020) dt=d;
         }
         if(dt && !isNaN(dt) && dt.getFullYear()>=2020){
-          let iso=dt.toISOString().slice(0,10);
+          let iso=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
           let dayAddr=XLSX.utils.encode_cell({r:1,c:c});
           let dayCell=ws[dayAddr];
           let dayName=dayCell && dayCell.v ? String(dayCell.v).toUpperCase().slice(0,3) : ['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()];
@@ -1636,71 +1736,242 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 
+
 function renderMySchedule(){
-  var el=document.getElementById('mysched-list');
-  if(!el) return;
-  var cur=getSelectedFortnight(); if(!cur) cur=getCurrentFortnight();
-  if(!cur){ el.innerHTML='<div class="card">No roster</div>'; return; }
-  var myStaff=findMyStaff(cur);
-  if(!myStaff){ 
-    el.innerHTML='<div class="card">Staff record not linked to account - username: '+safeGet('repco_username')+'<br>Admin accounts have no schedule<br><small>Available: '+cur.staff.map(function(s){return s.lastName+', '+s.firstName;}).join(', ')+'</small></div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; 
-    return; 
-  }
-  var html='<div class="card" style="background:#111;color:#fff"><b>MY SCHEDULE - '+(myStaff.lastName?myStaff.lastName.toUpperCase():'')+' '+(myStaff.firstName||'')+'</b><br>'+cur.label+'</div>';
-  var hasShift=false;
-  if(cur.dates){
-    cur.dates.forEach(function(d,i){
-      var sh=(myStaff && myStaff.shifts && myStaff.shifts[i]!=null) ? myStaff.shifts[i] : 'OFF';
+  try{
+    var el=document.getElementById('mysched-list');
+    if(!el) return;
+    var cur=getSelectedFortnight(); if(!cur) cur=getCurrentFortnight();
+    if(!cur){ el.innerHTML='<div class="card">No roster</div>'; return; }
+    var myStaff=findMyStaff(cur);
+    if(!myStaff){ 
+      el.innerHTML='<div class="card">Could not find your staff record - username: '+safeGet('repco_username')+'<br>Available: '+cur.staff.map(function(s){return s.lastName+', '+s.firstName;}).join(', ')+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; 
+      return; 
+    }
+    
+    var now=new Date();
+    // Get Brisbane time for countdown
+    var brisbaneNow=new Date();
+    try{
+      var fmt=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Brisbane',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+      var parts=fmt.formatToParts(now);
+      var y=parseInt(parts.find(function(p){return p.type==='year';}).value);
+      var mo=parseInt(parts.find(function(p){return p.type==='month';}).value)-1;
+      var d=parseInt(parts.find(function(p){return p.type==='day';}).value);
+      var hh=parseInt(parts.find(function(p){return p.type==='hour';}).value);
+      var mm=parseInt(parts.find(function(p){return p.type==='minute';}).value);
+      brisbaneNow=new Date(y,mo,d,hh,mm);
+    }catch(e){}
+    
+    var html='<div class="card" style="background:#111;color:#fff"><b>MY SCHEDULE - '+(myStaff.lastName?myStaff.lastName.toUpperCase():'')+' '+(myStaff.firstName||'')+'</b><br>'+cur.label+'</div>';
+    
+    // Build arrays: upcoming, worked, off
+    var upcoming=[]; var worked=[]; var offDays=[]; var currentShift=null; var nextShift=null;
+    var todayISO=getISO();
+    
+    for(var i=0;i<cur.dates.length;i++){
+      var d=cur.dates[i];
+      var sh=(myStaff.shifts && myStaff.shifts[i]!=null) ? myStaff.shifts[i] : 'OFF';
       var up=String(sh).toUpperCase().trim();
-      if(up && up!=='OFF' && up!=='NA' && up!=='AB' && up!=='' && up!=='ABSENT'){
-        hasShift=true;
-        var isGreen=myStaff && myStaff.cellGreen && myStaff.cellGreen[i];
-        html+='<div class="card" style="'+(isGreen?'border-color:#0a0a0a;background:#B6F7C5':'')+'"><b>'+d.day+' '+d.date+'</b> - '+fmt(sh)+(isGreen?' <span style="background:#111;color:#fff;border-radius:9999px;padding:2px 6px;font-size:9px">GREEN</span>':'')+'</div>';
+      var isOff=['OFF','NA','AB','ABSENT',''].indexOf(up)!==-1 || up==='';
+      var parsed=parseShiftRange(sh);
+      
+      if(isOff || !parsed){
+        offDays.push({date:d, shift:sh, idx:i});
+      } else {
+        // Check if this date is before today
+        if(d.iso){
+          if(d.iso < todayISO){
+            worked.push({date:d, shift:sh, idx:i, parsed:parsed});
+          } else if(d.iso === todayISO){
+            // Today - check if shift started
+            var shiftStart=new Date(brisbaneNow); shiftStart.setHours(Math.floor(parsed.start/60), parsed.start%60,0,0);
+            var shiftEnd=new Date(brisbaneNow); shiftEnd.setHours(Math.floor(parsed.end/60), parsed.end%60,0,0);
+            if(shiftEnd < shiftStart) shiftEnd.setDate(shiftEnd.getDate()+1); // overnight
+            if(brisbaneNow >= shiftStart && brisbaneNow <= shiftEnd){
+              currentShift={date:d, shift:sh, idx:i, parsed:parsed, start:shiftStart, end:shiftEnd};
+            } else if(brisbaneNow < shiftStart){
+              upcoming.push({date:d, shift:sh, idx:i, parsed:parsed});
+              if(!nextShift) nextShift={date:d, shift:sh, idx:i, parsed:parsed, start:shiftStart};
+            } else {
+              worked.push({date:d, shift:sh, idx:i, parsed:parsed});
+            }
+          } else {
+            upcoming.push({date:d, shift:sh, idx:i, parsed:parsed});
+            if(!nextShift){
+              var ns=new Date(d.iso); ns.setHours(Math.floor(parsed.start/60), parsed.start%60,0,0);
+              nextShift={date:d, shift:sh, idx:i, parsed:parsed, start:ns};
+            }
+          }
+        } else {
+          upcoming.push({date:d, shift:sh, idx:i, parsed:parsed});
+        }
       }
-    });
+    }
+    
+    // Current shift with countdown
+    if(currentShift){
+      var remaining=currentShift.end - brisbaneNow;
+      var totalMin=Math.floor(remaining/60000);
+      var h=Math.floor(totalMin/60); var m=totalMin%60;
+      var countdown=h>0 ? h+'h '+m+'m remaining' : m+'m remaining';
+      var progress=0;
+      try{
+        var total=currentShift.end - currentShift.start;
+        var elapsed=brisbaneNow - currentShift.start;
+        progress=Math.min(100, Math.max(0, (elapsed/total)*100));
+      }catch(e){}
+      html+='<div class="card" style="background:#B6F7C5;border:3px solid #111"><div style="font-weight:900;font-size:12px">🔴 CURRENT SHIFT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+currentShift.date.day+' '+currentShift.date.date+' - '+fmt(currentShift.shift)+'</div><div style="font-weight:900;font-size:14px;color:#E30613">'+countdown+'</div><div style="margin-top:8px;background:#fff;border:2px solid #111;border-radius:9999px;height:10px;overflow:hidden"><div style="background:#111;height:100%;width:'+progress+'%"></div></div><div style="font-size:10px;margin-top:4px">'+Math.round(progress)+'% complete</div></div>';
+    }
+    
+    // Next up
+    if(nextShift && !currentShift){
+      var until=nextShift.start - brisbaneNow;
+      var untilMin=Math.floor(until/60000);
+      var untilH=Math.floor(untilMin/60); var untilM=untilMin%60;
+      var untilD=Math.floor(untilH/24);
+      var untilTxt='';
+      if(untilD>0) untilTxt='Starts in '+untilD+'d '+(untilH%24)+'h';
+      else if(untilH>0) untilTxt='Starts in '+untilH+'h '+untilM+'m';
+      else untilTxt='Starts in '+untilM+' minutes';
+      html+='<div class="card" style="background:#FFF6CC;border:3px solid #111"><div style="font-weight:900;font-size:12px">⏭️ NEXT UP</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+nextShift.date.day+' '+nextShift.date.date+' - '+fmt(nextShift.shift)+'</div><div style="font-weight:900;font-size:12px">'+untilTxt+'</div></div>';
+    }
+    
+    // Upcoming shifts
+    if(upcoming.length>0){
+      html+='<div class="card" style="background:#111;color:#fff;font-weight:900">UPCOMING SHIFTS ('+upcoming.length+')</div>';
+      for(var i=0;i<upcoming.length;i++){
+        var u=upcoming[i];
+        html+='<div class="card"><b>'+u.date.day+' '+u.date.date+'</b> - '+fmt(u.shift)+'</div>';
+      }
+    }
+    
+    // Worked shifts
+    if(worked.length>0){
+      html+='<div class="card" style="background:#E5E5E5;font-weight:900">WORKED SHIFTS ('+worked.length+')</div>';
+      for(var i=0;i<worked.length;i++){
+        var w=worked[i];
+        html+='<div class="card" style="opacity:0.7"><b>'+w.date.day+' '+w.date.date+'</b> - '+fmt(w.shift)+' ✓</div>';
+      }
+    }
+    
+    // Off days
+    if(offDays.length>0){
+      html+='<div class="card" style="background:#fff;border:2px dashed #111;font-weight:900">OFF DAYS ('+offDays.length+')</div>';
+      for(var i=0;i<offDays.length;i++){
+        var o=offDays[i];
+        var disp=String(o.shift).toUpperCase().trim();
+        if(disp==='' || disp==='OFF') disp='OFF';
+        html+='<div class="card" style="border:2px dashed #ccc"><b>'+o.date.day+' '+o.date.date+'</b> - '+disp+'</div>';
+      }
+    }
+    
+    if(upcoming.length===0 && worked.length===0 && offDays.length===cur.dates.length){
+      html+='<div class="card">No shifts in this fortnight - OFF</div>';
+    }
+    
+    html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>';
+    el.innerHTML=html;
+  }catch(e){
+    console.error('renderMySchedule error', e);
+    var el=document.getElementById('mysched-list');
+    if(el) el.innerHTML='<div class="card">Error: '+e.message+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>';
   }
-  if(!hasShift) html+='<div class="card">No shifts in this fortnight - OFF<br><small>Raw: '+(myStaff.shifts?myStaff.shifts.join(', '):'none')+'</small></div>';
-  html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>';
-  el.innerHTML=html;
 }
+
+
 
 
 
 function renderBuddies(which){
-  var cur=getCurrentFortnight(); 
-  if(!cur){ 
-    var el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list');
-    if(el) el.innerHTML='<div class="card">No roster loaded</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>';
-    return;
+  try{
+    var cur=getCurrentFortnight(); 
+    if(!cur){ 
+      var el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list');
+      if(el) el.innerHTML='<div class="card">No roster loaded</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>';
+      return;
+    }
+    var iso=getISO(); 
+    var targetDate;
+    try{ var p=iso.split('-').map(function(v){return parseInt(v,10);}); targetDate=new Date(p[0],p[1]-1,p[2]); }catch(e){ targetDate=new Date(); }
+    if(which==='tomorrow') targetDate.setDate(targetDate.getDate()+1);
+    var isoTarget=targetDate.getFullYear()+'-'+String(targetDate.getMonth()+1).padStart(2,'0')+'-'+String(targetDate.getDate()).padStart(2,'0');
+    var dd=String(targetDate.getDate()).padStart(2,'0'); var mm=String(targetDate.getMonth()+1).padStart(2,'0'); var todayStr=dd+'/'+mm; 
+    var dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT']; var dayName=dayNames[targetDate.getDay()];
+    var idx=-1;
+    // First try exact ISO match
+    for(var i=0;i<cur.dates.length;i++){ if(cur.dates[i].iso===isoTarget){ idx=i; break; } }
+    // Fallback to date string dd/mm
+    if(idx===-1){
+      for(var i=0;i<cur.dates.length;i++){ if(cur.dates[i].date===todayStr){ idx=i; break; } }
+    }
+    // Fallback to day+date
+    if(idx===-1){
+      for(var i=0;i<cur.dates.length;i++){ if(cur.dates[i].day===dayName && cur.dates[i].date===todayStr){ idx=i; break; } }
+    }
+    // Final fallback
+    if(idx===-1){ idx=which==='today'?0:1; if(idx>=cur.dates.length) idx=0; }
+    
+    var myStaff=findMyStaff(cur); 
+    var listId=which==='today'?'buddies-today-list':'buddies-tomorrow-list'; 
+    var el=document.getElementById(listId); 
+    if(!el) return;
+    
+    if(!myStaff){ 
+      el.innerHTML='<div class="card">Could not find your staff record - username: '+safeGet('repco_username')+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>'; 
+      return; 
+    }
+    var myShiftRaw=(myStaff && myStaff.shifts && myStaff.shifts[idx]!=null) ? myStaff.shifts[idx] : 'OFF'; 
+    var myParsed=parseShiftRange(myShiftRaw);
+    var dateLabel='';
+    if(cur.dates && cur.dates[idx]){
+      dateLabel=cur.dates[idx].date+' '+cur.dates[idx].day+' ('+isoTarget+') - idx '+idx;
+    } else {
+      dateLabel=todayStr+' '+dayName+' ('+isoTarget+') - idx '+idx;
+    }
+    var displayShift=myShiftRaw; 
+    if(!displayShift || String(displayShift).trim()==='') displayShift='OFF';
+    
+    var html='';
+    html+='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+(myStaff.lastName?myStaff.lastName.toUpperCase():'')+' '+(myStaff.firstName||'')+' - '+displayShift+'</div>';
+    
+    if(!myParsed){ 
+      html+='<div class="card">You are OFF on '+dateLabel+' - No buddies</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; 
+      el.innerHTML=html; 
+      return; 
+    }
+    
+    var buddies=[]; 
+    for(var sIdx=0;sIdx<cur.staff.length;sIdx++){
+      var s=cur.staff[sIdx];
+      if(!s || !s.firstName) continue; 
+      if(s.lastName===myStaff.lastName && s.firstName===myStaff.firstName) continue; 
+      var sh=(s && s.shifts && s.shifts[idx]!=null) ? s.shifts[idx] : 'OFF'; 
+      if(s.unavailable && s.unavailable[idx]) continue; 
+      if(s.absentApproved && s.absentApproved[idx]) continue; 
+      var p=parseShiftRange(sh); 
+      if(!p) continue; 
+      if(myParsed.start < p.end && p.start < myParsed.end){ 
+        buddies.push({name:(s.lastName?s.lastName.toUpperCase():'')+' '+(s.firstName||''), shift:fmt(sh)||sh}); 
+      } 
+    }
+    
+    if(buddies.length===0){
+      html+='<div class="card">No buddies overlapping on '+dateLabel+'</div>';
+    } else {
+      for(var b=0;b<buddies.length;b++){
+        html+='<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:3px 8px;font-size:10px;font-weight:900;margin-right:6px">'+buddies[b].shift+'</span> '+buddies[b].name+'</div>';
+      }
+    }
+    html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; 
+    el.innerHTML=html;
+  }catch(e){
+    console.error('renderBuddies error', e);
+    var el2=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list');
+    if(el2) el2.innerHTML='<div class="card">Error: '+e.message+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>';
   }
-  var iso=getISO(); 
-  var targetDate;
-  try{ var p=iso.split('-').map(Number); targetDate=new Date(p[0],p[1]-1,p[2]); }catch(e){ targetDate=new Date(); }
-  if(which==='tomorrow') targetDate.setDate(targetDate.getDate()+1);
-  var isoTarget=targetDate.getFullYear()+'-'+String(targetDate.getMonth()+1).padStart(2,'0')+'-'+String(targetDate.getDate()).padStart(2,'0');
-  var dd=String(targetDate.getDate()).padStart(2,'0'); var mm=String(targetDate.getMonth()+1).padStart(2,'0'); var todayStr=dd+'/'+mm; 
-  var dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT']; var dayName=dayNames[targetDate.getDay()];
-  var idx=cur.dates.findIndex(function(d){ return d.iso===isoTarget; });
-  if(idx===-1) idx=cur.dates.findIndex(function(d){ return d.date===todayStr; });
-  if(idx===-1) idx=cur.dates.findIndex(function(d){ return d.day===dayName && d.date===todayStr; });
-  if(idx===-1){ idx=which==='today'?0:1; if(idx>=cur.dates.length) idx=0; }
-  var myStaff=findMyStaff(cur); 
-  if(!myStaff){ 
-    var el2=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list'); 
-    if(el2) el2.innerHTML='<div class="card">Account not linked to staff - username: '+safeGet('repco_username')+'<br>Staff: '+cur.staff.map(function(s){return s.lastName;}).join(', ')+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>'; 
-    return; 
-  }
-  var myShiftRaw=(myStaff && myStaff.shifts && myStaff.shifts[idx]!=null) ? myStaff.shifts[idx] : 'OFF'; 
-  var myParsed=parseShiftRange(myShiftRaw);
-  var listId=which==='today'?'buddies-today-list':'buddies-tomorrow-list'; var el=document.getElementById(listId); if(!el) return;
-  var dateLabel=(cur.dates && cur.dates[idx])?cur.dates[idx].date+' '+cur.dates[idx].day+' ('+isoTarget+') - idx '+idx:todayStr+' '+dayName+' ('+isoTarget+') - idx '+idx;
-  var displayShift=myShiftRaw; if(!displayShift || String(displayShift).trim()==='') displayShift='(empty)';
-  var html='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+(myStaff.lastName?myStaff.lastName.toUpperCase():'')+' '+(myStaff.firstName||'')+' - '+displayShift+'</div>';
-  if(!myParsed){ html+='<div class="card">You are OFF on '+dateLabel+' - raw: \"'+String(myShiftRaw)+'\"</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html; return; }
-  var buddies=[]; cur.staff.forEach(function(s){ if(!s || !s.firstName) return; if(s.lastName===myStaff.lastName && s.firstName===myStaff.firstName) return; var sh=(s && s.shifts && s.shifts[idx]!=null) ? s.shifts[idx] : 'OFF'; if(s.unavailable && s.unavailable[idx]) return; if(s.absentApproved && s.absentApproved[idx]) return; var p=parseShiftRange(sh); if(!p) return; if(myParsed.start < p.end && p.start < myParsed.end){ buddies.push({name:(s.lastName?s.lastName.toUpperCase():'')+' '+(s.firstName||''), shift:fmt(sh)||sh}); } });
-  if(buddies.length===0) html+='<div class="card">No buddies overlapping on '+dateLabel+' - your shift: '+displayShift+'</div>'; else buddies.forEach(function(b){ html+='<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:3px 8px;font-size:10px;font-weight:900;margin-right:6px">'+b.shift+'</span> '+b.name+'</div>'; });
-  html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html;
 }
+
 
 
 
