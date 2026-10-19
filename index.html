@@ -86,6 +86,7 @@ button{cursor:pointer}
 input,select,textarea{font-size:13px !important}
 button{font-size:11px !important}
 
+@keyframes bounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
 function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
@@ -233,7 +234,42 @@ let db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONF
 const CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','repco_username','repco_currentRole','repco_logout_minutes','maintenance_mode','repco_maintenance_first_v1'];
 let cloudSaveTimer=null; let suppressCloudSave=false;
 function getAllState(){let o={}; CLOUD_KEYS.forEach(k=>{let v=safeGet(k); if(v!==null) o[k]=v;}); o._ts=Date.now(); o._build=BUILD_ID; return o;}
-function applyCloudState(state,isInitial){if(!state) return; suppressCloudSave=true; CLOUD_KEYS.forEach(k=>{if(state[k]!==undefined){try{localStorage.setItem(k,state[k]);}catch(e){} MEMORY_STORE[k]=state[k];}}); suppressCloudSave=false; if(isInitial){try{populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();checkMaintenance();}catch(e){}} else {try{renderRosterSafe(); applyRoleVisibility();}catch(e){}}}
+
+function applyCloudState(state,isInitial){
+  if(!state) return; 
+  suppressCloudSave=true; 
+  CLOUD_KEYS.forEach(k=>{
+    if(state[k]!==undefined){
+      try{localStorage.setItem(k,state[k]);}catch(e){} 
+      MEMORY_STORE[k]=state[k];
+    }
+  }); 
+  suppressCloudSave=false; 
+  if(isInitial){
+    try{populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();checkMaintenance();}catch(e){}
+  } else {
+    try{renderRosterSafe(); applyRoleVisibility();checkMaintenance();}catch(e){}
+    try{
+      const mode=safeGet('maintenance_mode')==='true';
+      if(mode){
+        let maintEl=document.getElementById('maintenance-main-v141');
+        if(maintEl && !maintEl.classList.contains('show')){
+          maintEl.classList.add('show');
+          toast('Maintenance enabled from another device');
+        }
+      } else {
+        let maintEl=document.getElementById('maintenance-main-v141');
+        if(maintEl && maintEl.classList.contains('show')){
+          maintEl.classList.remove('show');
+          toast('Maintenance disabled - back online');
+          setTimeout(()=>{ try{populateFortnightSelect();renderRosterSafe();}catch(e){} },200);
+        }
+      }
+    }catch(e){}
+  }
+}
+
+
 async function cloudLoad(){
   try{
     if(db){
@@ -245,15 +281,39 @@ async function cloudLoad(){
           const d=s.val(); if(!d||!d._ts) return;
           let lastTs=parseInt(safeGet('repco_cloud_ts')||'0');
           if(d._ts>lastTs){
-            applyCloudState(d,false); safeSet('repco_cloud_ts',String(d._ts)); toast('Roster updated from another device');
+            applyCloudState(d,false); safeSet('repco_cloud_ts',String(d._ts)); 
           }
-        }); return;
+        }); 
+        // Fallback poll every 8s in case on() misses
+        setInterval(async()=>{
+          try{
+            const ss=await db.ref('repco_state').once('value'); const dd=ss.val();
+            if(dd && dd._ts){
+              let lt=parseInt(safeGet('repco_cloud_ts')||'0');
+              if(dd._ts>lt){ applyCloudState(dd,false); safeSet('repco_cloud_ts',String(dd._ts)); }
+            }
+          }catch(e){}
+        },8000);
+        return;
       }
     }
     const res=await fetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
     if(res.ok){ const data=await res.json(); if(data&&data._ts){ let localTs=parseInt(safeGet('repco_cloud_ts')||'0'); if(data._ts>localTs){ applyCloudState(data,true); safeSet('repco_cloud_ts',String(data._ts)); } } }
   }catch(e){ console.log("cloudLoad",e); }
+  // Fallback REST polling if no Firebase
+  setInterval(async()=>{
+    try{
+      const r=await fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store'});
+      if(!r.ok) return;
+      const d=await r.json();
+      if(d && d._ts){
+        let lt=parseInt(safeGet('repco_cloud_ts')||'0');
+        if(d._ts>lt){ applyCloudState(d,false); safeSet('repco_cloud_ts',String(d._ts)); }
+      }
+    }catch(e){}
+  },5000);
 }
+
 async function cloudSave(){
   if(suppressCloudSave) return;
   if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
@@ -690,7 +750,27 @@ function renderOptions(){
       +'</div>'+timerHtml;
   }
 }
-function toggleMaintenanceFromOptions(){ let cb=document.getElementById('maint-toggle-options'); let next=cb?cb.checked:false; safeSet('maintenance_mode',String(next)); safeSet('repco_maintenance_first_v1',JSON.stringify({enabled:next,by:safeGet('repco_username')||'admin',ts:Date.now()})); let st=document.getElementById('maint-status-options'); if(st) st.textContent='Maintenance: '+(next?'ON':'OFF'); let maintEl=document.getElementById('maintenance-main-v141'); if(maintEl){ if(next) maintEl.classList.add('show'); else maintEl.classList.remove('show'); } toast('Maintenance '+(next?'ON':'OFF')+' - synced live'); }
+
+function toggleMaintenanceFromOptions(){ 
+  let cb=document.getElementById('maint-toggle-options'); 
+  let next=cb?cb.checked:false; 
+  safeSet('maintenance_mode',String(next)); 
+  safeSet('repco_maintenance_first_v1',JSON.stringify({enabled:next,by:safeGet('repco_username')||'admin',ts:Date.now()})); 
+  let st=document.getElementById('maint-status-options'); if(st) st.textContent='Maintenance: '+(next?'ON':'OFF'); 
+  let maintEl=document.getElementById('maintenance-main-v141'); 
+  if(maintEl){ if(next) maintEl.classList.add('show'); else maintEl.classList.remove('show'); } 
+  let cb1=document.getElementById('maint-toggle'); if(cb1) cb1.checked=next;
+  let s1=document.getElementById('maint-status'); if(s1) s1.textContent='Maintenance: '+(next?'ON':'OFF');
+  toast('Maintenance '+(next?'ON':'OFF')+' - syncing to all devices...');
+  try{ if(cloudSaveTimer) clearTimeout(cloudSaveTimer); cloudSaveTimer=null; }catch(e){}
+  try{
+    let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
+    if(db) db.ref('repco_state').set(state).then(()=>{ toast('Maintenance '+(next?'ON':'OFF')+' - live on all devices'); });
+    else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+  }catch(e){}
+  checkMaintenance();
+}
+
 function renderArchivePage(){
   const el=document.getElementById('archive-inner'); if(!el) return; const cur=getCurrentFortnight();
   let html='<div class="card"><div style="font-weight:900;margin-bottom:8px">ARCHIVE CURRENT ROSTER</div><div style="font-size:11px;opacity:.7">Current: '+(cur?cur.label:'')+' • '+ (cur?cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date:'')+'</div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="archiveCurrent()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ARCHIVE CURRENT</button><button id="delete-roster-btn" id="delete-roster-btn" onclick="deleteCurrentRoster()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">DELETE CURRENT ROSTER</button></div></div>';
@@ -1359,12 +1439,28 @@ function renderUnavail(){ const el=document.getElementById('unavail-list'); if(!
 function renderTodayWorkers(){ const cur=getCurrentFortnight(); if(!cur) return; const iso=getISO(); let idx=cur.dates.findIndex(d=>d.iso===iso); if(idx===-1) idx=0; const listEl=document.getElementById('today-workers-list'); if(!listEl) return; let workers=[]; cur.staff.forEach(s=>{ const sh=s.shifts[idx]||'OFF'; const isAbs=s.absentApproved && s.absentApproved[idx]; if(isAbs) return; if(sh.toUpperCase()!=='OFF'&&sh!=='NA' && sh.toUpperCase()!=='AB' && !(s.unavailable&&s.unavailable[idx])) workers.push({name:s.lastName.toUpperCase()+' '+s.firstName,shift:fmt(sh)}); }); if(workers.length===0) listEl.innerHTML='<div class="card">No workers rostered today </div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else listEl.innerHTML=workers.map(w=>'<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:900;margin-right:6px">'+(w.shift||'OFF')+'</span> '+w.name+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
 function toast(m){let t=document.getElementById('toast-v141');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500);}
 function doAdminLogin(){const u=document.getElementById('admin-user').value.trim();const p=document.getElementById('admin-pass').value.trim();const err=document.getElementById('admin-err');if(!['admin','master','manager','chris'].includes(u.toLowerCase())){err.textContent='Only admin/manager';return;}if(p.toLowerCase()!==u.toLowerCase()){err.textContent='Invalid';return;}document.getElementById('admin-login-section').style.display='none';document.getElementById('admin-toggle-section').style.display='block';checkMaintenance();}
+
 function toggleMaintenance(){
-  const cb=document.getElementById('maint-toggle'); let next=cb?cb.checked:(safeGet('maintenance_mode')!=='true');
-  safeSet('maintenance_mode',String(next)); safeSet('repco_maintenance_first_v1',JSON.stringify({enabled:next,by:safeGet('repco_username')||'admin',ts:Date.now()}));
-  let maintEl=document.getElementById('maintenance-main-v141'); if(maintEl){ if(next) maintEl.classList.add('show'); else maintEl.classList.remove('show'); }
-  toast('Maintenance '+(next?'ON':'OFF')+' - synced live');
+  const cb=document.getElementById('maint-toggle'); 
+  let next=cb?cb.checked:(safeGet('maintenance_mode')!=='true');
+  safeSet('maintenance_mode',String(next)); 
+  safeSet('repco_maintenance_first_v1',JSON.stringify({enabled:next,by:safeGet('repco_username')||'admin',ts:Date.now()}));
+  let maintEl=document.getElementById('maintenance-main-v141'); 
+  if(maintEl){ if(next) maintEl.classList.add('show'); else maintEl.classList.remove('show'); }
+  let statusEl=document.getElementById('maint-status'); if(statusEl) statusEl.textContent='Maintenance: '+(next?'ON':'OFF');
+  let cb2=document.getElementById('maint-toggle-options'); if(cb2) cb2.checked=next;
+  let st2=document.getElementById('maint-status-options'); if(st2) st2.textContent='Maintenance: '+(next?'ON':'OFF');
+  toast('Maintenance '+(next?'ON':'OFF')+' - syncing to all devices...');
+  // Force immediate cloud save
+  try{ if(cloudSaveTimer) clearTimeout(cloudSaveTimer); cloudSaveTimer=null; }catch(e){}
+  try{
+    let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
+    if(db) db.ref('repco_state').set(state).then(()=>{ toast('Maintenance '+(next?'ON':'OFF')+' - live on all devices'); }).catch(e=>{ console.log('cloudSave',e); });
+    else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+  }catch(e){ console.log('toggleMaintenance cloudSave', e); }
+  checkMaintenance();
 }
+
 function checkMaintenance(){
   try{
     const mode=safeGet('maintenance_mode')==='true';
