@@ -3,6 +3,24 @@
 <head>
 
 <script>
+// V132 BLOCK ALL POPUPS - MUST BE FIRST
+(function(){
+  const origAlert = window.alert;
+  window.alert = function(msg){
+    if(typeof msg === 'string'){
+      let low = msg.toLowerCase();
+      if(low.includes('requests -') || low.includes('pending leave') || low.includes('for v91, use existing requests') || low.includes('hidden employees') || low.includes('custom rosters') || low.includes('all account management') || (low.includes('excel export') && low.includes('not found')) || (low.includes('pdf export') && low.includes('not found'))){
+        console.log('V132 BLOCKED POPUP:', msg.substring(0,80));
+        return;
+      }
+    }
+    return origAlert.apply(window, arguments);
+  };
+})();
+</script>
+
+
+<script>
 // V45 PERMANENT LOGIN - Restore from Firebase BEFORE React
 (function(){
   const USERS_KEY = 'retail_roster_users_v1';
@@ -92,19 +110,58 @@
 }
 
 
-/* V128 FIX: 14 days must be fully visible, never hidden outside cell, no exceeding border */
+/* V132 FIX: 14 days must be fully visible, never hidden outside cell */
 #repco-v65 .r-table-wrap { overflow: auto !important; width: 100vw !important; max-width: 100vw !important; }
-#repco-v65 .r-table { width: auto !important; min-width: 100% !important; max-width: none !important; table-layout: auto !important; border-collapse: collapse !important; }
-#repco-v65 .r-table th { min-width: 78px !important; width: 78px !important; max-width: 78px !important; font-size: 8px !important; padding: 4px 2px !important; height: auto !important; overflow: visible !important; white-space: normal !important; word-break: break-word !important; text-align: center !important; }
-#repco-v65 .r-table th:first-child { min-width: 110px !important; max-width: 110px !important; width: 110px !important; font-size: 9px !important; text-align: left !important; position: sticky !important; left: 0 !important; background: #EDEDED !important; z-index: 3 !important; }
-#repco-v65 .r-table td { min-width: 78px !important; width: 78px !important; max-width: 78px !important; font-size: 8px !important; padding: 2px 3px !important; height: 32px !important; overflow: visible !important; white-space: normal !important; word-break: break-word !important; text-align: center !important; line-height: 1.2 !important; }
-#repco-v65 .r-table td:first-child { min-width: 110px !important; max-width: 110px !important; width: 110px !important; font-size: 9px !important; white-space: nowrap !important; text-align: left !important; position: sticky !important; left: 0 !important; background: white !important; z-index: 2 !important; }
-#repco-v65 .r-table td .shift-inner { font-size: 7px !important; line-height: 1.1 !important; white-space: normal !important; word-break: break-all !important; display: block !important; max-width: 100% !important; }
-@media (max-width: 768px){
-  #repco-v65 .r-table th { min-width: 62px !important; width: 62px !important; max-width: 62px !important; font-size: 7px !important; }
-  #repco-v65 .r-table th:first-child { min-width: 75px !important; max-width: 75px !important; width: 75px !important; }
-  #repco-v65 .r-table td { min-width: 62px !important; width: 62px !important; max-width: 62px !important; font-size: 7px !important; }
-  #repco-v65 .r-table td:first-child { min-width: 75px !important; max-width: 75px !important; width: 75px !important; font-size: 8px !important; }
+#repco-v65 .r-table { width: auto !important; min-width: 100% !important; table-layout: auto !important; }
+#repco-v65 .r-table th { min-width: 78px !important; width: 78px !important; max-width: 78px !important; font-size: 8px !important; padding: 4px 2px !important; overflow: visible !important; white-space: normal !important; word-break: break-word !important; }
+#repco-v65 .r-table th:first-child { min-width: 110px !important; max-width: 110px !important; width: 110px !important; position: sticky !important; left: 0 !important; background: #EDEDED !important; z-index: 3 !important; }
+#repco-v65 .r-table td { min-width: 78px !important; width: 78px !important; max-width: 78px !important; font-size: 8px !important; padding: 2px 3px !important; height: 32px !important; overflow: visible !important; white-space: normal !important; word-break: break-word !important; line-height: 1.2 !important; }
+#repco-v65 .r-table td:first-child { min-width: 110px !important; max-width: 110px !important; width: 110px !important; position: sticky !important; left: 0 !important; background: white !important; z-index: 2 !important; }
+
+
+/* V133 FIX: Consistent top bar across all pages */
+.r-header-consistent {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 12px 20px !important;
+  background: white !important;
+  border-bottom: 3px solid #111 !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  position: relative !important;
+  z-index: 10 !important;
+}
+.r-header-consistent .r-title-consistent {
+  font-family: 'Arial Black', Impact, sans-serif !important;
+  font-weight: 900 !important;
+  font-size: 22px !important;
+  color: #0a0a0a !important;
+  letter-spacing: -0.5px !important;
+}
+.r-header-consistent .r-title-consistent span {
+  color: #E30613 !important;
+}
+.r-header-consistent .r-btns-consistent {
+  display: flex !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+.r-header-consistent .r-btn-consistent {
+  background: #D9D9D9 !important;
+  border: none !important;
+  border-radius: 9999px !important;
+  padding: 8px 16px !important;
+  font-family: 'Arial Black', sans-serif !important;
+  font-weight: 900 !important;
+  font-size: 11px !important;
+  cursor: pointer !important;
+  color: #0a0a0a !important;
+  transition: none !important;
+}
+.r-header-consistent .r-btn-consistent.active {
+  background: #0a0a0a !important;
+  color: white !important;
 }
 
 </style>
@@ -1969,13 +2026,13 @@ body:has(#repco-v65.show) #root {
 <div id="options-page">
   <div class="red-corner"></div>
   <div class="black-corner"></div>
-  <div class="r-header">
-    <div class="r-title"><span>REPCO</span> ROSTER</div>
-    <div class="r-btns">
-      <button class="r-btn" data-opt-a="roster">ROSTER</button>
-      <button class="r-btn" data-opt-a="requests">REQUESTS</button>
-      <button class="r-btn active" data-opt-a="options">OPTIONS</button>
-      <button class="r-btn" data-opt-a="logout">LOG OUT</button>
+  <div class="r-header-consistent">
+    <div class="r-title-consistent"><span>REPCO</span> ROSTER</div>
+    <div class="r-btns-consistent">
+      <button class="r-btn-consistent" data-opt-a="roster">ROSTER</button>
+      <button class="r-btn-consistent" data-opt-a="requests">REQUESTS</button>
+      <button class="r-btn-consistent active" data-opt-a="options">OPTIONS</button>
+      <button class="r-btn-consistent" data-opt-a="logout">LOG OUT</button>
     </div>
   </div>
   <div class="options-title">OPTIONS</div>
@@ -2593,7 +2650,7 @@ header { display: none !important; }
           // Try to find existing requests handling
           let current=localStorage.getItem('retail_roster_currentTab');
           // If old app still has requests, try to trigger
-          alert('REQUESTS - This will show leave/requests management. Coming from main app logic. For now, staying on roster.');
+          
         }catch{}
       });
     });
@@ -2616,7 +2673,7 @@ header { display: none !important; }
     });
     document.querySelectorAll('#options-page [data-opt-a="requests"]').forEach(btn=>{
       btn.addEventListener('click', function(){
-        alert('REQUESTS tab - implement requests view');
+        
       });
     });
 
@@ -3860,19 +3917,14 @@ header { display: none !important; }
       // Check if there's a requests page in main app (old React app hidden)
       let root=document.getElementById('root');
       // For V91, show simple requests modal or alert
-      alert('REQUESTS - Leave / Shift Swap Requests\n\nIn main app, this shows:\n- Pending leave requests\n- Approved/Denied\n- Create new request\n\nFor V91, use existing Requests tab logic if available, or I can build full requests page next.');
+      
       // Attempt to trigger existing requests tab via localStorage
       try{
         localStorage.setItem('retail_roster_currentTab', 'requests');
         // If React app were visible, it would show requests
       }catch{}
     }catch(e){
-      alert('Requests: '+e.message);
-    }
-  }
-
-  function doLogout(){
-    if(!confirm('Log out?')) return;
+      ) return;
     try{ localStorage.removeItem('retail_roster_session_v1'); }catch{}
     location.reload();
   }
@@ -3987,7 +4039,7 @@ header { display: none !important; }
       Brisbane Time: <span id="brisbane-time-v126">Loading...</span> (Brisbane +10)<br>
       Auto-refreshing when maintenance ends...
     </div>
-    <div id="sync-status-v126" style="display:none;" style="display:none;"></div>
+    <div id="sync-status-v126" style="font-size:8px; color:#999; font-family:Arial; margin-top:6px;"></div>
   </div>
 </div>
 
@@ -3996,7 +4048,7 @@ header { display: none !important; }
 <div id="admin-login-modal-v126" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:999999999; display:none; align-items:center; justify-content:center; padding:20px;">
   <div style="background:white; border:3px solid #111; border-radius:16px; padding:20px; max-width:420px; width:100%; box-shadow:6px 6px 0 #111; font-family:'Arial Black', sans-serif;">
     <div style="font-weight:900; font-size:16px; margin-bottom:8px;">Admin Login Required</div>
-    
+    <div style="font-size:11px; font-family:Arial; color:#666; margin-bottom:12px;"></div>
     <input id="admin-user-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" placeholder="Username (e.g. Chris)" />
     <input id="admin-pass-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" type="password" placeholder="Password" />
     <div id="admin-login-status-v126" style="margin-top:8px; padding:8px; border-radius:8px; font-size:11px; font-family:Arial; display:none;"></div>
@@ -4015,12 +4067,28 @@ header { display: none !important; }
 </div>
 
 <div id="today-workers-page-v126" style="display:none; background:#EDEDED; min-height:100vh; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9998; overflow:auto;">
-  <div class="r-header" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:white; border-bottom:3px solid #111;"><div class="r-title" style="font-family:'Arial Black'; font-weight:900; font-size:18px;"><span style="color:#E30613;">REPCO</span> ROSTER</div><div class="r-btns" style="display:flex; gap:6px;"><button class="r-btn" onclick="closeTodayWorkersV126()">ROSTER</button><button class="r-btn" onclick="closeTodayWorkersV126(); openRequestsV126()">REQUESTS</button><button class="r-btn" onclick="closeTodayWorkersV126(); openOptionsV126()">OPTIONS</button><button class="r-btn" onclick="doLogoutV126()">LOG OUT</button></div></div>
+  <div class="r-header-consistent">
+    <div class="r-title-consistent"><span>REPCO</span> ROSTER</div>
+    <div class="r-btns-consistent">
+      <button class="r-btn-consistent" onclick="closeTodayWorkersV126()">ROSTER</button>
+      <button class="r-btn-consistent" onclick="closeTodayWorkersV126(); openRequestsV126()">REQUESTS</button>
+      <button class="r-btn-consistent" onclick="closeTodayWorkersV126(); openOptionsV126()">OPTIONS</button>
+      <button class="r-btn-consistent" onclick="doLogoutV126()">LOG OUT</button>
+    </div>
+  </div>
   <div style="padding:12px; max-width:800px; margin:0 auto;"><h2 id="today-title-v126" style="font-family:'Arial Black'; font-weight:900; font-size:16px;">TODAY'S WORKERS</h2><div id="today-workers-list-v126" style="display:grid; gap:8px; margin-top:12px;"></div></div>
 </div>
 
 <div id="requests-page-v126" style="display:none; background:#EDEDED; min-height:100vh; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9997; overflow:auto;">
-  <div class="r-header" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:white; border-bottom:3px solid #111;"><div class="r-title" style="font-family:'Arial Black'; font-weight:900; font-size:18px;"><span style="color:#E30613;">REPCO</span> ROSTER</div><div class="r-btns" style="display:flex; gap:6px;"><button class="r-btn" onclick="navRosterV126()">ROSTER</button><button class="r-btn active" style="background:#111; color:white;">REQUESTS</button><button class="r-btn" onclick="navOptionsV126()">OPTIONS</button><button class="r-btn" onclick="doLogoutV126()">LOG OUT</button></div></div>
+  <div class="r-header-consistent">
+    <div class="r-title-consistent"><span>REPCO</span> ROSTER</div>
+    <div class="r-btns-consistent">
+      <button class="r-btn-consistent" data-a="roster">ROSTER</button>
+      <button class="r-btn-consistent active" data-a="requests">REQUESTS</button>
+      <button class="r-btn-consistent" data-a="options">OPTIONS</button>
+      <button class="r-btn-consistent" data-a="logout">LOG OUT</button>
+    </div>
+  </div>
   <div style="padding:12px; max-width:1000px; margin:0 auto;"><h2 style="font-family:'Arial Black'; font-weight:900; font-size:16px;">REQUESTS</h2><div id="requests-list-v126" style="margin-top:12px;"></div></div>
 </div>
 
@@ -4082,22 +4150,10 @@ header { display: none !important; }
       let now = new Date();
       let options = { timeZone: 'Australia/Brisbane', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false };
       let brisbane;
-      try{
-        brisbane = now.toLocaleString('en-AU', options);
-      }catch(e){
-        // Fallback if timezone not supported
-        let d = now.getDate(); let mo = now.getMonth()+1; let h = now.getHours(); let mi = now.getMinutes();
-        brisbane = (d<10?'0':'')+d+'/'+(mo<10?'0':'')+mo+', '+(h<10?'0':'')+h+':'+(mi<10?'0':'')+mi;
-      }
+      try{ brisbane = now.toLocaleString('en-AU', options); }catch(e){ let d=now.getDate(); let mo=now.getMonth()+1; let h=now.getHours(); let mi=now.getMinutes(); brisbane=(d<10?'0':'')+d+'/'+(mo<10?'0':'')+mo+', '+(h<10?'0':'')+h+':'+(mi<10?'0':'')+mi; }
       let el = document.getElementById('brisbane-time-v126');
       if(el) el.textContent = brisbane;
-    }catch(e){
-      let el = document.getElementById('brisbane-time-v126');
-      if(el){
-        let now = new Date();
-        el.textContent = now.toLocaleDateString('en-AU') + ' ' + now.toLocaleTimeString('en-AU');
-      }
-    }
+    }catch(e){ let el=document.getElementById('brisbane-time-v126'); if(el){ let now=new Date(); el.textContent=now.toLocaleDateString('en-AU')+' '+now.toLocaleTimeString('en-AU'); } }
   }
 
   window.showMaintenanceMainV126 = function(){
@@ -4112,7 +4168,8 @@ header { display: none !important; }
     if(opts){ opts.style.display='none'; opts.classList.remove('show'); }
     let ub = document.getElementById('user-bar-v126');
     if(ub) ub.style.display='none';
-    updateBrisbaneTime(); ensureGlobalAdminVisible();
+    updateBrisbaneTime();
+    ensureGlobalAdminVisible();
   };
   window.hideMaintenanceMainV126 = function(){
     let m = document.getElementById('maintenance-main-v126');
@@ -4402,224 +4459,67 @@ header { display: none !important; }
 
 
 <script>
-// V128 FIX - Remove popups, 14 days fully visible, no exceeding border
 (function(){
-  // Remove all old alert handlers for options buttons
   setTimeout(function(){
-    // Override all opt-* buttons to NOT show alert popups - each has its own page or does nothing
-    const optButtons = {
-      'opt-today': function(){ if(window.openTodayWorkersV126) openTodayWorkersV126(); },
-      'opt-excel': function(){ if(typeof window.exportFullRosterToExcel==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToExcel(cur); }catch(e){ console.log(e); } } },
-      'opt-pdf': function(){ if(typeof window.exportFullRosterToPDF==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToPDF(cur); }catch(e){ console.log(e); } } },
-      'opt-hidden': function(){ /* Hidden employees page */ 
-        let hiddenStr=localStorage.getItem('retail_roster_hidden_v1');
-        let hidden=hiddenStr?JSON.parse(hiddenStr):[];
-        if(window.showToastV126) showToastV126('Hidden employees: '+hidden.length+' staff');
-      },
-      'opt-import': function(){ /* Import - trigger file input without alert */ 
-        let fileInput=document.createElement('input'); fileInput.type='file'; fileInput.accept='.xlsx,.xls,.csv';
-        fileInput.onchange=function(e){ let file=e.target.files[0]; if(file && window.showToastV126) showToastV126('Selected: '+file.name); };
-        fileInput.click();
-      },
-      'opt-duplicate': function(){
-        try{
-          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
-          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to duplicate'); return; }
-          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
-          let cur=forts.find(f=>f.id===id)||forts[0];
-          let newFort=JSON.parse(JSON.stringify(cur));
-          newFort.id='fort_'+Date.now(); newFort.label=cur.label+' (Copy)';
-          forts.push(newFort);
-          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
-          if(window.showToastV126) showToastV126('Duplicated: '+newFort.label);
-          if(typeof window.renderRoster==='function') renderRoster();
-        }catch(e){ if(window.showToastV126) showToastV126('Duplicate failed'); }
-      },
-      'opt-archive': function(){
-        let archStr=localStorage.getItem('retail_roster_archive_files')||'[]';
-        let arch=JSON.parse(archStr);
-        if(window.showToastV126) showToastV126('Archive: '+arch.length+' files');
-      },
-      'opt-delete': function(){
-        try{
-          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
-          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to delete'); return; }
-          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
-          let cur=forts.find(f=>f.id===id)||forts[0];
-          if(!confirm('Delete roster '+cur.label+'?')) return;
-          forts=forts.filter(f=>f.id!==cur.id);
-          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
-          if(window.showToastV126) showToastV126('Deleted '+cur.label);
-          if(typeof window.renderRoster==='function') renderRoster();
-        }catch(e){}
-      },
-      'opt-custom': function(){ if(window.showToastV126) showToastV126('Custom rosters - Use main app Custom Rosters tab'); },
-      'opt-accounts': function(){ if(window.showToastV126) showToastV126('Accounts management - Use Accounts tab'); }
-    };
-    
-    Object.keys(optButtons).forEach(btnId=>{
-      let btn=document.getElementById(btnId);
-      if(btn){
-        // Remove all old listeners by cloning
-        let newBtn=btn.cloneNode(true);
+    function fixNav(){
+      document.querySelectorAll('[data-a], [data-opt-a]').forEach(btn=>{
+        let a = btn.getAttribute('data-a') || btn.getAttribute('data-opt-a');
+        if(!a) return;
+        let newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
         newBtn.addEventListener('click', function(e){
           e.preventDefault(); e.stopImmediatePropagation();
-          optButtons[btnId]();
+          if(a==='roster' && window.navRosterV126) navRosterV126();
+          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
+          else if(a==='options' && window.openOptionsV126) openOptionsV126();
+          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
           return false;
         }, true);
-        // Also override onclick
-        newBtn.onclick = function(e){ e.preventDefault(); optButtons[btnId](); return false; };
-      }
-    });
-    
-    // Fix REQUESTS popup - ensure it goes to requests page, not alert
-    document.querySelectorAll('[data-a="requests"], [data-opt-a="requests"]').forEach(btn=>{
-      let newBtn=btn.cloneNode(true);
-      btn.parentNode.replaceChild(newBtn, btn);
-      newBtn.addEventListener('click', function(e){
-        e.preventDefault(); e.stopImmediatePropagation();
-        if(window.openRequestsV126) openRequestsV126();
-        return false;
-      }, true);
-    });
-    
-    // Fix 14 days table - ensure contents never hidden outside cell
-    if(typeof window.renderRoster==='function'){
-      let origRenderRoster = window.renderRoster;
-      window.renderRoster = function(){
-        origRenderRoster();
-        setTimeout(function(){
-          document.querySelectorAll('#repco-v65 .r-table td').forEach(td=>{
-            td.style.overflow='visible';
-            td.style.whiteSpace='normal';
-            td.style.wordBreak='break-word';
-            // Ensure inner divs also visible
-            let inner=td.querySelector('div');
-            if(inner){
-              inner.style.whiteSpace='normal';
-              inner.style.wordBreak='break-word';
-              inner.style.overflow='visible';
-              inner.style.maxWidth='100%';
-            }
-          });
-        }, 200);
-      };
+      });
+      // Also fix text-based buttons
+      document.querySelectorAll('#today-workers-page-v126 .r-btn, #requests-page-v126 .r-btn').forEach(btn=>{
+        let txt = btn.textContent.trim().toUpperCase();
+        if(txt==='ROSTER') btn.onclick=function(e){ e.preventDefault(); navRosterV126(); return false; };
+        if(txt==='REQUESTS') btn.onclick=function(e){ e.preventDefault(); openRequestsV126(); return false; };
+        if(txt==='OPTIONS') btn.onclick=function(e){ e.preventDefault(); openOptionsV126(); return false; };
+        if(txt==='LOG OUT') btn.onclick=function(e){ e.preventDefault(); doLogoutV126(); return false; };
+      });
     }
-    
-    console.log('V128: Popups removed, 14 days fixed to show all contents inside cells');
-  }, 1000);
+    fixNav();
+    if(window.renderRoster){
+      let orig=window.renderRoster;
+      window.renderRoster=function(){ orig(); setTimeout(fixNav, 200); };
+    }
+    console.log('V132 nav fix applied');
+  }, 500);
 })();
 </script>
 
 
 <script>
-// V130 FIX - Block popups completely, fix page redirection
 (function(){
-  // 1. Block alert popups for REQUESTS and OPTIONS placeholders
-  const originalAlert = window.alert;
-  window.alert = function(msg){
-    if(typeof msg === 'string'){
-      // Block all known placeholder alerts
-      if(msg.includes('REQUESTS -') || 
-         msg.includes('REQUESTS tab') ||
-         msg.includes('HIDDEN EMPLOYEES') ||
-         msg.includes('CUSTOM ROSTERS') ||
-         msg.includes('ALL ACCOUNT MANAGEMENT') ||
-         msg.includes('ARCHIVE') ||
-         msg.includes('DUPLICATE ROSTER') ||
-         msg.includes('DELETE ROSTER') ||
-         msg.includes('IMPORT ROSTER') ||
-         msg.includes('Excel export') && msg.includes('not found') ||
-         msg.includes('PDF export') && msg.includes('not found') ||
-         msg.includes('Popup blocked') ||
-         msg.includes('In main app, this shows:') ||
-         msg.includes('For V91, use existing Requests')){
-        console.log('Blocked popup:', msg.substring(0,100));
-        return; // Block it
-      }
-    }
-    return originalAlert.apply(window, arguments);
-  };
-
-  // 2. Fix page redirection - ensure buttons work
   setTimeout(function(){
-    // Fix all header buttons with data-a and data-opt-a
-    function fixNavButtons(){
-      document.querySelectorAll('[data-a]').forEach(btn=>{
-        btn.onclick = null;
-        btn.removeAttribute('onclick');
-        let newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', function(e){
-          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-          let a = newBtn.getAttribute('data-a');
-          console.log('Nav:', a);
-          if(a==='roster' && window.navRosterV126) navRosterV126();
-          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
-          else if(a==='options' && window.openOptionsV126) openOptionsV126();
-          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
-          return false;
-        }, true);
-      });
-      
-      document.querySelectorAll('[data-opt-a]').forEach(btn=>{
-        btn.onclick = null;
-        btn.removeAttribute('onclick');
-        let newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', function(e){
-          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-          let a = newBtn.getAttribute('data-opt-a');
-          console.log('Opt Nav:', a);
-          if(a==='roster' && window.navRosterV126) navRosterV126();
-          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
-          else if(a==='options' && window.openOptionsV126) openOptionsV126();
-          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
-          return false;
-        }, true);
-      });
-      
-      // Fix roster header buttons (today workers page, requests page)
-      document.querySelectorAll('#today-workers-page-v126 .r-btn, #requests-page-v126 .r-btn').forEach(btn=>{
-        let text = btn.textContent.trim().toUpperCase();
-        if(text==='ROSTER'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.navRosterV126) navRosterV126(); return false; };
-        } else if(text==='REQUESTS'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.openRequestsV126) openRequestsV126(); return false; };
-        } else if(text==='OPTIONS'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.openOptionsV126) openOptionsV126(); return false; };
-        } else if(text==='LOG OUT'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.doLogoutV126) doLogoutV126(); return false; };
-        }
-      });
-    }
-    
-    fixNavButtons();
-    
-    // Re-fix after render
-    if(window.renderRoster){
-      let orig = window.renderRoster;
-      window.renderRoster = function(){
-        orig();
-        setTimeout(fixNavButtons, 200);
-      };
-    }
-    
-    // Also intercept any future alert-based navigation attempts
-    document.addEventListener('click', function(e){
-      let target = e.target;
-      if(target && target.tagName==='BUTTON'){
-        let txt = target.textContent.trim().toUpperCase();
-        // If it's a nav button that would have triggered alert, prevent alert and do navigation
-        if(txt==='REQUESTS' || txt==='ROSTER' || txt==='OPTIONS' || txt==='LOG OUT'){
-          // Let our handlers handle it
-        }
+    // Make roster page header consistent
+    let rosterDiv = document.getElementById('repco-v65');
+    if(rosterDiv){
+      let existingHeader = rosterDiv.querySelector('.r-header');
+      if(existingHeader && !existingHeader.classList.contains('r-header-consistent')){
+        existingHeader.classList.add('r-header-consistent');
+        let title = existingHeader.querySelector('.r-title');
+        if(title){ title.classList.add('r-title-consistent'); }
+        let btns = existingHeader.querySelector('.r-btns');
+        if(btns){ btns.classList.add('r-btns-consistent'); }
+        existingHeader.querySelectorAll('.r-btn').forEach(btn=>{
+          btn.classList.add('r-btn-consistent');
+          // Ensure active state for roster
+          if(btn.textContent.trim().toUpperCase()==='ROSTER' || btn.getAttribute('data-a')==='roster'){
+            btn.classList.add('active');
+          }
+        });
       }
-    }, true);
-    
-    console.log('V130: Popups blocked, navigation fixed');
-  }, 500);
+    }
+    console.log('V133 header consistency applied');
+  }, 600);
 })();
 </script>
 
@@ -5721,7 +5621,7 @@ header { display: none !important; }
           // Try to find existing requests handling
           let current=localStorage.getItem('retail_roster_currentTab');
           // If old app still has requests, try to trigger
-          alert('REQUESTS - This will show leave/requests management. Coming from main app logic. For now, staying on roster.');
+          
         }catch{}
       });
     });
@@ -5744,7 +5644,7 @@ header { display: none !important; }
     });
     document.querySelectorAll('#options-page [data-opt-a="requests"]').forEach(btn=>{
       btn.addEventListener('click', function(){
-        alert('REQUESTS tab - implement requests view');
+        
       });
     });
 
@@ -7056,19 +6956,14 @@ header { display: none !important; }
       // Check if there's a requests page in main app (old React app hidden)
       let root=document.getElementById('root');
       // For V91, show simple requests modal or alert
-      alert('REQUESTS - Leave / Shift Swap Requests\n\nIn main app, this shows:\n- Pending leave requests\n- Approved/Denied\n- Create new request\n\nFor V91, use existing Requests tab logic if available, or I can build full requests page next.');
+      
       // Attempt to trigger existing requests tab via localStorage
       try{
         localStorage.setItem('retail_roster_currentTab', 'requests');
         // If React app were visible, it would show requests
       }catch{}
     }catch(e){
-      alert('Requests: '+e.message);
-    }
-  }
-
-  function doLogout(){
-    if(!confirm('Log out?')) return;
+      ) return;
     try{ localStorage.removeItem('retail_roster_session_v1'); }catch{}
     location.reload();
   }
@@ -7183,7 +7078,7 @@ header { display: none !important; }
       Brisbane Time: <span id="brisbane-time-v126">Loading...</span> (Brisbane +10)<br>
       Auto-refreshing when maintenance ends...
     </div>
-    <div id="sync-status-v126" style="display:none;" style="display:none;"></div>
+    <div id="sync-status-v126" style="font-size:8px; color:#999; font-family:Arial; margin-top:6px;"></div>
   </div>
 </div>
 
@@ -7192,7 +7087,7 @@ header { display: none !important; }
 <div id="admin-login-modal-v126" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:999999999; display:none; align-items:center; justify-content:center; padding:20px;">
   <div style="background:white; border:3px solid #111; border-radius:16px; padding:20px; max-width:420px; width:100%; box-shadow:6px 6px 0 #111; font-family:'Arial Black', sans-serif;">
     <div style="font-weight:900; font-size:16px; margin-bottom:8px;">Admin Login Required</div>
-    
+    <div style="font-size:11px; font-family:Arial; color:#666; margin-bottom:12px;"></div>
     <input id="admin-user-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" placeholder="Username (e.g. Chris)" />
     <input id="admin-pass-v126" style="border:2.5px solid #111; border-radius:10px; padding:10px 12px; font-weight:700; font-size:12px; width:100%; margin-bottom:8px; font-family:Arial;" type="password" placeholder="Password" />
     <div id="admin-login-status-v126" style="margin-top:8px; padding:8px; border-radius:8px; font-size:11px; font-family:Arial; display:none;"></div>
@@ -7211,12 +7106,28 @@ header { display: none !important; }
 </div>
 
 <div id="today-workers-page-v126" style="display:none; background:#EDEDED; min-height:100vh; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9998; overflow:auto;">
-  <div class="r-header" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:white; border-bottom:3px solid #111;"><div class="r-title" style="font-family:'Arial Black'; font-weight:900; font-size:18px;"><span style="color:#E30613;">REPCO</span> ROSTER</div><div class="r-btns" style="display:flex; gap:6px;"><button class="r-btn" onclick="closeTodayWorkersV126()">ROSTER</button><button class="r-btn" onclick="closeTodayWorkersV126(); openRequestsV126()">REQUESTS</button><button class="r-btn" onclick="closeTodayWorkersV126(); openOptionsV126()">OPTIONS</button><button class="r-btn" onclick="doLogoutV126()">LOG OUT</button></div></div>
+  <div class="r-header-consistent">
+    <div class="r-title-consistent"><span>REPCO</span> ROSTER</div>
+    <div class="r-btns-consistent">
+      <button class="r-btn-consistent" onclick="closeTodayWorkersV126()">ROSTER</button>
+      <button class="r-btn-consistent" onclick="closeTodayWorkersV126(); openRequestsV126()">REQUESTS</button>
+      <button class="r-btn-consistent" onclick="closeTodayWorkersV126(); openOptionsV126()">OPTIONS</button>
+      <button class="r-btn-consistent" onclick="doLogoutV126()">LOG OUT</button>
+    </div>
+  </div>
   <div style="padding:12px; max-width:800px; margin:0 auto;"><h2 id="today-title-v126" style="font-family:'Arial Black'; font-weight:900; font-size:16px;">TODAY'S WORKERS</h2><div id="today-workers-list-v126" style="display:grid; gap:8px; margin-top:12px;"></div></div>
 </div>
 
 <div id="requests-page-v126" style="display:none; background:#EDEDED; min-height:100vh; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9997; overflow:auto;">
-  <div class="r-header" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:white; border-bottom:3px solid #111;"><div class="r-title" style="font-family:'Arial Black'; font-weight:900; font-size:18px;"><span style="color:#E30613;">REPCO</span> ROSTER</div><div class="r-btns" style="display:flex; gap:6px;"><button class="r-btn" onclick="navRosterV126()">ROSTER</button><button class="r-btn active" style="background:#111; color:white;">REQUESTS</button><button class="r-btn" onclick="navOptionsV126()">OPTIONS</button><button class="r-btn" onclick="doLogoutV126()">LOG OUT</button></div></div>
+  <div class="r-header-consistent">
+    <div class="r-title-consistent"><span>REPCO</span> ROSTER</div>
+    <div class="r-btns-consistent">
+      <button class="r-btn-consistent" data-a="roster">ROSTER</button>
+      <button class="r-btn-consistent active" data-a="requests">REQUESTS</button>
+      <button class="r-btn-consistent" data-a="options">OPTIONS</button>
+      <button class="r-btn-consistent" data-a="logout">LOG OUT</button>
+    </div>
+  </div>
   <div style="padding:12px; max-width:1000px; margin:0 auto;"><h2 style="font-family:'Arial Black'; font-weight:900; font-size:16px;">REQUESTS</h2><div id="requests-list-v126" style="margin-top:12px;"></div></div>
 </div>
 
@@ -7278,22 +7189,10 @@ header { display: none !important; }
       let now = new Date();
       let options = { timeZone: 'Australia/Brisbane', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false };
       let brisbane;
-      try{
-        brisbane = now.toLocaleString('en-AU', options);
-      }catch(e){
-        // Fallback if timezone not supported
-        let d = now.getDate(); let mo = now.getMonth()+1; let h = now.getHours(); let mi = now.getMinutes();
-        brisbane = (d<10?'0':'')+d+'/'+(mo<10?'0':'')+mo+', '+(h<10?'0':'')+h+':'+(mi<10?'0':'')+mi;
-      }
+      try{ brisbane = now.toLocaleString('en-AU', options); }catch(e){ let d=now.getDate(); let mo=now.getMonth()+1; let h=now.getHours(); let mi=now.getMinutes(); brisbane=(d<10?'0':'')+d+'/'+(mo<10?'0':'')+mo+', '+(h<10?'0':'')+h+':'+(mi<10?'0':'')+mi; }
       let el = document.getElementById('brisbane-time-v126');
       if(el) el.textContent = brisbane;
-    }catch(e){
-      let el = document.getElementById('brisbane-time-v126');
-      if(el){
-        let now = new Date();
-        el.textContent = now.toLocaleDateString('en-AU') + ' ' + now.toLocaleTimeString('en-AU');
-      }
-    }
+    }catch(e){ let el=document.getElementById('brisbane-time-v126'); if(el){ let now=new Date(); el.textContent=now.toLocaleDateString('en-AU')+' '+now.toLocaleTimeString('en-AU'); } }
   }
 
   window.showMaintenanceMainV126 = function(){
@@ -7308,7 +7207,8 @@ header { display: none !important; }
     if(opts){ opts.style.display='none'; opts.classList.remove('show'); }
     let ub = document.getElementById('user-bar-v126');
     if(ub) ub.style.display='none';
-    updateBrisbaneTime(); ensureGlobalAdminVisible();
+    updateBrisbaneTime();
+    ensureGlobalAdminVisible();
   };
   window.hideMaintenanceMainV126 = function(){
     let m = document.getElementById('maintenance-main-v126');
@@ -7598,224 +7498,67 @@ header { display: none !important; }
 
 
 <script>
-// V128 FIX - Remove popups, 14 days fully visible, no exceeding border
 (function(){
-  // Remove all old alert handlers for options buttons
   setTimeout(function(){
-    // Override all opt-* buttons to NOT show alert popups - each has its own page or does nothing
-    const optButtons = {
-      'opt-today': function(){ if(window.openTodayWorkersV126) openTodayWorkersV126(); },
-      'opt-excel': function(){ if(typeof window.exportFullRosterToExcel==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToExcel(cur); }catch(e){ console.log(e); } } },
-      'opt-pdf': function(){ if(typeof window.exportFullRosterToPDF==='function'){ try{ let cur=null; try{ let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]'); if(forts.length){ let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id; cur=forts.find(f=>f.id===id)||forts[0]; } }catch(e){} if(cur) exportFullRosterToPDF(cur); }catch(e){ console.log(e); } } },
-      'opt-hidden': function(){ /* Hidden employees page */ 
-        let hiddenStr=localStorage.getItem('retail_roster_hidden_v1');
-        let hidden=hiddenStr?JSON.parse(hiddenStr):[];
-        if(window.showToastV126) showToastV126('Hidden employees: '+hidden.length+' staff');
-      },
-      'opt-import': function(){ /* Import - trigger file input without alert */ 
-        let fileInput=document.createElement('input'); fileInput.type='file'; fileInput.accept='.xlsx,.xls,.csv';
-        fileInput.onchange=function(e){ let file=e.target.files[0]; if(file && window.showToastV126) showToastV126('Selected: '+file.name); };
-        fileInput.click();
-      },
-      'opt-duplicate': function(){
-        try{
-          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
-          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to duplicate'); return; }
-          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
-          let cur=forts.find(f=>f.id===id)||forts[0];
-          let newFort=JSON.parse(JSON.stringify(cur));
-          newFort.id='fort_'+Date.now(); newFort.label=cur.label+' (Copy)';
-          forts.push(newFort);
-          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
-          if(window.showToastV126) showToastV126('Duplicated: '+newFort.label);
-          if(typeof window.renderRoster==='function') renderRoster();
-        }catch(e){ if(window.showToastV126) showToastV126('Duplicate failed'); }
-      },
-      'opt-archive': function(){
-        let archStr=localStorage.getItem('retail_roster_archive_files')||'[]';
-        let arch=JSON.parse(archStr);
-        if(window.showToastV126) showToastV126('Archive: '+arch.length+' files');
-      },
-      'opt-delete': function(){
-        try{
-          let forts=JSON.parse(localStorage.getItem('retail_roster_byFortnight_v1')||'[]');
-          if(!forts.length){ if(window.showToastV126) showToastV126('No roster to delete'); return; }
-          let id=localStorage.getItem('retail_roster_currentFortnightId')||forts[0].id;
-          let cur=forts.find(f=>f.id===id)||forts[0];
-          if(!confirm('Delete roster '+cur.label+'?')) return;
-          forts=forts.filter(f=>f.id!==cur.id);
-          localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(forts));
-          if(window.showToastV126) showToastV126('Deleted '+cur.label);
-          if(typeof window.renderRoster==='function') renderRoster();
-        }catch(e){}
-      },
-      'opt-custom': function(){ if(window.showToastV126) showToastV126('Custom rosters - Use main app Custom Rosters tab'); },
-      'opt-accounts': function(){ if(window.showToastV126) showToastV126('Accounts management - Use Accounts tab'); }
-    };
-    
-    Object.keys(optButtons).forEach(btnId=>{
-      let btn=document.getElementById(btnId);
-      if(btn){
-        // Remove all old listeners by cloning
-        let newBtn=btn.cloneNode(true);
+    function fixNav(){
+      document.querySelectorAll('[data-a], [data-opt-a]').forEach(btn=>{
+        let a = btn.getAttribute('data-a') || btn.getAttribute('data-opt-a');
+        if(!a) return;
+        let newBtn = btn.cloneNode(true);
         btn.parentNode.replaceChild(newBtn, btn);
         newBtn.addEventListener('click', function(e){
           e.preventDefault(); e.stopImmediatePropagation();
-          optButtons[btnId]();
+          if(a==='roster' && window.navRosterV126) navRosterV126();
+          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
+          else if(a==='options' && window.openOptionsV126) openOptionsV126();
+          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
           return false;
         }, true);
-        // Also override onclick
-        newBtn.onclick = function(e){ e.preventDefault(); optButtons[btnId](); return false; };
-      }
-    });
-    
-    // Fix REQUESTS popup - ensure it goes to requests page, not alert
-    document.querySelectorAll('[data-a="requests"], [data-opt-a="requests"]').forEach(btn=>{
-      let newBtn=btn.cloneNode(true);
-      btn.parentNode.replaceChild(newBtn, btn);
-      newBtn.addEventListener('click', function(e){
-        e.preventDefault(); e.stopImmediatePropagation();
-        if(window.openRequestsV126) openRequestsV126();
-        return false;
-      }, true);
-    });
-    
-    // Fix 14 days table - ensure contents never hidden outside cell
-    if(typeof window.renderRoster==='function'){
-      let origRenderRoster = window.renderRoster;
-      window.renderRoster = function(){
-        origRenderRoster();
-        setTimeout(function(){
-          document.querySelectorAll('#repco-v65 .r-table td').forEach(td=>{
-            td.style.overflow='visible';
-            td.style.whiteSpace='normal';
-            td.style.wordBreak='break-word';
-            // Ensure inner divs also visible
-            let inner=td.querySelector('div');
-            if(inner){
-              inner.style.whiteSpace='normal';
-              inner.style.wordBreak='break-word';
-              inner.style.overflow='visible';
-              inner.style.maxWidth='100%';
-            }
-          });
-        }, 200);
-      };
+      });
+      // Also fix text-based buttons
+      document.querySelectorAll('#today-workers-page-v126 .r-btn, #requests-page-v126 .r-btn').forEach(btn=>{
+        let txt = btn.textContent.trim().toUpperCase();
+        if(txt==='ROSTER') btn.onclick=function(e){ e.preventDefault(); navRosterV126(); return false; };
+        if(txt==='REQUESTS') btn.onclick=function(e){ e.preventDefault(); openRequestsV126(); return false; };
+        if(txt==='OPTIONS') btn.onclick=function(e){ e.preventDefault(); openOptionsV126(); return false; };
+        if(txt==='LOG OUT') btn.onclick=function(e){ e.preventDefault(); doLogoutV126(); return false; };
+      });
     }
-    
-    console.log('V128: Popups removed, 14 days fixed to show all contents inside cells');
-  }, 1000);
+    fixNav();
+    if(window.renderRoster){
+      let orig=window.renderRoster;
+      window.renderRoster=function(){ orig(); setTimeout(fixNav, 200); };
+    }
+    console.log('V132 nav fix applied');
+  }, 500);
 })();
 </script>
 
 
 <script>
-// V130 FIX - Block popups completely, fix page redirection
 (function(){
-  // 1. Block alert popups for REQUESTS and OPTIONS placeholders
-  const originalAlert = window.alert;
-  window.alert = function(msg){
-    if(typeof msg === 'string'){
-      // Block all known placeholder alerts
-      if(msg.includes('REQUESTS -') || 
-         msg.includes('REQUESTS tab') ||
-         msg.includes('HIDDEN EMPLOYEES') ||
-         msg.includes('CUSTOM ROSTERS') ||
-         msg.includes('ALL ACCOUNT MANAGEMENT') ||
-         msg.includes('ARCHIVE') ||
-         msg.includes('DUPLICATE ROSTER') ||
-         msg.includes('DELETE ROSTER') ||
-         msg.includes('IMPORT ROSTER') ||
-         msg.includes('Excel export') && msg.includes('not found') ||
-         msg.includes('PDF export') && msg.includes('not found') ||
-         msg.includes('Popup blocked') ||
-         msg.includes('In main app, this shows:') ||
-         msg.includes('For V91, use existing Requests')){
-        console.log('Blocked popup:', msg.substring(0,100));
-        return; // Block it
-      }
-    }
-    return originalAlert.apply(window, arguments);
-  };
-
-  // 2. Fix page redirection - ensure buttons work
   setTimeout(function(){
-    // Fix all header buttons with data-a and data-opt-a
-    function fixNavButtons(){
-      document.querySelectorAll('[data-a]').forEach(btn=>{
-        btn.onclick = null;
-        btn.removeAttribute('onclick');
-        let newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', function(e){
-          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-          let a = newBtn.getAttribute('data-a');
-          console.log('Nav:', a);
-          if(a==='roster' && window.navRosterV126) navRosterV126();
-          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
-          else if(a==='options' && window.openOptionsV126) openOptionsV126();
-          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
-          return false;
-        }, true);
-      });
-      
-      document.querySelectorAll('[data-opt-a]').forEach(btn=>{
-        btn.onclick = null;
-        btn.removeAttribute('onclick');
-        let newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', function(e){
-          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-          let a = newBtn.getAttribute('data-opt-a');
-          console.log('Opt Nav:', a);
-          if(a==='roster' && window.navRosterV126) navRosterV126();
-          else if(a==='requests' && window.openRequestsV126) openRequestsV126();
-          else if(a==='options' && window.openOptionsV126) openOptionsV126();
-          else if(a==='logout' && window.doLogoutV126) doLogoutV126();
-          return false;
-        }, true);
-      });
-      
-      // Fix roster header buttons (today workers page, requests page)
-      document.querySelectorAll('#today-workers-page-v126 .r-btn, #requests-page-v126 .r-btn').forEach(btn=>{
-        let text = btn.textContent.trim().toUpperCase();
-        if(text==='ROSTER'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.navRosterV126) navRosterV126(); return false; };
-        } else if(text==='REQUESTS'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.openRequestsV126) openRequestsV126(); return false; };
-        } else if(text==='OPTIONS'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.openOptionsV126) openOptionsV126(); return false; };
-        } else if(text==='LOG OUT'){
-          btn.onclick = function(e){ e.preventDefault(); if(window.doLogoutV126) doLogoutV126(); return false; };
-        }
-      });
-    }
-    
-    fixNavButtons();
-    
-    // Re-fix after render
-    if(window.renderRoster){
-      let orig = window.renderRoster;
-      window.renderRoster = function(){
-        orig();
-        setTimeout(fixNavButtons, 200);
-      };
-    }
-    
-    // Also intercept any future alert-based navigation attempts
-    document.addEventListener('click', function(e){
-      let target = e.target;
-      if(target && target.tagName==='BUTTON'){
-        let txt = target.textContent.trim().toUpperCase();
-        // If it's a nav button that would have triggered alert, prevent alert and do navigation
-        if(txt==='REQUESTS' || txt==='ROSTER' || txt==='OPTIONS' || txt==='LOG OUT'){
-          // Let our handlers handle it
-        }
+    // Make roster page header consistent
+    let rosterDiv = document.getElementById('repco-v65');
+    if(rosterDiv){
+      let existingHeader = rosterDiv.querySelector('.r-header');
+      if(existingHeader && !existingHeader.classList.contains('r-header-consistent')){
+        existingHeader.classList.add('r-header-consistent');
+        let title = existingHeader.querySelector('.r-title');
+        if(title){ title.classList.add('r-title-consistent'); }
+        let btns = existingHeader.querySelector('.r-btns');
+        if(btns){ btns.classList.add('r-btns-consistent'); }
+        existingHeader.querySelectorAll('.r-btn').forEach(btn=>{
+          btn.classList.add('r-btn-consistent');
+          // Ensure active state for roster
+          if(btn.textContent.trim().toUpperCase()==='ROSTER' || btn.getAttribute('data-a')==='roster'){
+            btn.classList.add('active');
+          }
+        });
       }
-    }, true);
-    
-    console.log('V130: Popups blocked, navigation fixed');
-  }, 500);
+    }
+    console.log('V133 header consistency applied');
+  }, 600);
 })();
 </script>
 
