@@ -105,7 +105,7 @@ button{font-size:11px !important}
     <div class="login-row"><label>PASSWORD:</label><input id="login-pass" type="password"></div>
     <button id="login-signin-btn" type="button" onclick="doLogin()">SIGN IN</button>
     <div id="login-err"></div>
-  </div>
+    </div>
   <button onclick="openAdmin()" style="position:fixed;bottom:16px;left:16px;z-index:10;background:rgba(0,0,0,0.08);border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px" title="Admin">⚙️</button>
 </div>
 
@@ -159,33 +159,29 @@ button{font-size:11px !important}
 
 <script>
 
-const BUILD_ID="20261020210000_FIXUNDEFINED";
-let currentHtmlHash=null;
-let currentBuildId=BUILD_ID;
-function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
-async function checkForIndexUpdate(isInitial){ try{ const url=window.location.href.split("?")[0].split("#")[0]; const res=await fetch(url+"?_v="+Date.now(),{cache:"no-store", headers:{"Cache-Control":"no-cache"}}); if(!res.ok) return; const txt=await res.text(); const bm=txt.match(/BUILD_ID\s*=\s*"([^"]+)"/); const remoteBuild=bm?bm[1]:null; const h=computeHashSync(txt); if(isInitial){ currentHtmlHash=h; if(remoteBuild) currentBuildId=remoteBuild; return; } if(remoteBuild && remoteBuild!==currentBuildId){ toast("New version - reloading"); setTimeout(()=>location.reload(true),1500); return; } if(currentHtmlHash!==null && h!==currentHtmlHash){ toast("New version - reloading"); setTimeout(()=>location.reload(true),3000); } }catch(e){} }
-
-
-
+const BUILD_ID="20261020220000_FIXHASH2";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
 async function checkForIndexUpdate(isInitial){
   try{
-    const url=window.location.href.split('?')[0].split('#')[0];
-    const res=await fetch(url+'?_v='+Date.now(),{cache:'no-store', headers:{'Cache-Control':'no-cache'}});
+    const url=window.location.href.split("?")[0].split("#")[0];
+    const res=await fetch(url+"?_v="+Date.now(),{cache:"no-store", headers:{"Cache-Control":"no-cache"}});
     if(!res.ok) return;
     const txt=await res.text();
     const bm=txt.match(/BUILD_ID\s*=\s*"([^"]+)"/);
     const remoteBuild=bm?bm[1]:null;
     const h=computeHashSync(txt);
     if(isInitial){ currentHtmlHash=h; if(remoteBuild) currentBuildId=remoteBuild; return; }
-    if(remoteBuild && remoteBuild!==currentBuildId){ toast('New version - reloading'); setTimeout(()=>location.reload(true),1500); return; }
-    if(currentHtmlHash!==null && h!==currentHtmlHash){ toast('New version - reloading'); setTimeout(()=>location.reload(true),3000); }
+    if(remoteBuild && remoteBuild!==currentBuildId){ toast("New version - reloading"); setTimeout(()=>location.reload(true),1500); return; }
+    if(currentHtmlHash!==null && h!==currentHtmlHash){ toast("New version - reloading"); setTimeout(()=>location.reload(true),3000); }
   }catch(e){}
 }
 
 
+
+function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
+function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
 const MEMORY_STORE={};
 function safeGet(k){try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:null;}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){}MEMORY_STORE[k]=v; if(CLOUD_KEYS.includes(k) && !suppressCloudSave) cloudSave(); }
@@ -233,18 +229,7 @@ async function cloudSave(){
     }catch(e){ console.log("cloudSave",e); }
   },600);
 }
-let currentHtmlHash=null;
 async function computeHash(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
-async function checkForIndexUpdate(isInitial){
-  try{
-    const res=await fetch(window.location.href.split('?')[0]+'?_v='+Date.now(),{cache:'no-store'});
-    if(!res.ok) return; const txt=await res.text(); const h=await computeHash(txt);
-    if(isInitial){ currentHtmlHash=h; return; }
-    if(currentHtmlHash!==null && h!==currentHtmlHash){ toast('New version - reloading in 10s'); setTimeout(()=>location.reload(true),10000); }
-  }catch(e){}
-}
-
-
 function applyRoleVisibility(){
   let isMgr=isManagerRole(getActualRole());
   let adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive'];
@@ -609,7 +594,7 @@ function renderBuddies(which){
   const myParsed=parseShiftRange(myShiftRaw);
   const listId=which==='today'?'buddies-today-list':'buddies-tomorrow-list'; 
   const el=document.getElementById(listId); if(!el) return;
-  const dateLabel=(cur && cur.dates && cur.dates[idx])?cur.dates[idx].date+' '+cur.dates[idx].day:todayStr+' '+dayName;
+  const dateLabel=cur.dates[idx]?cur.dates[idx].date+' '+cur.dates[idx].day:todayStr+' '+dayName;
   let html='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+' - '+fmt(myShiftRaw)+'</div>';
   if(!myParsed){ html+='<div class="card">You are OFF on '+dateLabel+' - No buddies</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html; return; }
   let buddies=[]; 
@@ -641,7 +626,7 @@ function renderMySchedule(){
     const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
     if(sh.toUpperCase()!=='OFF' && sh.toUpperCase()!=='NA' && sh.toUpperCase()!=='AB'){
       hasShift=true;
-      const isGreen=myStaff && myStaff.cellGreen && myStaff.cellGreen[i];
+      const isGreen=myStaff.cellGreen && myStaff.cellGreen[i];
       html+='<div class="card" style="'+(isGreen?'border-color:#0a0a0a;background:#B6F7C5':'')+'"><b>'+d.day+' '+d.date+'</b> - '+fmt(sh)+(isGreen?' <span style="background:#111;color:#fff;border-radius:9999px;padding:2px 6px;font-size:9px">GREEN</span>':'')+'</div>';
     }
   });
@@ -1003,28 +988,24 @@ function changePassword(){
 
 
 
-
 function renderRequests(){
   const el=document.getElementById('requests-list');
   if(!el) return;
   const isMgr=isManagerRole(getActualRole());
   let reqs=safeGetJSON('retail_roster_requests_v2',[]);
-  if(!Array.isArray(reqs)) reqs=[];
   if(isMgr){
-    if(reqs.length===0){ el.innerHTML='<div class="card" style="padding:10px;font-size:11px">No pending requests</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>'; return; }
-    el.innerHTML=reqs.map(function(r,i){
-      if(!r || typeof r!=='object'){ return '<div class="card" style="padding:10px;font-size:11px">'+String(r)+'</div>'; }
-      const type=r.type||'request'; const user=r.username||''; const date=r.shiftDate||(r.dates&&r.dates[0])||''; const reason=r.reason||''; const newShift=r.newShift||'';
-      return '<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">'+type+' - '+user+' - '+date+'</div><div style="font-size:11px">'+reason+' - '+newShift+'</div><div style="margin-top:6px"><button onclick="approveReq('+i+')" style="background:#111;color:#fff;border-radius:9999px;padding:6px 10px;font-weight:900;margin-right:6px;font-size:10px">APPROVE</button><button onclick="denyReq('+i+')" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:10px">DENY</button></div></div>';
-    }).join('') + '<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
+    // Manager view - approve/deny
+    if(reqs.length===0){ el.innerHTML='<div class="card" style="padding:10px">No pending requests</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>'; return; }
+    el.innerHTML=reqs.map(function(r,i){ return '<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">'+(r.type||'request')+' - '+(r.username||'')+' - '+(r.shiftDate||r.dates?.[0]||'')+'</div><div style="font-size:11px">'+(r.reason||'')+' - '+ (r.newShift||'')+'</div><div style="margin-top:6px"><button onclick="approveReq('+i+')" style="background:#111;color:#fff;border-radius:9999px;padding:6px 10px;font-weight:900;margin-right:6px;font-size:10px">APPROVE</button><button onclick="denyReq('+i+')" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:10px">DENY</button></div></div>'; }).join('') + '<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
   } else {
+    // Employee view - can submit unavailability and shift correction
     const cur=getCurrentFortnight();
-    const myStaff=cur?findMyStaff(cur):null;
+    const myStaff=findMyStaff(cur);
     let options='';
-    if(myStaff && cur && cur.dates){
-      cur.dates.forEach(function(d,i){
-        const sh=(myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
-        if(sh && sh.toUpperCase()!=='OFF' && sh.toUpperCase()!=='NA' && sh.toUpperCase()!=='AB'){
+    if(myStaff){
+      cur.dates.forEach((d,i)=>{
+        const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
+        if(sh.toUpperCase()!=='OFF' && sh!=='NA' && sh.toUpperCase()!=='AB'){
           options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>';
         }
       });
@@ -1033,29 +1014,27 @@ function renderRequests(){
     let html='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:12px;margin-bottom:8px">SUBMIT REQUEST</div>';
     html+='<label style="font-weight:900;font-size:10px">TYPE</label><select id="req-type" onchange="onReqTypeChange()" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin:4px 0 8px 0;font-size:11px"><option value="unavailability">Unavailability</option><option value="shift-correction">Shift Correction</option></select>';
     html+='<div id="req-dynamic-area"></div></div>';
-    const myUsername=(safeGet('repco_username')||'').toLowerCase();
-    const myReqs=reqs.filter(function(r){ return r && r.username && r.username.toLowerCase()===myUsername; });
+    // My requests
+    const myReqs=reqs.filter(r=>r.username && r.username.toLowerCase()===safeGet('repco_username').toLowerCase());
     if(myReqs.length>0){
       html+='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">MY REQUESTS ('+myReqs.length+')</div>';
-      myReqs.forEach(function(r){
-        if(!r || typeof r!=='object') return;
-        const date=r.shiftDate||(r.dates&&r.dates[0])||''; const status=r.status||'pending';
-        html+='<div style="border-top:1px solid #ddd;padding:6px 0;font-size:10px"><b>'+(r.type||'')+'</b> - '+date+' - '+status+'<br>'+(r.reason||'')+'</div>';
+      myReqs.forEach((r,i)=>{
+        html+='<div style="border-top:1px solid #ddd;padding:6px 0;font-size:10px"><b>'+r.type+'</b> - '+ (r.shiftDate||r.dates?.[0]||'') +' - '+r.status+'<br>'+ (r.reason||'') +'</div>';
       });
       html+='</div>';
     }
     html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
     el.innerHTML=html;
-    setTimeout(function(){ try{ onReqTypeChange(); }catch(e){} },50);
+    // Trigger initial render
+    setTimeout(()=>{ try{ onReqTypeChange(); }catch(e){} },50);
   }
 }
-
 function onReqTypeChange(){
   const type=document.getElementById('req-type')?.value; const area=document.getElementById('req-dynamic-area'); if(!area) return;
   if(type==='unavailability'){
     area.innerHTML='<div style="background:#F2F2F2;border:2px dashed #111;border-radius:10px;padding:10px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-weight:900;font-size:9px">START DATE</label><input id="unavail-start-date" type="date" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div><div><label style="font-weight:900;font-size:9px">END DATE</label><input id="unavail-end-date" type="date" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">OR MANUAL (e.g. 19/10 - 25/10)</label><input id="unavail-manual" placeholder="19/10 - 25/10" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px"></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">REASON</label><textarea id="unavail-reason" placeholder="Reason" style="width:100%;padding:6px;border-radius:10px;border:2px solid #111;min-height:50px;font-size:11px"></textarea></div><button onclick="submitUnavail()" style="margin-top:8px;background:#111;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;width:100%;font-size:11px">SUBMIT</button></div>';
   } else if(type==='shift-correction'){
-    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=myStaff.shifts[i]||'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
+    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
     area.innerHTML='<div style="background:#FFF6CC;border:2px dashed #111;border-radius:10px;padding:10px"><label style="font-weight:900;font-size:9px">SELECT SHIFT</label><select id="corr-shift-idx" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px">'+options+'</select><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label style="font-weight:900;font-size:9px">NEW START</label><input id="corr-start" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div><div><label style="font-weight:900;font-size:9px">NEW END</label><input id="corr-end" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">OR SET AS</label><select id="corr-special" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px"><option value="">Use times above</option><option value="OFF">OFF</option><option value="AB">AB - Absent</option></select></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">REASON</label><textarea id="corr-reason" placeholder="Reason" style="width:100%;padding:6px;border-radius:10px;border:2px solid #111;min-height:50px;font-size:11px"></textarea></div><button onclick="submitCorrection()" style="margin-top:8px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;width:100%;font-size:11px">SUBMIT</button></div>';
   } else { area.innerHTML=''; }
 }
@@ -1374,7 +1353,7 @@ function onReqTypeChange(){
   if(type==='unavailability'){
     area.innerHTML='<div style="background:#F2F2F2;border:2px dashed #111;border-radius:12px;padding:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label style="font-weight:900;font-size:11px">START DATE</label><input id="unavail-start-date" type="date" min="2026-01-01" max="2040-01-01" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-weight:900;font-size:11px">END DATE</label><input id="unavail-end-date" type="date" min="2026-01-01" max="2040-01-01" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">OR MANUAL ENTRY (e.g. 19/10 - 25/10)</label><input id="unavail-manual" placeholder="19/10 - 25/10" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px"></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">REASON (optional)</label><textarea id="unavail-reason" placeholder="Reason (optional)" style="width:100%;padding:10px;border-radius:12px;border:2px solid #111;min-height:60px"></textarea></div><button onclick="submitUnavail()" style="margin-top:12px;background:#111;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;width:100%">SUBMIT</button></div>';
   } else if(type==='shift-correction'){
-    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=myStaff.shifts[i]||'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
+    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
     area.innerHTML='<div style="background:#FFF6CC;border:2px dashed #111;border-radius:12px;padding:12px"><label style="font-weight:900;font-size:11px">SELECT SHIFT</label><select id="corr-shift-idx" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px">'+options+'</select><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"><div><label style="font-weight:900;font-size:11px">NEW START</label><input id="corr-start" type="time" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-weight:900;font-size:11px">NEW END</label><input id="corr-end" type="time" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">OR SET AS</label><select id="corr-special" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px"><option value="">Use times above</option><option value="OFF">OFF</option><option value="AB">AB - Absent</option></select></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">REASON (optional)</label><textarea id="corr-reason" placeholder="Reason (optional)" style="width:100%;padding:10px;border-radius:12px;border:2px solid #111;min-height:60px"></textarea></div><button onclick="submitCorrection()" style="margin-top:12px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;width:100%">SUBMIT</button></div>';
   } else { area.innerHTML=''; }
 }
@@ -1389,7 +1368,7 @@ function editReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); cons
 function approveReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); if(!all[idx]) return; const req=all[idx]; all[idx].status='approved'; safeSetJSON('retail_roster_requests_v2',all); let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(req.type==='unavailability'){ fns.forEach(fn=>{ let staff=fn.staff.find(s=>s.firstName.toLowerCase()===req.username.toLowerCase()); if(staff){ req.dates.forEach(dStr=>{ let clean=dStr.split(' ')[0].trim(); let dateIdx=fn.dates.findIndex(dd=>dd.date===clean); if(dateIdx!==-1){ if(!staff.originalShifts) staff.originalShifts={}; if(!staff.absentApproved) staff.absentApproved={}; if(!staff.originalShifts[dateIdx]) staff.originalShifts[dateIdx]=staff.shifts[dateIdx]; staff.absentApproved[dateIdx]=true; staff.shifts[dateIdx]='AB'; } }); } }); } else if(req.type==='shift-correction'){ fns.forEach(fn=>{ let dateIdx=fn.dates.findIndex(dd=>dd.date===req.shiftDate); let i = req.shiftIdx!==undefined ? req.shiftIdx : dateIdx; if(i>=0){ let staff=fn.staff.find(s=>s.firstName.toLowerCase()===req.username.toLowerCase()); if(staff){ if(!staff.originalShifts) staff.originalShifts={}; if(!staff.absentApproved) staff.absentApproved={}; if(req.newShift.toUpperCase()==='AB'){ if(!staff.originalShifts[i]) staff.originalShifts[i]=staff.shifts[i]; staff.absentApproved[i]=true; staff.shifts[i]='AB'; } else { staff.originalShifts[i]=staff.shifts[i]; staff.shifts[i]=req.newShift; staff.absentApproved[i]=false; } } } }); } safeSetJSON('retail_roster_byFortnight_v1',fns); setTimeout(()=>{ let all2=safeGetJSON('retail_roster_requests_v2',[]); all2=all2.filter((r,j)=>j!==idx); safeSetJSON('retail_roster_requests_v2',all2); toast('Approved - '+req.username+' notified live, request removed'); renderRequests(); renderRosterSafe(); applyRoleVisibility(); },500); }
 function denyReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); if(!all[idx]) return; const req=all[idx]; all[idx].status='denied'; safeSetJSON('retail_roster_requests_v2',all); toast('Denied - '+req.username+' notified live'); setTimeout(()=>{ let all2=safeGetJSON('retail_roster_requests_v2',[]); all2=all2.filter((r,j)=>j!==idx); safeSetJSON('retail_roster_requests_v2',all2); renderRequests(); },2000); }
 function renderUnavail(){ const el=document.getElementById('unavail-list'); if(!el) return; const cur=getCurrentFortnight(); if(!cur){el.innerHTML='<div class="card">No roster</div>';return;} let list=[]; cur.staff.forEach(s=>{ Object.keys(s.absentApproved||{}).forEach(k=>{ let i=parseInt(k); if(s.absentApproved[i]){ let orig=s.originalShifts && s.originalShifts[i] ? s.originalShifts[i] : s.shifts[i]; list.push({name:s.lastName.toUpperCase()+' '+s.firstName, date:cur.dates[i]?.date+' '+cur.dates[i]?.day, shift:orig+' AB'}); } }); }); if(list.length===0) el.innerHTML='<div class="card">No staff currently unavailable/absent</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else el.innerHTML=list.map(l=>'<div class="card"><b>'+l.name+'</b> - '+l.date+' - '+l.shift+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
-function renderTodayWorkers(){ const cur=getCurrentFortnight(); if(!cur) return; const iso=getISO(); let idx=cur.dates.findIndex(d=>d.iso===iso); if(idx===-1) idx=0; const listEl=document.getElementById('today-workers-list'); if(!listEl) return; let workers=[]; cur.staff.forEach(s=>{ const sh=s.shifts[idx]||'OFF'; const isAbs=s.absentApproved && s.absentApproved[idx]; if(isAbs) return; if(sh.toUpperCase()!=='OFF'&&sh!=='NA' && sh.toUpperCase()!=='AB' && !(s.unavailable&&s.unavailable[idx])) workers.push({name:s.lastName.toUpperCase()+' '+s.firstName,shift:fmt(sh)}); }); if(workers.length===0) listEl.innerHTML='<div class="card">No workers rostered today </div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else listEl.innerHTML=workers.map(w=>'<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:900;margin-right:6px">'+(w.shift||'OFF')+'</span> '+w.name+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
+function renderTodayWorkers(){ const cur=getCurrentFortnight(); if(!cur) return; const iso=getISO(); let idx=cur.dates.findIndex(d=>d.iso===iso); if(idx===-1) idx=0; const listEl=document.getElementById('today-workers-list'); if(!listEl) return; let workers=[]; cur.staff.forEach(s=>{ const sh=(s && s.shifts && s.shifts[idx]) ? s.shifts[idx] : 'OFF'; const isAbs=s.absentApproved && s.absentApproved[idx]; if(isAbs) return; if(sh.toUpperCase()!=='OFF'&&sh!=='NA' && sh.toUpperCase()!=='AB' && !(s.unavailable&&s.unavailable[idx])) workers.push({name:s.lastName.toUpperCase()+' '+s.firstName,shift:fmt(sh)}); }); if(workers.length===0) listEl.innerHTML='<div class="card">No workers rostered today </div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else listEl.innerHTML=workers.map(w=>'<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:900;margin-right:6px">'+(w.shift||'OFF')+'</span> '+w.name+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
 function toast(m){let t=document.getElementById('toast-v141');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500);}
 function doAdminLogin(){const u=document.getElementById('admin-user').value.trim();const p=document.getElementById('admin-pass').value.trim();const err=document.getElementById('admin-err');if(!['admin','master','manager','chris'].includes(u.toLowerCase())){err.textContent='Only admin/manager';return;}if(p.toLowerCase()!==u.toLowerCase()){err.textContent='Invalid';return;}document.getElementById('admin-login-section').style.display='none';document.getElementById('admin-toggle-section').style.display='block';checkMaintenance();}
 function toggleMaintenance(){
