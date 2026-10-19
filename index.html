@@ -141,7 +141,7 @@ button{font-size:11px !important}
 <div id="archive-page" class="full-page"><div class="page-inner"><div class="page-title">ARCHIVE - ROSTERS</div><div id="archive-inner"></div></div></div>
 <div id="import-export-page" class="full-page"><div class="page-inner"><div class="page-title">IMPORT / EXPORT - EXCEL</div><div id="import-export-inner"></div></div></div>
 
-<div id="admin-modal"><div id="admin-box"><h3 style="font-family:'Arial Black',sans-serif;font-weight:900">ADMIN - MAINTENANCE</h3><div id="admin-login-section"><input id="admin-user" placeholder="Username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><input id="admin-pass" type="password" placeholder="Password same as username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><button onclick="doAdminLogin()" style="width:100%;margin-top:8px;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">LOGIN</button><div id="admin-err" style="color:#E30613;font-weight:900;font-size:12px;margin-top:6px"></div></div><div id="admin-toggle-section" style="display:none"><div style="margin-top:12px"><div id="maint-status" style="font-weight:900;font-size:13px;margin-bottom:8px">Maintenance: OFF</div><label style="display:flex;align-items:center;gap:10px;font-weight:900;font-size:13px"><input type="checkbox" id="maint-toggle" onchange="toggleMaintenance()" style="width:20px;height:20px"> TOGGLE MAINTENANCE MODE</label><div style="margin-top:16px;display:flex;gap:8px"><button onclick="closeAdmin()" style="flex:1;background:#D9D9D9;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button></div></div></div></div></div>
+<div id="admin-modal" onclick="if(event.target===this) closeAdmin()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000000;display:none;align-items:center;justify-content:center"><div id="admin-box" style="background:#fff;border:4px solid #111;border-radius:16px;padding:18px;max-width:420px;width:92%;box-shadow:6px 6px 0 #111;position:relative"><button onclick="closeAdmin()" title="Close" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:#111;color:#fff;border:2px solid #111;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</button><h3 style="font-family:'Arial Black',sans-serif;font-weight:900;margin-right:30px">ADMIN - MAINTENANCE</h3><div id="admin-login-section"><input id="admin-user" placeholder="Username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><input id="admin-pass" type="password" placeholder="Password same as username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><button onclick="doAdminLogin()" style="width:100%;margin-top:8px;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">LOGIN</button><button onclick="closeAdmin()" style="width:100%;margin-top:8px;background:#D9D9D9;color:#111;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button><div id="admin-err" style="color:#E30613;font-weight:900;font-size:12px;margin-top:6px"></div></div><div id="admin-toggle-section" style="display:none"><div style="margin-top:12px"><div id="maint-status" style="font-weight:900;font-size:13px;margin-bottom:8px">Maintenance: OFF</div><label style="display:flex;align-items:center;gap:10px;font-weight:900;font-size:13px"><input type="checkbox" id="maint-toggle" onchange="toggleMaintenance()" style="width:20px;height:20px"> TOGGLE MAINTENANCE MODE</label><div style="margin-top:16px;display:flex;gap:8px"><button onclick="closeAdmin()" style="flex:1;background:#D9D9D9;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button></div></div></div></div></div></div></div>
 
 <div id="maintenance-main-v141">
   <div class="red-corner"></div><div class="black-corner"></div>
@@ -160,7 +160,7 @@ button{font-size:11px !important}
 
 <script>
 
-const BUILD_ID="20261020230000_ACCOUNTARCHIVEDATE";
+const BUILD_ID="20261021000000_FULLFIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -220,26 +220,11 @@ async function computeHash(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+
 function applyRoleVisibility(){
   const actualRole=getActualRole();
   const isMgr=isManagerRole(actualRole);
-  // DEBUG
-  console.log('applyRoleVisibility role',actualRole,'isMgr',isMgr);
-  // For staff, ARCHIVE must be completely removed
+  // Remove archive completely per user request
   const archiveBtn=document.getElementById('btn-archive');
-  if(archiveBtn){
-    if(isMgr){
-      // manager should also NOT see archive per user request - hide completely
-      archiveBtn.style.display='none';
-      archiveBtn.remove();
-    } else {
-      archiveBtn.style.display='none';
-      archiveBtn.remove();
-    }
-  }
-  // Also remove any other archive buttons by text
+  if(archiveBtn){ archiveBtn.style.display='none'; archiveBtn.remove(); }
   document.querySelectorAll('.r-btn-consistent').forEach(btn=>{
-    if(btn.textContent.trim().toUpperCase()==='ARCHIVE'){
-      btn.style.display='none';
-      btn.remove();
-    }
+    if(btn.textContent.trim().toUpperCase()==='ARCHIVE'){ btn.style.display='none'; btn.remove(); }
   });
   let adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive'];
   let staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive'];
@@ -591,18 +576,10 @@ function renderBuddies(which){
   const todayStr=dd+'/'+mm; 
   const dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT']; 
   const dayName=dayNames[targetDate.getDay()];
-  // Find index by ISO first, then by date string, then by day+date combo
   let idx=cur.dates.findIndex(d=>d.iso===isoTarget);
   if(idx===-1) idx=cur.dates.findIndex(d=>d.date===todayStr);
-  if(idx===-1){
-    // fallback: find by matching day name and date
-    idx=cur.dates.findIndex(d=>d.day===dayName && d.date===todayStr);
-  }
-  if(idx===-1){
-    // last fallback: use 0 for today, 1 for tomorrow if within range
-    idx=which==='today'?0:1;
-    if(idx>=cur.dates.length) idx=0;
-  }
+  if(idx===-1) idx=cur.dates.findIndex(d=>d.day===dayName && d.date===todayStr);
+  if(idx===-1){ idx=which==='today'?0:1; if(idx>=cur.dates.length) idx=0; }
   const myStaff=findMyStaff(cur); 
   if(!myStaff){
     const el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list');
@@ -989,7 +966,6 @@ function renderAccountPage(){
   let innerEl=document.getElementById('account-inner');
   let target=listEl||innerEl;
   if(!target){
-    // create fallback
     const page=document.getElementById('account-page');
     if(page){
       const pi=page.querySelector('.page-inner');
@@ -1005,7 +981,7 @@ function renderAccountPage(){
   let found=users.find(u=>u.username.toLowerCase()===username.toLowerCase());
   if(!found) found=sess;
   if(!found || !found.username){
-    target.innerHTML='<div class="card" style="padding:12px;font-size:11px">User not found - please log in again<br>Current: '+username+'<br>Session: '+JSON.stringify(sess)+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
+    target.innerHTML='<div class="card" style="padding:12px;font-size:11px">User not found - please log in again<br>Current: '+username+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
     return;
   }
   const role=getActualRole()||found.role||'staff';
@@ -1031,7 +1007,6 @@ function changePassword(){
   let users=safeGetJSON('retail_roster_users_v1',[]);
   let idx=users.findIndex(u=>u.username.toLowerCase()===oldUsername.toLowerCase());
   if(idx===-1){ toast('User not found'); return; }
-  // Check duplicate
   if(newU.toLowerCase()!==oldUsername.toLowerCase() && users.some(u=>u.username.toLowerCase()===newU.toLowerCase())){ toast('Username taken'); return; }
   users[idx].username=newU;
   if(newP) users[idx].password=newP;
@@ -1439,8 +1414,7 @@ function renderTodayWorkers(){
   if(idx===-1) idx=cur.dates.findIndex(d=>d.date===todayStr);
   if(idx===-1) idx=0;
   if(titleEl) titleEl.textContent="TODAY'S WORKERS - "+(cur.dates[idx]?cur.dates[idx].date+' '+cur.dates[idx].day+' ('+isoTarget+')':todayStr);
-  let html='';
-  let count=0;
+  let html=''; let count=0;
   cur.staff.forEach(s=>{
     const sh=(s && s.shifts && s.shifts[idx]) ? s.shifts[idx] : 'OFF';
     if(sh && sh.toUpperCase()!=='OFF' && sh.toUpperCase()!=='NA' && sh.toUpperCase()!=='AB'){
