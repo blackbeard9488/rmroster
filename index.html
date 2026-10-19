@@ -87,7 +87,12 @@ input,select,textarea{font-size:13px !important}
 button{font-size:11px !important}
 
 </style>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
+function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
+function closeAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.remove("show"); m.style.display="none"; } }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=document.getElementById('admin-modal'); if(m && m.style.display==='flex') closeAdmin(); } });
+
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" onerror="console.log('secondary xlsx failed')"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -105,6 +110,7 @@ button{font-size:11px !important}
     <div class="login-row"><label>PASSWORD:</label><input id="login-pass" type="password"></div>
     <button id="login-signin-btn" type="button" onclick="doLogin()">SIGN IN</button>
     <div id="login-err"></div>
+    <button id="admin-cog" onclick="openAdmin()" title="Admin" style="position:absolute;bottom:18px;left:18px;z-index:1000000;width:44px;height:44px;border-radius:50%;background:#fff;border:2px solid #111;display:flex;align-items:center;justify-content:center;box-shadow:2px 2px 0 #111;cursor:pointer"><span style="font-size:20px">⚙️</span></button>
     </div>
   <button onclick="openAdmin()" style="position:fixed;bottom:16px;left:16px;z-index:10;background:rgba(0,0,0,0.08);border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px" title="Admin">⚙️</button>
 </div>
@@ -135,13 +141,14 @@ button{font-size:11px !important}
 <div id="buddies-tomorrow-page-v141" class="full-page"><div class="page-inner"><div class="page-title">TOMORROW'S BUDDIES</div><div id="buddies-tomorrow-list"></div></div></div>
 <div id="mysched-page" class="full-page"><div class="page-inner"><div class="page-title">MY SCHEDULE</div><div id="mysched-list"></div></div></div>
 <div id="today-workers-page" class="full-page"><div class="page-inner"><div class="page-title">TODAY'S WORKERS</div><div id="today-workers-list"></div></div></div>
-<div id="account-page" class="full-page"><div class="page-inner"><div class="page-title">EDIT USERNAME / PASSWORD</div><div id="account-inner"></div></div></div>
+<div id="account-page" class="full-page"><div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="openPage('requests-page')">REQUESTS</button><button class="r-btn-consistent active">ACCOUNT</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div><div class="page-inner"><div class="page-title">EDIT USERNAME / PASSWORD</div><div id="account-inner"></div><div id="account-list"></div></div></div>
 <div id="account-mgmt-page" class="full-page"><div class="page-inner"><div class="page-title">ACCOUNT MANAGEMENT - ALL USERS</div><div id="account-mgmt-inner"></div></div></div>
 <div id="archive-page" class="full-page"><div class="page-inner"><div class="page-title">ARCHIVE - ROSTERS</div><div id="archive-inner"></div></div></div>
 <div id="import-export-page" class="full-page"><div class="page-inner"><div class="page-title">IMPORT / EXPORT - EXCEL</div><div id="import-export-inner"></div></div></div>
 
-<div id="admin-modal" onclick="if(event.target===this) closeAdmin()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000000;display:none;align-items:center;justify-content:center"><div id="admin-box" style="background:#fff;border:4px solid #111;border-radius:16px;padding:18px;max-width:420px;width:92%;box-shadow:6px 6px 0 #111;position:relative"><button onclick="closeAdmin()" title="Close" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:#111;color:#fff;border:2px solid #111;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</button><h3 style="font-family:'Arial Black',sans-serif;font-weight:900;margin-right:30px">ADMIN - MAINTENANCE</h3><div id="admin-login-section"><input id="admin-user" placeholder="Username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><input id="admin-pass" type="password" placeholder="Password same as username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><button onclick="doAdminLogin()" style="width:100%;margin-top:8px;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">LOGIN</button><button onclick="closeAdmin()" style="width:100%;margin-top:8px;background:#D9D9D9;color:#111;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button><div id="admin-err" style="color:#E30613;font-weight:900;font-size:12px;margin-top:6px"></div></div><div id="admin-toggle-section" style="display:none"><div style="margin-top:12px"><div id="maint-status" style="font-weight:900;font-size:13px;margin-bottom:8px">Maintenance: OFF</div><label style="display:flex;align-items:center;gap:10px;font-weight:900;font-size:13px"><input type="checkbox" id="maint-toggle" onchange="toggleMaintenance()" style="width:20px;height:20px"> TOGGLE MAINTENANCE MODE</label><div style="margin-top:16px;display:flex;gap:8px"><button onclick="closeAdmin()" style="flex:1;background:#D9D9D9;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button></div></div></div></div></div></div></div>
+</div></div>
 
+<div id="admin-modal" onclick="if(event.target===this) closeAdmin()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000000;display:none;align-items:center;justify-content:center"><div id="admin-box" style="background:#fff;border:4px solid #111;border-radius:16px;padding:18px;max-width:420px;width:92%;box-shadow:6px 6px 0 #111;position:relative"><button onclick="closeAdmin()" title="Close" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:#111;color:#fff;border:2px solid #111;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</button><h3 style="font-family:'Arial Black',sans-serif;font-weight:900;margin-right:30px">ADMIN - MAINTENANCE</h3><div id="admin-login-section"><input id="admin-user" placeholder="Username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><input id="admin-pass" type="password" placeholder="Password same as username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><button onclick="doAdminLogin()" style="width:100%;margin-top:8px;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">LOGIN</button><button onclick="closeAdmin()" style="width:100%;margin-top:8px;background:#D9D9D9;color:#111;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button><div id="admin-err" style="color:#E30613;font-weight:900;font-size:12px;margin-top:6px"></div></div><div id="admin-toggle-section" style="display:none"><div style="margin-top:12px"><div id="maint-status" style="font-weight:900;font-size:13px;margin-bottom:8px">Maintenance: OFF</div><label style="display:flex;align-items:center;gap:10px;font-weight:900;font-size:13px"><input type="checkbox" id="maint-toggle" onchange="toggleMaintenance()" style="width:20px;height:20px"> TOGGLE MAINTENANCE MODE</label><div style="margin-top:16px;display:flex;gap:8px"><button onclick="closeAdmin()" style="flex:1;background:#D9D9D9;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button></div></div></div></div></div>
 <div id="maintenance-main-v141">
   <div class="red-corner"></div><div class="black-corner"></div>
   <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;max-width:600px;width:100%">
@@ -159,7 +166,24 @@ button{font-size:11px !important}
 
 <script>
 
-const BUILD_ID="20261021020000_FINAL_FIX";
+function getISO(){
+  try{
+    const now=new Date();
+    const fmt=new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Brisbane',year:'numeric',month:'2-digit',day:'2-digit'});
+    const parts=fmt.formatToParts(now);
+    const y=parts.find(p=>p.type==='year').value;
+    const mo=parts.find(p=>p.type==='month').value;
+    const d=parts.find(p=>p.type==='day').value;
+    return y+'-'+mo+'-'+d;
+  }catch(e){
+    const now=new Date();
+    return now.toISOString().slice(0,10);
+  }
+}
+
+
+
+const BUILD_ID="20261021040000_FINAL_ALLFIX2";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -180,6 +204,11 @@ async function checkForIndexUpdate(isInitial){
 
 
 
+
+
+
+
+
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
 const MEMORY_STORE={};
 function safeGet(k){try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:null;}
@@ -188,21 +217,36 @@ function safeGetJSON(k,def){const r=safeGet(k);if(!r)return def;try{return JSON.
 function safeSetJSON(k,obj){safeSet(k, JSON.stringify(obj));}
 function getNow(){return new Date();}
 
-function getISO(){
+function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let a=parseInt(m[1])*60+parseInt(m[2]);let b=parseInt(m[3])*60+parseInt(m[4]);if(b<a)b+=1440;return (b-a)/60}
+function netH(sh){let r=rawH(sh);if(r===0)return 0;return r>=5?r-0.5:r}
+function isCasual(st){return st.employmentType==='casual'}
+const FIREBASE_DB_URL="https://rmroster-live-default-rtdb.asia-southeast1.firebasedatabase.app";
+const FIREBASE_CONFIG={apiKey:"AIzaSy placeholder",authDomain:"rmroster-live.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"rmroster-live",storageBucket:"rmroster-live.appspot.com",messagingSenderId:"0",appId:"1:0:web:repco"};
+let db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); }catch(e){ db=null; }
+const CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','repco_username','repco_currentRole','repco_logout_minutes','maintenance_mode','repco_maintenance_first_v1'];
+let cloudSaveTimer=null; let suppressCloudSave=false;
+function getAllState(){let o={}; CLOUD_KEYS.forEach(k=>{let v=safeGet(k); if(v!==null) o[k]=v;}); o._ts=Date.now(); o._build=BUILD_ID; return o;}
+function applyCloudState(state,isInitial){if(!state) return; suppressCloudSave=true; CLOUD_KEYS.forEach(k=>{if(state[k]!==undefined){try{localStorage.setItem(k,state[k]);}catch(e){} MEMORY_STORE[k]=state[k];}}); suppressCloudSave=false; if(isInitial){try{populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();checkMaintenance();}catch(e){}} else {try{renderRosterSafe(); applyRoleVisibility();}catch(e){}}}
+async function cloudLoad(){
   try{
-    const now=new Date();
-    const fmt=new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Brisbane',year:'numeric',month:'2-digit',day:'2-digit'});
-    const parts=fmt.formatToParts(now);
-    const y=parts.find(p=>p.type==='year').value;
-    const mo=parts.find(p=>p.type==='month').value;
-    const d=parts.find(p=>p.type==='day').value;
-    return y+'-'+mo+'-'+d;
-  }catch(e){
-    const now=new Date();
-    return now.toISOString().slice(0,10);
-  }
+    if(db){
+      const snap=await db.ref('repco_state').once('value'); const data=snap.val();
+      if(data && data._ts){
+        let localTs=parseInt(safeGet('repco_cloud_ts')||'0');
+        if(data._ts>localTs){ applyCloudState(data,true); safeSet('repco_cloud_ts',String(data._ts)); toast('Synced from cloud'); }
+        db.ref('repco_state').on('value',(s)=>{
+          const d=s.val(); if(!d||!d._ts) return;
+          let lastTs=parseInt(safeGet('repco_cloud_ts')||'0');
+          if(d._ts>lastTs){
+            applyCloudState(d,false); safeSet('repco_cloud_ts',String(d._ts)); toast('Roster updated from another device');
+          }
+        }); return;
+      }
+    }
+    const res=await fetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
+    if(res.ok){ const data=await res.json(); if(data&&data._ts){ let localTs=parseInt(safeGet('repco_cloud_ts')||'0'); if(data._ts>localTs){ applyCloudState(data,true); safeSet('repco_cloud_ts',String(data._ts)); } } }
+  }catch(e){ console.log("cloudLoad",e); }
 }
-
 async function cloudSave(){
   if(suppressCloudSave) return;
   if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
@@ -214,18 +258,6 @@ async function cloudSave(){
   },600);
 }
 async function computeHash(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
-
-function applyRoleVisibility(){
-  const actualRole=getActualRole(); const isMgr=isManagerRole(actualRole);
-  const archiveBtn=document.getElementById('btn-archive'); if(archiveBtn){ archiveBtn.style.display='none'; archiveBtn.remove(); }
-  document.querySelectorAll('.r-btn-consistent').forEach(btn=>{ if(btn.textContent.trim().toUpperCase()==='ARCHIVE'){ btn.style.display='none'; btn.remove(); } });
-  let adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive']; let staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive'];
-  let allIds={'btn-unavail':1,'btn-today':1,'btn-tomorrow':1,'btn-mysched':1,'btn-options':1,'btn-archive':1,'btn-account':1,'btn-hidden':1,'btn-requests':1,'btn-roster':1};
-  Object.keys(allIds).forEach(id=>{ let el=document.getElementById(id); if(!el) return; if(id==='btn-archive'){ el.style.display='none'; el.remove(); return; } if(isMgr){ if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; } } else { if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; } } });
-  let delBtn=document.getElementById('delete-roster-btn'); if(delBtn) delBtn.style.display = isMgr ? 'inline-block' : 'none';
-  let importBtn=document.getElementById('btn-import'); let csvBtn=document.getElementById('btn-export-csv'); let pdfBtn=document.getElementById('btn-export-pdf'); if(importBtn) importBtn.style.display = isMgr ? 'inline-block' : 'none'; if(csvBtn) csvBtn.style.display = isMgr ? 'inline-block' : 'none'; if(pdfBtn) pdfBtn.style.display = isMgr ? 'inline-block' : 'none';
-  let myCard=document.getElementById('my-schedule-card'); if(myCard) myCard.style.display='none';
-}
 
 
 
@@ -530,63 +562,8 @@ function findMyStaff(cur){
 }
 
 
-function renderBuddies(which){
-  const cur=getCurrentFortnight(); 
-  if(!cur){ 
-    const el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list');
-    if(el) el.innerHTML='<div class="card">No roster loaded</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>';
-    return;
-  }
-  const iso=getISO(); 
-  let targetDate;
-  try{ const [y,mo,d]=iso.split('-').map(Number); targetDate=new Date(y,mo-1,d); }catch(e){ targetDate=new Date(); }
-  if(which==='tomorrow') targetDate.setDate(targetDate.getDate()+1);
-  const isoTarget=targetDate.getFullYear()+'-'+String(targetDate.getMonth()+1).padStart(2,'0')+'-'+String(targetDate.getDate()).padStart(2,'0');
-  const dd=String(targetDate.getDate()).padStart(2,'0'); const mm=String(targetDate.getMonth()+1).padStart(2,'0'); const todayStr=dd+'/'+mm; 
-  const dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT']; const dayName=dayNames[targetDate.getDay()];
-  let idx=cur.dates.findIndex(d=>d.iso===isoTarget);
-  if(idx===-1) idx=cur.dates.findIndex(d=>d.date===todayStr);
-  if(idx===-1) idx=cur.dates.findIndex(d=>d.day===dayName && d.date===todayStr);
-  if(idx===-1){ idx=which==='today'?0:1; if(idx>=cur.dates.length) idx=0; }
-  const myStaff=findMyStaff(cur); 
-  if(!myStaff){ const el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list'); if(el) el.innerHTML='<div class="card">Could not find your staff record</div>'; return; }
-  const myShiftRaw=(myStaff && myStaff.shifts && myStaff.shifts[idx]) ? myStaff.shifts[idx] : 'OFF'; 
-  const myParsed=parseShiftRange(myShiftRaw);
-  const listId=which==='today'?'buddies-today-list':'buddies-tomorrow-list'; const el=document.getElementById(listId); if(!el) return;
-  const dateLabel=(cur.dates && cur.dates[idx])?cur.dates[idx].date+' '+cur.dates[idx].day+' ('+isoTarget+')':todayStr+' '+dayName+' ('+isoTarget+')';
-  let html='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+' - '+fmt(myShiftRaw)+'</div>';
-  if(!myParsed){ html+='<div class="card">You are OFF on '+dateLabel+' - No buddies</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html; return; }
-  let buddies=[]; cur.staff.forEach(s=>{ if(s===myStaff) return; const sh=(s && s.shifts && s.shifts[idx]) ? s.shifts[idx] : 'OFF'; if(s.unavailable && s.unavailable[idx]) return; if(s.absentApproved && s.absentApproved[idx]) return; const p=parseShiftRange(sh); if(!p) return; if(myParsed.start < p.end && p.start < myParsed.end){ buddies.push({name:s.lastName.toUpperCase()+' '+s.firstName, shift:fmt(sh)}); } });
-  if(buddies.length===0) html+='<div class="card">No buddies overlapping on '+dateLabel+'</div>'; else buddies.forEach(b=>{ html+='<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:3px 8px;font-size:10px;font-weight:900;margin-right:6px">'+b.shift+'</span> '+b.name+'</div>'; });
-  html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html;
-}
 
 
-
-
-function renderMySchedule(){
-  const el=document.getElementById('mysched-list');
-  if(!el) return;
-  const cur=getCurrentFortnight();
-  if(!cur){ el.innerHTML='<div class="card">No roster</div>'; return; }
-  const myStaff=findMyStaff(cur);
-  if(!myStaff){ el.innerHTML='<div class="card">Staff not found - contact manager</div>'; return; }
-  let html='<div class="card" style="background:#111;color:#fff"><b>MY SCHEDULE - '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+'</b><br>'+cur.label+'</div>';
-  let hasShift=false;
-  if(cur.dates){
-    cur.dates.forEach((d,i)=>{
-      const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
-      if(sh && sh.toUpperCase()!=='OFF' && sh.toUpperCase()!=='NA' && sh.toUpperCase()!=='AB'){
-        hasShift=true;
-        const isGreen=myStaff && myStaff.cellGreen && myStaff.cellGreen[i];
-        html+='<div class="card" style="'+(isGreen?'border-color:#0a0a0a;background:#B6F7C5':'')+'"><b>'+d.day+' '+d.date+'</b> - '+fmt(sh)+(isGreen?' <span style="background:#111;color:#fff;border-radius:9999px;padding:2px 6px;font-size:9px">GREEN</span>':'')+'</div>';
-      }
-    });
-  }
-  if(!hasShift) html+='<div class="card">No shifts in this fortnight - you are OFF</div>';
-  html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>';
-  el.innerHTML=html;
-}
 
 
 function renderOptions(){
@@ -917,83 +894,18 @@ function saveLogoutTimer(){ const v=document.getElementById('logout-timer')?.val
 let logoutInterval=null; function startLogoutTimer(){ if(logoutInterval) clearInterval(logoutInterval); const minStr=safeGet('repco_logout_minutes')||'30'; const mins=parseInt(minStr); if(mins===0) return; logoutInterval=setInterval(()=>{ doLogout(); toast('Auto logged out after '+mins+' min'); clearInterval(logoutInterval); }, mins*60*1000); }
 
 
-function renderAccountPage(){
-  const listEl=document.getElementById('account-list');
-  if(!listEl) return;
-  const sess=safeGetJSON('retail_roster_session_v1',{});
-  const username=safeGet('repco_username')||sess.username||'';
-  const users=safeGetJSON('retail_roster_users_v1',[]);
-  let found=users.find(u=>u.username.toLowerCase()===username.toLowerCase());
-  if(!found) found=sess;
-  if(!found || !found.username){
-    listEl.innerHTML='<div class="card" style="padding:10px;font-size:11px">User not found - please log in again<br>Current: '+username+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
-    return;
-  }
-  listEl.innerHTML='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:12px">ACCOUNT</div><div style="font-size:11px;margin-top:6px">Username: '+found.username+'</div><div style="font-size:11px">Name: '+found.firstName+' '+found.lastName+'</div><div style="font-size:11px">Role: '+found.role+'</div><div style="margin-top:10px"><input id="new-pass" type="password" placeholder="New Password" style="padding:8px;border-radius:9999px;border:2px solid #111;width:100%;font-size:11px"><button onclick="changePassword()" style="margin-top:6px;background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">CHANGE PASSWORD</button></div></div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
-}
-function changePassword(){
-  const np=(document.getElementById('new-pass').value||'').trim();
-  if(!np){ toast('Enter new password'); return; }
-  const username=safeGet('repco_username');
-  let users=safeGetJSON('retail_roster_users_v1',[]);
-  let idx=users.findIndex(u=>u.username.toLowerCase()===username.toLowerCase());
-  if(idx!==-1){ users[idx].password=np; safeSetJSON('retail_roster_users_v1',users); toast('Password changed'); }
-}
 
 
 
 
-function renderRequests(){
-  const el=document.getElementById('requests-list');
-  if(!el) return;
-  const isMgr=isManagerRole(getActualRole());
-  let reqs=safeGetJSON('retail_roster_requests_v2',[]);
-  if(!Array.isArray(reqs)) reqs=[];
-  if(isMgr){
-    if(reqs.length===0){ el.innerHTML='<div class="card" style="padding:10px">No pending requests</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>'; return; }
-    el.innerHTML=reqs.map(function(r,i){ 
-      if(!r || typeof r!=='object') return '<div class="card" style="padding:10px">'+String(r)+'</div>';
-      return '<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">'+(r.type||'request')+' - '+(r.username||'')+' - '+(r.shiftDate||(r.dates&&r.dates[0])||'')+'</div><div style="font-size:11px">'+(r.reason||'')+' - '+ (r.newShift||'')+'</div><div style="margin-top:6px"><button onclick="approveReq('+i+')" style="background:#111;color:#fff;border-radius:9999px;padding:6px 10px;font-weight:900;margin-right:6px;font-size:10px">APPROVE</button><button onclick="denyReq('+i+')" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:10px">DENY</button></div></div>'; 
-    }).join('') + '<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
-  } else {
-    const cur=getCurrentFortnight();
-    const myStaff=cur?findMyStaff(cur):null;
-    let options='';
-    if(myStaff && cur && cur.dates){
-      cur.dates.forEach((d,i)=>{
-        const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
-        if(sh && sh.toUpperCase()!=='OFF' && sh!=='NA' && sh.toUpperCase()!=='AB'){
-          options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>';
-        }
-      });
-    }
-    if(!options) options='<option value="">No shifts found</option>';
-    let html='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:12px;margin-bottom:8px">SUBMIT REQUEST</div>';
-    html+='<label style="font-weight:900;font-size:10px">TYPE</label><select id="req-type" onchange="onReqTypeChange()" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin:4px 0 8px 0;font-size:11px"><option value="unavailability">Unavailability</option><option value="shift-correction">Shift Correction</option></select>';
-    html+='<div id="req-dynamic-area"></div></div>';
-    const myUsername=(safeGet('repco_username')||'').toLowerCase();
-    const myReqs=reqs.filter(function(r){ return r && r.username && r.username.toLowerCase()===myUsername; });
-    if(myReqs.length>0){
-      html+='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">MY REQUESTS ('+myReqs.length+')</div>';
-      myReqs.forEach(function(r){
-        if(!r || typeof r!=='object') return;
-        const date=r.shiftDate||(r.dates&&r.dates[0])||''; const status=r.status||'pending';
-        html+='<div style="border-top:1px solid #ddd;padding:6px 0;font-size:10px"><b>'+(r.type||'')+'</b> - '+date+' - '+status+'<br>'+(r.reason||'')+'</div>';
-      });
-      html+='</div>';
-    }
-    html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
-    el.innerHTML=html;
-    setTimeout(function(){ try{ onReqTypeChange(); }catch(e){} },50);
-  }
-}
+
 
 function onReqTypeChange(){
   const type=document.getElementById('req-type')?.value; const area=document.getElementById('req-dynamic-area'); if(!area) return;
   if(type==='unavailability'){
     area.innerHTML='<div style="background:#F2F2F2;border:2px dashed #111;border-radius:10px;padding:10px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-weight:900;font-size:9px">START DATE</label><input id="unavail-start-date" type="date" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div><div><label style="font-weight:900;font-size:9px">END DATE</label><input id="unavail-end-date" type="date" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">OR MANUAL (e.g. 19/10 - 25/10)</label><input id="unavail-manual" placeholder="19/10 - 25/10" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px"></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">REASON</label><textarea id="unavail-reason" placeholder="Reason" style="width:100%;padding:6px;border-radius:10px;border:2px solid #111;min-height:50px;font-size:11px"></textarea></div><button onclick="submitUnavail()" style="margin-top:8px;background:#111;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;width:100%;font-size:11px">SUBMIT</button></div>';
   } else if(type==='shift-correction'){
-    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
+    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=myStaff.shifts[i]||'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
     area.innerHTML='<div style="background:#FFF6CC;border:2px dashed #111;border-radius:10px;padding:10px"><label style="font-weight:900;font-size:9px">SELECT SHIFT</label><select id="corr-shift-idx" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px">'+options+'</select><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label style="font-weight:900;font-size:9px">NEW START</label><input id="corr-start" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div><div><label style="font-weight:900;font-size:9px">NEW END</label><input id="corr-end" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">OR SET AS</label><select id="corr-special" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px"><option value="">Use times above</option><option value="OFF">OFF</option><option value="AB">AB - Absent</option></select></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">REASON</label><textarea id="corr-reason" placeholder="Reason" style="width:100%;padding:6px;border-radius:10px;border:2px solid #111;min-height:50px;font-size:11px"></textarea></div><button onclick="submitCorrection()" style="margin-top:8px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;width:100%;font-size:11px">SUBMIT</button></div>';
   } else { area.innerHTML=''; }
 }
@@ -1312,7 +1224,7 @@ function onReqTypeChange(){
   if(type==='unavailability'){
     area.innerHTML='<div style="background:#F2F2F2;border:2px dashed #111;border-radius:12px;padding:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label style="font-weight:900;font-size:11px">START DATE</label><input id="unavail-start-date" type="date" min="2026-01-01" max="2040-01-01" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-weight:900;font-size:11px">END DATE</label><input id="unavail-end-date" type="date" min="2026-01-01" max="2040-01-01" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">OR MANUAL ENTRY (e.g. 19/10 - 25/10)</label><input id="unavail-manual" placeholder="19/10 - 25/10" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px"></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">REASON (optional)</label><textarea id="unavail-reason" placeholder="Reason (optional)" style="width:100%;padding:10px;border-radius:12px;border:2px solid #111;min-height:60px"></textarea></div><button onclick="submitUnavail()" style="margin-top:12px;background:#111;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;width:100%">SUBMIT</button></div>';
   } else if(type==='shift-correction'){
-    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
+    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=myStaff.shifts[i]||'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
     area.innerHTML='<div style="background:#FFF6CC;border:2px dashed #111;border-radius:12px;padding:12px"><label style="font-weight:900;font-size:11px">SELECT SHIFT</label><select id="corr-shift-idx" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px">'+options+'</select><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"><div><label style="font-weight:900;font-size:11px">NEW START</label><input id="corr-start" type="time" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-weight:900;font-size:11px">NEW END</label><input id="corr-end" type="time" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">OR SET AS</label><select id="corr-special" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px"><option value="">Use times above</option><option value="OFF">OFF</option><option value="AB">AB - Absent</option></select></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">REASON (optional)</label><textarea id="corr-reason" placeholder="Reason (optional)" style="width:100%;padding:10px;border-radius:12px;border:2px solid #111;min-height:60px"></textarea></div><button onclick="submitCorrection()" style="margin-top:12px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;width:100%">SUBMIT</button></div>';
   } else { area.innerHTML=''; }
 }
@@ -1320,14 +1232,14 @@ function submitUnavail(){
   const startDate=document.getElementById('unavail-start-date')?.value; const endDate=document.getElementById('unavail-end-date')?.value; const manual=(document.getElementById('unavail-manual')?.value||'').trim(); const reason=(document.getElementById('unavail-reason')?.value||'').trim(); let dates=[]; if(startDate && endDate){ dates=expandDateRange(startDate, endDate); } else if(manual){ if(manual.includes('-')){ let parts=manual.split('-'); if(parts.length===2){ let s=parts[0].trim(); let e=parts[1].trim(); if(s.includes('/') && e.includes('/')){ dates=expandDateRange(s,e); } } } else { dates=manual.split(',').map(x=>x.trim()).filter(Boolean); } } if(dates.length===0){toast('Select dates');return;} const username=safeGet('repco_username')||''; let all=safeGetJSON('retail_roster_requests_v2',[]); all.push({username, type:'unavailability', dates, reason, status:'pending', ts:Date.now()}); safeSetJSON('retail_roster_requests_v2',all); toast('Submitted - admin notified live'); renderRequests();
 }
 function submitCorrection(){
-  const idxStr=document.getElementById('corr-shift-idx')?.value; const start=document.getElementById('corr-start')?.value; const end=document.getElementById('corr-end')?.value; const special=document.getElementById('corr-special')?.value; const reason=(document.getElementById('corr-reason')?.value||'').trim(); if(idxStr===''){toast('Select shift');return;} let newShift=''; if(special) newShift=special; else { if(!start||!end){toast('Enter times');return;} newShift=start+'-'+end; } const cur=getCurrentFortnight(); const username=safeGet('repco_username')||''; const myStaff=findMyStaff(cur); const idx=parseInt(idxStr); const oldShift=(myStaff && myStaff.shifts && myStaff.shifts[idx]) ? myStaff.shifts[idx] : 'OFF'; const shiftDate=cur.dates[idx]?.date||''; let all=safeGetJSON('retail_roster_requests_v2',[]); all.push({username, type:'shift-correction', shiftDate, shiftIdx:idx, oldShift, newShift, reason, status:'pending', ts:Date.now(), dates:[shiftDate]}); safeSetJSON('retail_roster_requests_v2',all); toast('Submitted - admin notified live'); renderRequests();
+  const idxStr=document.getElementById('corr-shift-idx')?.value; const start=document.getElementById('corr-start')?.value; const end=document.getElementById('corr-end')?.value; const special=document.getElementById('corr-special')?.value; const reason=(document.getElementById('corr-reason')?.value||'').trim(); if(idxStr===''){toast('Select shift');return;} let newShift=''; if(special) newShift=special; else { if(!start||!end){toast('Enter times');return;} newShift=start+'-'+end; } const cur=getCurrentFortnight(); const username=safeGet('repco_username')||''; const myStaff=findMyStaff(cur); const idx=parseInt(idxStr); const oldShift=myStaff.shifts[idx]||'OFF'; const shiftDate=cur.dates[idx]?.date||''; let all=safeGetJSON('retail_roster_requests_v2',[]); all.push({username, type:'shift-correction', shiftDate, shiftIdx:idx, oldShift, newShift, reason, status:'pending', ts:Date.now(), dates:[shiftDate]}); safeSetJSON('retail_roster_requests_v2',all); toast('Submitted - admin notified live'); renderRequests();
 }
 function deleteReq(idx){ showCustomConfirm('Delete this request?','', (ok)=>{ if(!ok) return; let all=safeGetJSON('retail_roster_requests_v2',[]); all.splice(idx,1); safeSetJSON('retail_roster_requests_v2',all); toast('Deleted - synced'); renderRequests(); }); }
 function editReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); const r=all[idx]; if(!r) return; showCustomPrompt('Edit Reason', '<textarea id="edit-reason" style="width:100%;padding:10px;border-radius:12px;border:2px solid #111;min-height:60px">'+(r.reason||'')+'</textarea>', (ok)=>{ if(!ok) return; const nr=document.getElementById('edit-reason').value; r.reason=nr; safeSetJSON('retail_roster_requests_v2',all); toast('Edited - synced'); renderRequests(); }); }
 function approveReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); if(!all[idx]) return; const req=all[idx]; all[idx].status='approved'; safeSetJSON('retail_roster_requests_v2',all); let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(req.type==='unavailability'){ fns.forEach(fn=>{ let staff=fn.staff.find(s=>s.firstName.toLowerCase()===req.username.toLowerCase()); if(staff){ req.dates.forEach(dStr=>{ let clean=dStr.split(' ')[0].trim(); let dateIdx=fn.dates.findIndex(dd=>dd.date===clean); if(dateIdx!==-1){ if(!staff.originalShifts) staff.originalShifts={}; if(!staff.absentApproved) staff.absentApproved={}; if(!staff.originalShifts[dateIdx]) staff.originalShifts[dateIdx]=staff.shifts[dateIdx]; staff.absentApproved[dateIdx]=true; staff.shifts[dateIdx]='AB'; } }); } }); } else if(req.type==='shift-correction'){ fns.forEach(fn=>{ let dateIdx=fn.dates.findIndex(dd=>dd.date===req.shiftDate); let i = req.shiftIdx!==undefined ? req.shiftIdx : dateIdx; if(i>=0){ let staff=fn.staff.find(s=>s.firstName.toLowerCase()===req.username.toLowerCase()); if(staff){ if(!staff.originalShifts) staff.originalShifts={}; if(!staff.absentApproved) staff.absentApproved={}; if(req.newShift.toUpperCase()==='AB'){ if(!staff.originalShifts[i]) staff.originalShifts[i]=staff.shifts[i]; staff.absentApproved[i]=true; staff.shifts[i]='AB'; } else { staff.originalShifts[i]=staff.shifts[i]; staff.shifts[i]=req.newShift; staff.absentApproved[i]=false; } } } }); } safeSetJSON('retail_roster_byFortnight_v1',fns); setTimeout(()=>{ let all2=safeGetJSON('retail_roster_requests_v2',[]); all2=all2.filter((r,j)=>j!==idx); safeSetJSON('retail_roster_requests_v2',all2); toast('Approved - '+req.username+' notified live, request removed'); renderRequests(); renderRosterSafe(); applyRoleVisibility(); },500); }
 function denyReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); if(!all[idx]) return; const req=all[idx]; all[idx].status='denied'; safeSetJSON('retail_roster_requests_v2',all); toast('Denied - '+req.username+' notified live'); setTimeout(()=>{ let all2=safeGetJSON('retail_roster_requests_v2',[]); all2=all2.filter((r,j)=>j!==idx); safeSetJSON('retail_roster_requests_v2',all2); renderRequests(); },2000); }
 function renderUnavail(){ const el=document.getElementById('unavail-list'); if(!el) return; const cur=getCurrentFortnight(); if(!cur){el.innerHTML='<div class="card">No roster</div>';return;} let list=[]; cur.staff.forEach(s=>{ Object.keys(s.absentApproved||{}).forEach(k=>{ let i=parseInt(k); if(s.absentApproved[i]){ let orig=s.originalShifts && s.originalShifts[i] ? s.originalShifts[i] : s.shifts[i]; list.push({name:s.lastName.toUpperCase()+' '+s.firstName, date:cur.dates[i]?.date+' '+cur.dates[i]?.day, shift:orig+' AB'}); } }); }); if(list.length===0) el.innerHTML='<div class="card">No staff currently unavailable/absent</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else el.innerHTML=list.map(l=>'<div class="card"><b>'+l.name+'</b> - '+l.date+' - '+l.shift+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
-function renderTodayWorkers(){ const cur=getCurrentFortnight(); if(!cur) return; const iso=getISO(); let idx=cur.dates.findIndex(d=>d.iso===iso); if(idx===-1) idx=0; const listEl=document.getElementById('today-workers-list'); if(!listEl) return; let workers=[]; cur.staff.forEach(s=>{ const sh=(s && s.shifts && s.shifts[idx]) ? s.shifts[idx] : 'OFF'; const isAbs=s.absentApproved && s.absentApproved[idx]; if(isAbs) return; if(sh.toUpperCase()!=='OFF'&&sh!=='NA' && sh.toUpperCase()!=='AB' && !(s.unavailable&&s.unavailable[idx])) workers.push({name:s.lastName.toUpperCase()+' '+s.firstName,shift:fmt(sh)}); }); if(workers.length===0) listEl.innerHTML='<div class="card">No workers rostered today </div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else listEl.innerHTML=workers.map(w=>'<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:900;margin-right:6px">'+(w.shift||'OFF')+'</span> '+w.name+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
+function renderTodayWorkers(){ const cur=getCurrentFortnight(); if(!cur) return; const iso=getISO(); let idx=cur.dates.findIndex(d=>d.iso===iso); if(idx===-1) idx=0; const listEl=document.getElementById('today-workers-list'); if(!listEl) return; let workers=[]; cur.staff.forEach(s=>{ const sh=s.shifts[idx]||'OFF'; const isAbs=s.absentApproved && s.absentApproved[idx]; if(isAbs) return; if(sh.toUpperCase()!=='OFF'&&sh!=='NA' && sh.toUpperCase()!=='AB' && !(s.unavailable&&s.unavailable[idx])) workers.push({name:s.lastName.toUpperCase()+' '+s.firstName,shift:fmt(sh)}); }); if(workers.length===0) listEl.innerHTML='<div class="card">No workers rostered today </div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else listEl.innerHTML=workers.map(w=>'<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:900;margin-right:6px">'+(w.shift||'OFF')+'</span> '+w.name+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
 function toast(m){let t=document.getElementById('toast-v141');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500);}
 function doAdminLogin(){const u=document.getElementById('admin-user').value.trim();const p=document.getElementById('admin-pass').value.trim();const err=document.getElementById('admin-err');if(!['admin','master','manager','chris'].includes(u.toLowerCase())){err.textContent='Only admin/manager';return;}if(p.toLowerCase()!==u.toLowerCase()){err.textContent='Invalid';return;}document.getElementById('admin-login-section').style.display='none';document.getElementById('admin-toggle-section').style.display='block';checkMaintenance();}
 function toggleMaintenance(){
@@ -1495,11 +1407,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   setTimeout(checkMaintenance,200);
 });
 
-
-function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
-function closeAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.remove("show"); m.style.display="none"; } }
-document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=document.getElementById('admin-modal'); if(m && m.style.display==='flex') closeAdmin(); } });
-
 </script>
 <div id="hidden-staff-page" class="full-page" style="display:none">
   <div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER - HIDDEN STAFF</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div>
@@ -1522,6 +1429,140 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=
     <div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>
   </div>
 </div>
-<button id="admin-cog" onclick="openAdmin()" title="Admin" style="position:fixed;bottom:18px;left:18px;z-index:1000000;width:44px;height:44px;border-radius:50%;background:#fff;border:2px solid #111;display:flex;align-items:center;justify-content:center;box-shadow:2px 2px 0 #111;cursor:pointer"><span style="font-size:20px">⚙️</span></button>
 </body>
 </html>
+
+
+function renderBuddies(which){
+  const cur=getCurrentFortnight(); 
+  if(!cur){ 
+    const el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list');
+    if(el) el.innerHTML='<div class="card">No roster loaded</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">← BACK</button></div>';
+    return;
+  }
+  const iso=getISO(); 
+  let targetDate;
+  try{ const [y,mo,d]=iso.split('-').map(Number); targetDate=new Date(y,mo-1,d); }catch(e){ targetDate=new Date(); }
+  if(which==='tomorrow') targetDate.setDate(targetDate.getDate()+1);
+  const isoTarget=targetDate.getFullYear()+'-'+String(targetDate.getMonth()+1).padStart(2,'0')+'-'+String(targetDate.getDate()).padStart(2,'0');
+  const dd=String(targetDate.getDate()).padStart(2,'0'); const mm=String(targetDate.getMonth()+1).padStart(2,'0'); const todayStr=dd+'/'+mm; 
+  const dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT']; const dayName=dayNames[targetDate.getDay()];
+  let idx=cur.dates.findIndex(d=>d.iso===isoTarget);
+  if(idx===-1) idx=cur.dates.findIndex(d=>d.date===todayStr);
+  if(idx===-1) idx=cur.dates.findIndex(d=>d.day===dayName && d.date===todayStr);
+  if(idx===-1){ idx=which==='today'?0:1; if(idx>=cur.dates.length) idx=0; }
+  const myStaff=findMyStaff(cur); 
+  if(!myStaff){ const el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list'); if(el) el.innerHTML='<div class="card">Could not find your staff record</div>'; return; }
+  const myShiftRaw=(myStaff && myStaff.shifts && myStaff.shifts[idx]) ? myStaff.shifts[idx] : 'OFF'; 
+  const myParsed=parseShiftRange(myShiftRaw);
+  const listId=which==='today'?'buddies-today-list':'buddies-tomorrow-list'; const el=document.getElementById(listId); if(!el) return;
+  const dateLabel=(cur.dates && cur.dates[idx])?cur.dates[idx].date+' '+cur.dates[idx].day+' ('+isoTarget+')':todayStr+' '+dayName+' ('+isoTarget+')';
+  let html='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+' - '+fmt(myShiftRaw)+'</div>';
+  if(!myParsed){ html+='<div class="card">You are OFF on '+dateLabel+' - No buddies</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html; return; }
+  let buddies=[]; cur.staff.forEach(s=>{ if(s===myStaff) return; const sh=(s && s.shifts && s.shifts[idx]) ? s.shifts[idx] : 'OFF'; if(s.unavailable && s.unavailable[idx]) return; if(s.absentApproved && s.absentApproved[idx]) return; const p=parseShiftRange(sh); if(!p) return; if(myParsed.start < p.end && p.start < myParsed.end){ buddies.push({name:s.lastName.toUpperCase()+' '+s.firstName, shift:fmt(sh)}); } });
+  if(buddies.length===0) html+='<div class="card">No buddies overlapping on '+dateLabel+'</div>'; else buddies.forEach(b=>{ html+='<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:3px 8px;font-size:10px;font-weight:900;margin-right:6px">'+b.shift+'</span> '+b.name+'</div>'; });
+  html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html;
+}
+
+
+
+function renderMySchedule(){
+  const el=document.getElementById('mysched-list');
+  if(!el) return;
+  const cur=getCurrentFortnight();
+  if(!cur){ el.innerHTML='<div class="card">No roster</div>'; return; }
+  const myStaff=findMyStaff(cur);
+  if(!myStaff){ el.innerHTML='<div class="card">Staff not found - contact manager</div>'; return; }
+  let html='<div class="card" style="background:#111;color:#fff"><b>MY SCHEDULE - '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+'</b><br>'+cur.label+'</div>';
+  let hasShift=false;
+  if(cur.dates){
+    cur.dates.forEach((d,i)=>{
+      const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
+      if(sh && sh.toUpperCase()!=='OFF' && sh.toUpperCase()!=='NA' && sh.toUpperCase()!=='AB'){
+        hasShift=true;
+        const isGreen=myStaff && myStaff.cellGreen && myStaff.cellGreen[i];
+        html+='<div class="card" style="'+(isGreen?'border-color:#0a0a0a;background:#B6F7C5':'')+'"><b>'+d.day+' '+d.date+'</b> - '+fmt(sh)+(isGreen?' <span style="background:#111;color:#fff;border-radius:9999px;padding:2px 6px;font-size:9px">GREEN</span>':'')+'</div>';
+      }
+    });
+  }
+  if(!hasShift) html+='<div class="card">No shifts in this fortnight - you are OFF</div>';
+  html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>';
+  el.innerHTML=html;
+}
+
+
+
+function renderRequests(){
+  const el=document.getElementById('requests-list');
+  if(!el) return;
+  const isMgr=isManagerRole(getActualRole());
+  let reqs=safeGetJSON('retail_roster_requests_v2',[]);
+  if(!Array.isArray(reqs)) reqs=[];
+  if(isMgr){
+    if(reqs.length===0){ el.innerHTML='<div class="card" style="padding:10px">No pending requests</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>'; return; }
+    el.innerHTML=reqs.map(function(r,i){ 
+      if(!r || typeof r!=='object') return '<div class="card" style="padding:10px">'+String(r)+'</div>';
+      return '<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">'+(r.type||'request')+' - '+(r.username||'')+' - '+(r.shiftDate||(r.dates&&r.dates[0])||'')+'</div><div style="font-size:11px">'+(r.reason||'')+' - '+ (r.newShift||'')+'</div><div style="margin-top:6px"><button onclick="approveReq('+i+')" style="background:#111;color:#fff;border-radius:9999px;padding:6px 10px;font-weight:900;margin-right:6px;font-size:10px">APPROVE</button><button onclick="denyReq('+i+')" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:10px">DENY</button></div></div>'; 
+    }).join('') + '<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
+  } else {
+    const cur=getCurrentFortnight();
+    const myStaff=cur?findMyStaff(cur):null;
+    let options='';
+    if(myStaff && cur && cur.dates){
+      cur.dates.forEach((d,i)=>{
+        const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
+        if(sh && sh.toUpperCase()!=='OFF' && sh!=='NA' && sh.toUpperCase()!=='AB'){
+          options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>';
+        }
+      });
+    }
+    if(!options) options='<option value="">No shifts found</option>';
+    let html='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:12px;margin-bottom:8px">SUBMIT REQUEST</div>';
+    html+='<label style="font-weight:900;font-size:10px">TYPE</label><select id="req-type" onchange="onReqTypeChange()" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin:4px 0 8px 0;font-size:11px"><option value="unavailability">Unavailability</option><option value="shift-correction">Shift Correction</option></select>';
+    html+='<div id="req-dynamic-area"></div></div>';
+    const myUsername=(safeGet('repco_username')||'').toLowerCase();
+    const myReqs=reqs.filter(function(r){ return r && r.username && r.username.toLowerCase()===myUsername; });
+    if(myReqs.length>0){
+      html+='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">MY REQUESTS ('+myReqs.length+')</div>';
+      myReqs.forEach(function(r){
+        if(!r || typeof r!=='object') return;
+        const date=r.shiftDate||(r.dates&&r.dates[0])||''; const status=r.status||'pending';
+        html+='<div style="border-top:1px solid #ddd;padding:6px 0;font-size:10px"><b>'+(r.type||'')+'</b> - '+date+' - '+status+'<br>'+(r.reason||'')+'</div>';
+      });
+      html+='</div>';
+    }
+    html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
+    el.innerHTML=html;
+    setTimeout(function(){ try{ onReqTypeChange(); }catch(e){} },50);
+  }
+}
+
+
+
+function renderAccountPage(){
+  let listEl=document.getElementById('account-list'); let innerEl=document.getElementById('account-inner'); let target=listEl||innerEl;
+  if(!target){ const page=document.getElementById('account-page'); if(page){ const pi=page.querySelector('.page-inner'); if(pi){ const d=document.createElement('div'); d.id='account-list'; pi.appendChild(d); target=d; } } }
+  if(!target) return;
+  const sess=safeGetJSON('retail_roster_session_v1',{}); const username=safeGet('repco_username')||sess.username||''; const users=safeGetJSON('retail_roster_users_v1',[]); let found=users.find(u=>u.username.toLowerCase()===username.toLowerCase()); if(!found) found=sess;
+  if(!found || !found.username){ target.innerHTML='<div class="card" style="padding:12px;font-size:11px">User not found - please log in again<br>Current: '+username+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>'; return; }
+  const role=getActualRole()||found.role||'staff'; const isMgr=isManagerRole(role);
+  let html='<div class="card" style="padding:12px"><div style="font-weight:900;font-size:13px">ACCOUNT - '+(found.firstName||'')+' '+(found.lastName||'')+'</div>'; html+='<div style="font-size:11px;margin-top:8px"><b>Username:</b> '+found.username+'</div>'; html+='<div style="font-size:11px"><b>Name:</b> '+found.firstName+' '+found.lastName+'</div>'; html+='<div style="font-size:11px"><b>Role:</b> '+role+' '+(isMgr?'(Manager)':'(Staff)')+'</div>'; html+='<div style="margin-top:12px"><label style="font-weight:900;font-size:10px">NEW USERNAME</label><input id="new-username" value="'+found.username+'" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin-top:4px;font-size:11px"></div>'; html+='<div style="margin-top:8px"><label style="font-weight:900;font-size:10px">NEW PASSWORD</label><input id="new-pass" type="password" placeholder="Leave blank to keep current" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin-top:4px;font-size:11px"></div>'; html+='<button onclick="changePassword()" style="margin-top:12px;background:#111;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;width:100%;font-size:11px">SAVE CHANGES</button>'; html+='</div>'; html+='<div class="card" style="padding:12px"><div style="font-weight:900;font-size:11px">LOGOUT</div><button onclick="doLogout()" style="margin-top:8px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;width:100%;font-size:11px">LOG OUT</button></div>'; html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; target.innerHTML=html; if(innerEl && innerEl!==target) innerEl.innerHTML=html;
+}
+function changePassword(){
+  const newU=(document.getElementById('new-username').value||'').trim(); const newP=(document.getElementById('new-pass').value||'').trim(); if(!newU){ toast('Username required'); return; } const oldUsername=safeGet('repco_username'); let users=safeGetJSON('retail_roster_users_v1',[]); let idx=users.findIndex(u=>u.username.toLowerCase()===oldUsername.toLowerCase()); if(idx===-1){ toast('User not found'); return; } if(newU.toLowerCase()!==oldUsername.toLowerCase() && users.some(u=>u.username.toLowerCase()===newU.toLowerCase())){ toast('Username taken'); return; } users[idx].username=newU; if(newP) users[idx].password=newP; safeSetJSON('retail_roster_users_v1',users); safeSet('repco_username',newU); safeSetJSON('retail_roster_session_v1',{...users[idx]}); toast('Saved - new username: '+newU); renderAccountPage();
+}
+
+
+
+function applyRoleVisibility(){
+  const actualRole=getActualRole(); const isMgr=isManagerRole(actualRole);
+  const archiveBtn=document.getElementById('btn-archive'); if(archiveBtn){ archiveBtn.style.display='none'; archiveBtn.remove(); }
+  document.querySelectorAll('.r-btn-consistent').forEach(btn=>{ if(btn.textContent.trim().toUpperCase()==='ARCHIVE'){ btn.style.display='none'; btn.remove(); } });
+  let adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive']; let staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive'];
+  let allIds={'btn-unavail':1,'btn-today':1,'btn-tomorrow':1,'btn-mysched':1,'btn-options':1,'btn-archive':1,'btn-account':1,'btn-hidden':1,'btn-requests':1,'btn-roster':1};
+  Object.keys(allIds).forEach(id=>{ let el=document.getElementById(id); if(!el) return; if(id==='btn-archive'){ el.style.display='none'; el.remove(); return; } if(isMgr){ if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; } } else { if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; } } });
+  let delBtn=document.getElementById('delete-roster-btn'); if(delBtn) delBtn.style.display = isMgr ? 'inline-block' : 'none';
+  let importBtn=document.getElementById('btn-import'); let csvBtn=document.getElementById('btn-export-csv'); let pdfBtn=document.getElementById('btn-export-pdf'); if(importBtn) importBtn.style.display = isMgr ? 'inline-block' : 'none'; if(csvBtn) csvBtn.style.display = isMgr ? 'inline-block' : 'none'; if(pdfBtn) pdfBtn.style.display = isMgr ? 'inline-block' : 'none';
+  let myCard=document.getElementById('my-schedule-card'); if(myCard) myCard.style.display='none';
+}
+
