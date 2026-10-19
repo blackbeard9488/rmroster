@@ -168,7 +168,7 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261021233000_FIX_ALL_V3";
+const BUILD_ID="20261021233500_SECURITY_FIX_V4";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1203,17 +1203,7 @@ function exportCSV(){
   let blob=new Blob([csv],{type:'text/csv'});let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=cur.label+'.csv';a.click();toast('CSV exported');
 }
 function exportPDF(){ let cur=getCurrentFortnight(); if(!cur){ toast('No roster'); return; } try{ let jsPDF = window.jspdf.jsPDF; let doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'}); doc.setFontSize(14); doc.text('REPCO ROSTER - '+cur.label,10,12); doc.setFontSize(8); let y=18; cur.staff.forEach(function(st){ let row=[st.lastName+', '+st.firstName]; (st.shifts||[]).forEach(function(s,idx){ let orig=st.originalShifts && st.originalShifts[idx]?st.originalShifts[idx]:s; let isAbs=st.absentApproved && st.absentApproved[idx]; let disp=isAbs && orig ? orig+' AB' : s; row.push(disp===''||disp==='OFF'?'':disp); }); doc.text(row.join(' | ').slice(0,200),10,y); y+=6; }); doc.save(cur.label.replace(/[^a-z0-9]/gi,'_')+'.pdf'); toast('PDF exported'); }catch(e){ toast('PDF error: '+e.message); }}
-function doLogin(){
-  let u=document.getElementById('login-user').value.trim();
-  let p=document.getElementById('login-pass').value.trim();
-  let err=document.getElementById('login-err');
-  if(!u || !p){ err.textContent='Enter username and password'; return; }
-  safeSet('repco_username',u);
-  document.getElementById('login-page').style.display='none';
-  document.getElementById('global-header').classList.add('show');
-  document.getElementById('repco-v65').classList.add('show');
-  populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMySchedule();
-}
+
 function doLogout(){ document.getElementById('login-page').style.display='flex'; document.getElementById('global-header').classList.remove('show'); document.getElementById('repco-v65').classList.remove('show'); }
 function toast(msg){ let t=document.getElementById('toast-v141'); if(!t) return; t.textContent=msg; t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); },2500); }
 function updateBrisbaneTime(){
@@ -1226,25 +1216,7 @@ function updateBrisbaneTime(){
   }catch(e){}
 }
 function isAdminUser(){ let u=(safeGet('repco_username')||'').toLowerCase(); return ['admin','master','manager','administrator'].indexOf(u)>=0; }
-function findMyStaff(){
-  try{
-    if(isAdminUser()) return null;
-    let username=(safeGet('repco_username')||'').trim().toLowerCase();
-    let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    let all=[];
-    for(let i=0;i<fns.length;i++){ if(fns[i].staff) all=all.concat(fns[i].staff); }
-    if(username){
-      for(let i=0;i<all.length;i++){
-        let s=all[i];
-        if(s.firstName.toLowerCase()===username || (s.firstName+' '+s.lastName).toLowerCase()===username || username.indexOf(s.firstName.toLowerCase())>=0){
-          return {firstName:s.firstName, lastName:s.lastName};
-        }
-      }
-      if(username.indexOf('chris')>=0) return {firstName:'Chris', lastName:'CULLING'};
-    }
-    return all.length? {firstName:all[0].firstName, lastName:all[0].lastName} : null;
-  }catch(e){ return null; }
-}
+
 function parseShiftStr(s){
   if(!s) return null;
   let up=String(s).toUpperCase().trim();
@@ -1567,25 +1539,7 @@ function formatUntil(ms){
   if(h>0) return 'Starts in '+h+'h '+m+'m';
   return 'Starts in '+m+' minutes';
 }
-function findMyStaff(){
-  try{
-    if(isAdminUser()) return null;
-    let username=(safeGet('repco_username')||'').trim().toLowerCase();
-    let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    let all=[];
-    for(let i=0;i<fns.length;i++){ if(fns[i].staff) all=all.concat(fns[i].staff); }
-    if(username){
-      for(let i=0;i<all.length;i++){
-        let s=all[i];
-        if(s.firstName.toLowerCase()===username || (s.firstName+' '+s.lastName).toLowerCase()===username || username.indexOf(s.firstName.toLowerCase())>=0){
-          return {firstName:s.firstName, lastName:s.lastName};
-        }
-      }
-      if(username.indexOf('chris')>=0) return {firstName:'Chris', lastName:'CULLING'};
-    }
-    return all.length? {firstName:all[0].firstName, lastName:all[0].lastName} : null;
-  }catch(e){ return null; }
-}
+
 function updateMyScheduleCard(){ let c=document.getElementById("my-schedule-card"); if(c) c.style.display="none"; return; }
 function updateMyScheduleCard_ORIG(){
   try{
