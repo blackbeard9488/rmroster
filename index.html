@@ -1314,7 +1314,7 @@ function findMyStaff(){
     return all.length? {firstName:all[0].firstName, lastName:all[0].lastName} : null;
   }catch(e){ return null; }
 }
-function updateMyScheduleCard(){ let c=document.getElementById("my-schedule-card"); if(c) c.style.display="none"; return; function _orig(){
+function updateMyScheduleCard(){ let c=document.getElementById("my-schedule-card"); if(c) c.style.display="none"; return;
   try{
     let card=document.getElementById('my-schedule-card');
     if(!card) return;
