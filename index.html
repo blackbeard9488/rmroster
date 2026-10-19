@@ -485,7 +485,28 @@ function enforceOnly8Fulltime(){
   if(changed) safeSetJSON('retail_roster_byFortnight_v1',fns);
 }
 
-function getCurrentFortnight(){const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);const curId=safeGet('retail_roster_currentFortnightId')||(fns[0]&&fns[0].id);return fns.find(f=>f.id===curId)||fns[0];}
+
+function getCurrentFortnight(){
+  const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+  if(!fns || fns.length===0) return null;
+  const iso=getISO();
+  let targetDate;
+  try{ const [y,mo,d]=iso.split('-').map(Number); targetDate=new Date(y,mo-1,d); }catch(e){ targetDate=new Date(); }
+  const isoTarget=targetDate.getFullYear()+'-'+String(targetDate.getMonth()+1).padStart(2,'0')+'-'+String(targetDate.getDate()).padStart(2,'0');
+  // Try to find fortnight that contains isoTarget
+  for(let fn of fns){
+    if(!fn.dates) continue;
+    let found=fn.dates.find(d=>d.iso===isoTarget);
+    if(found) return fn;
+    // Also check date string
+    const dd=String(targetDate.getDate()).padStart(2,'0'); const mm=String(targetDate.getMonth()+1).padStart(2,'0'); const todayStr=dd+'/'+mm;
+    let found2=fn.dates.find(d=>d.date===todayStr);
+    if(found2) return fn;
+  }
+  const curId=safeGet('retail_roster_currentFortnightId')||(fns[0]&&fns[0].id);
+  return fns.find(f=>f.id===curId)||fns[0];
+}
+
 function to12h(range){if(!range) return range; return range.split('-').map(t=>{let tt=t.trim().replace('A',''); const m=tt.match(/(\d{1,2}):(\d{2})/); if(!m) return t; let hh=parseInt(m[1]); let mm=m[2]; const am=hh<12?'AM':'PM'; let h=hh%12; if(h===0) h=12; return h+':'+mm+am;}).join('-');}
 function fmt(s){if(!s) return ''; if(s==='NA') return 'NA'; let up=s.toUpperCase().trim(); if(up==='OFF' || up==='' ) return ''; if(up==='AB'||up==='ABSENT') return 'AB'; let tf=safeGet('timeFormat')||'24h'; if(tf==='12h'){ let hasA=s.includes('A'); let base=s.replace(/A/g,'').trim(); return to12h(base)+(hasA?' A':''); } return s;}
 function deleteCurrentRoster(){
@@ -543,23 +564,68 @@ function parseDM(str){str=str.trim(); if(!str) return null; let m=str.match(/^(\
 function formatDDMM(date){const dd=String(date.getDate()).padStart(2,'0'); const mm=String(date.getMonth()+1).padStart(2,'0'); return dd+'/'+mm;}
 function expandDateRange(startStr, endStr){let s=parseDM(startStr); let e=parseDM(endStr); if(!s||!e) return []; if(e < s){let tmp=s; s=e; e=tmp;} let min=new Date(2026,0,1); let max=new Date(2040,0,1); if(s < min) s=min; if(e > max) e=max; let out=[]; let cur=new Date(s); while(cur <= e){ out.push(formatDDMM(cur)); cur.setDate(cur.getDate()+1); if(out.length>500) break; } return out;}
 function parseShiftRange(s){if(!s) return null; let up=s.toUpperCase().trim(); if(['OFF','NA','ABSENT','AB',''].includes(up)) return null; let m=s.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/); if(!m) return null; let start=parseInt(m[1])*60+parseInt(m[2]); let end=parseInt(m[3])*60+parseInt(m[4]); if(end<start) end+=1440; return {start,end,raw:s};}
-function findMyStaff(cur){
-  const username=safeGet('repco_username')||'';
-  let mapped=mapUsernameToStaffKey(username);
-  if(mapped){
-    let f=cur.staff.find(s=>s.firstName.toLowerCase()===mapped.firstName.toLowerCase() && s.lastName.toLowerCase()===mapped.lastName.toLowerCase());
-    if(f) return f;
+
+function mapUsernameToStaffKey(username){
+  if(!username) return null;
+  const u=username.toLowerCase().trim();
+  // Common mappings
+  const map={
+    'daniel': {firstName:'Daniel', lastName:'Duffield'},
+    'daniel.duffield': {firstName:'Daniel', lastName:'Duffield'},
+    'danielduffield': {firstName:'Daniel', lastName:'Duffield'},
+    'duffield': {firstName:'Daniel', lastName:'Duffield'},
+    'chris': {firstName:'Chris', lastName:'Culling'},
+    'chris.culling': {firstName:'Chris', lastName:'Culling'},
+    'chris culling': {firstName:'Chris', lastName:'Culling'},
+    'christopher.culling.3': {firstName:'Chris', lastName:'Culling'}
+  };
+  if(map[u]) return map[u];
+  // Try split by dot
+  if(u.includes('.')){
+    const parts=u.split('.');
+    if(parts.length>=2){
+      return {firstName: parts[0], lastName: parts[1]};
+    }
   }
+  // Try first name only
+  return {firstName: u, lastName: ''};
+}
+
+
+function findMyStaff(cur){
+  if(!cur || !cur.staff || cur.staff.length===0) return null;
+  const username=safeGet('repco_username')||'';
+  try{
+    let mapped=mapUsernameToStaffKey(username);
+    if(mapped && mapped.firstName){
+      let f=cur.staff.find(s=>s.firstName.toLowerCase()===mapped.firstName.toLowerCase() && (mapped.lastName==='' || s.lastName.toLowerCase()===mapped.lastName.toLowerCase()));
+      if(f) return f;
+      // Also try lastName match
+      if(mapped.lastName){
+        let f2=cur.staff.find(s=>s.lastName.toLowerCase()===mapped.lastName.toLowerCase());
+        if(f2) return f2;
+      }
+    }
+  }catch(e){ console.log('mapUsername error', e); }
   let found=null;
+  const un=username.toLowerCase();
   cur.staff.forEach(s=>{
+    if(!s || !s.firstName || !s.lastName) return;
     let fn=s.firstName.toLowerCase();
     let ln=s.lastName.toLowerCase();
-    let un=username.toLowerCase();
-    if((fn+' '+ln)===un || (ln+', '+fn)===un) found=s;
-    else if(fn===un && cur.staff.filter(x=>x.firstName.toLowerCase()===fn).length===1) found=s;
+    if((fn+' '+ln)===un || (ln+', '+fn)===un || (fn+ln)===un || (fn+'.'+ln)===un) found=s;
+    else if(fn===un && cur.staff.filter(x=>x.firstName && x.firstName.toLowerCase()===fn).length===1) found=s;
+    else if(ln===un) found=s;
   });
-  return found||cur.staff[0];
+  // If still not found, try Daniel specifically if username is daniel
+  if(!found && un.includes('daniel')){
+    let d=cur.staff.find(s=>s.firstName && s.firstName.toLowerCase().includes('daniel'));
+    if(d) return d;
+  }
+  return found||cur.staff[0]||null;
 }
+
+
 
 function renderBuddies(which){
   const cur=getCurrentFortnight(); 
@@ -580,17 +646,19 @@ function renderBuddies(which){
   if(idx===-1) idx=cur.dates.findIndex(d=>d.day===dayName && d.date===todayStr);
   if(idx===-1){ idx=which==='today'?0:1; if(idx>=cur.dates.length) idx=0; }
   const myStaff=findMyStaff(cur); 
-  if(!myStaff){ const el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list'); if(el) el.innerHTML='<div class="card">Could not find your staff record</div>'; return; }
-  const myShiftRaw=(myStaff && myStaff.shifts && myStaff.shifts[idx]) ? myStaff.shifts[idx] : 'OFF'; 
+  if(!myStaff){ const el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list'); if(el) el.innerHTML='<div class="card">Could not find your staff record - username: '+safeGet('repco_username')+' - roster: '+cur.label+'</div>'; return; }
+  const myShiftRaw=(myStaff && myStaff.shifts && myStaff.shifts[idx]!=null) ? myStaff.shifts[idx] : 'OFF'; 
   const myParsed=parseShiftRange(myShiftRaw);
   const listId=which==='today'?'buddies-today-list':'buddies-tomorrow-list'; const el=document.getElementById(listId); if(!el) return;
-  const dateLabel=(cur.dates && cur.dates[idx])?cur.dates[idx].date+' '+cur.dates[idx].day+' ('+isoTarget+')':todayStr+' '+dayName+' ('+isoTarget+')';
-  let html='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+' - '+fmt(myShiftRaw)+'</div>';
-  if(!myParsed){ html+='<div class="card">You are OFF on '+dateLabel+' - No buddies</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html; return; }
-  let buddies=[]; cur.staff.forEach(s=>{ if(s===myStaff) return; const sh=(s && s.shifts && s.shifts[idx]) ? s.shifts[idx] : 'OFF'; if(s.unavailable && s.unavailable[idx]) return; if(s.absentApproved && s.absentApproved[idx]) return; const p=parseShiftRange(sh); if(!p) return; if(myParsed.start < p.end && p.start < myParsed.end){ buddies.push({name:s.lastName.toUpperCase()+' '+s.firstName, shift:fmt(sh)}); } });
-  if(buddies.length===0) html+='<div class="card">No buddies overlapping on '+dateLabel+'</div>'; else buddies.forEach(b=>{ html+='<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:3px 8px;font-size:10px;font-weight:900;margin-right:6px">'+b.shift+'</span> '+b.name+'</div>'; });
+  const dateLabel=(cur.dates && cur.dates[idx])?cur.dates[idx].date+' '+cur.dates[idx].day+' ('+isoTarget+') - idx '+idx+' / '+cur.dates.length:todayStr+' '+dayName+' ('+isoTarget+') - idx '+idx;
+  let displayShift=myShiftRaw; if(!displayShift || displayShift.trim()==='') displayShift='(empty - raw: "'+String(myShiftRaw)+'")';
+  let html='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+' - '+displayShift+' (fmt: '+fmt(myShiftRaw)+')<br><small>Staff count: '+cur.staff.length+' Dates: '+cur.label+'</small></div>';
+  if(!myParsed){ html+='<div class="card">You are OFF on '+dateLabel+' - No buddies - raw shift: "'+String(myShiftRaw)+'"<br><small>If you have a shift today, roster data may be wrong for this date. Check ROSTER page for '+dateLabel+'</small></div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html; return; }
+  let buddies=[]; cur.staff.forEach(s=>{ if(!s || !s.firstName) return; if(s===myStaff) return; const sh=(s && s.shifts && s.shifts[idx]!=null) ? s.shifts[idx] : 'OFF'; if(s.unavailable && s.unavailable[idx]) return; if(s.absentApproved && s.absentApproved[idx]) return; const p=parseShiftRange(sh); if(!p) return; if(myParsed.start < p.end && p.start < myParsed.end){ buddies.push({name:s.lastName.toUpperCase()+' '+s.firstName, shift:fmt(sh)||sh}); } });
+  if(buddies.length===0) html+='<div class="card">No buddies overlapping on '+dateLabel+' - you work alone or data missing<br>Your shift: '+displayShift+'<br>Checking '+cur.staff.length+' other staff</div>'; else buddies.forEach(b=>{ html+='<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:3px 8px;font-size:10px;font-weight:900;margin-right:6px">'+b.shift+'</span> '+b.name+'</div>'; });
   html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html;
 }
+
 
 
 function renderMySchedule(){
@@ -1014,15 +1082,31 @@ function renderRequests(){
     setTimeout(function(){ try{ onReqTypeChange(); }catch(e){} },50);
   }
 }
+
 function onReqTypeChange(){
   const type=document.getElementById('req-type')?.value; const area=document.getElementById('req-dynamic-area'); if(!area) return;
   if(type==='unavailability'){
     area.innerHTML='<div style="background:#F2F2F2;border:2px dashed #111;border-radius:10px;padding:10px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-weight:900;font-size:9px">START DATE</label><input id="unavail-start-date" type="date" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div><div><label style="font-weight:900;font-size:9px">END DATE</label><input id="unavail-end-date" type="date" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">OR MANUAL (e.g. 19/10 - 25/10)</label><input id="unavail-manual" placeholder="19/10 - 25/10" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px"></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">REASON</label><textarea id="unavail-reason" placeholder="Reason" style="width:100%;padding:6px;border-radius:10px;border:2px solid #111;min-height:50px;font-size:11px"></textarea></div><button onclick="submitUnavail()" style="margin-top:8px;background:#111;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;width:100%;font-size:11px">SUBMIT</button></div>';
   } else if(type==='shift-correction'){
-    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=myStaff.shifts[i]||'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
-    area.innerHTML='<div style="background:#FFF6CC;border:2px dashed #111;border-radius:10px;padding:10px"><label style="font-weight:900;font-size:9px">SELECT SHIFT</label><select id="corr-shift-idx" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px">'+options+'</select><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label style="font-weight:900;font-size:9px">NEW START</label><input id="corr-start" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div><div><label style="font-weight:900;font-size:9px">NEW END</label><input id="corr-end" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">OR SET AS</label><select id="corr-special" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px"><option value="">Use times above</option><option value="OFF">OFF</option><option value="AB">AB - Absent</option></select></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">REASON</label><textarea id="corr-reason" placeholder="Reason" style="width:100%;padding:6px;border-radius:10px;border:2px solid #111;min-height:50px;font-size:11px"></textarea></div><button onclick="submitCorrection()" style="margin-top:8px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;width:100%;font-size:11px">SUBMIT</button></div>';
-  } else { area.innerHTML=''; }
+    const cur=getCurrentFortnight(); 
+    if(!cur || !cur.dates){ area.innerHTML='<div class="card">No roster loaded</div>'; return; }
+    const myStaff=findMyStaff(cur); 
+    let options=''; 
+    if(myStaff && myStaff.shifts && cur.dates){
+      cur.dates.forEach((d,i)=>{
+        const sh=(myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
+        if(sh && sh.toUpperCase()!=='OFF' && sh!=='NA' && sh.toUpperCase()!=='AB'){
+          options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>';
+        }
+      });
+    }
+    if(!options) options='<option value="">No shifts found - you are OFF all week? Check roster</option>';
+    area.innerHTML='<div style="background:#FFF6CC;border:2px dashed #111;border-radius:10px;padding:10px"><label style="font-weight:900;font-size:9px">SELECT SHIFT</label><select id="corr-shift-idx" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px">'+options+'</select><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label style="font-weight:900;font-size:9px">NEW START</label><input id="corr-start" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div><div><label style="font-weight:900;font-size:9px">NEW END</label><input id="corr-end" type="time" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;font-size:11px"></div></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">OR SET AS</label><select id="corr-special" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111;margin-top:2px;font-size:11px"><option value="">Use times above</option><option value="OFF">OFF</option><option value="NA">NA</option><option value="AB">AB - Absent</option></select></div><div style="margin-top:8px"><label style="font-weight:900;font-size:9px">REASON</label><textarea id="corr-reason" placeholder="Reason for correction" style="width:100%;padding:6px;border-radius:10px;border:2px solid #111;min-height:40px;font-size:11px"></textarea></div><button onclick="submitShiftCorrection()" style="margin-top:8px;background:#111;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;width:100%;font-size:11px">SUBMIT CORRECTION</button></div>';
+  } else {
+    area.innerHTML='<div style="font-size:11px">Select a request type</div>';
+  }
 }
+
 
 function approveReq(i){
   let reqs=safeGetJSON('retail_roster_requests_v2',[]);
