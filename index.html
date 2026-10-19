@@ -105,8 +105,7 @@ button{font-size:11px !important}
     <div class="login-row"><label>PASSWORD:</label><input id="login-pass" type="password"></div>
     <button id="login-signin-btn" type="button" onclick="doLogin()">SIGN IN</button>
     <div id="login-err"></div>
-    <button id="admin-cog" onclick="openAdmin()" style="position:absolute;bottom:14px;right:14px;z-index:1000000;background:#111;color:#fff;border:2px solid #111;border-radius:9999px;padding:8px 12px;font-weight:900;font-size:11px;box-shadow:3px 3px 0 #E30613">⚙️ ADMIN</button>
-  </div>
+    </div>
   <button onclick="openAdmin()" style="position:fixed;bottom:16px;left:16px;z-index:10;background:rgba(0,0,0,0.08);border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px" title="Admin">⚙️</button>
 </div>
 
@@ -160,9 +159,7 @@ button{font-size:11px !important}
 
 <script>
 
-const BUILD_ID="20261019120000_FINAL";
-
-const BUILD_ID="20261020160000_RESCALE";
+const BUILD_ID="20261020200000_SINGLECOG";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -182,6 +179,8 @@ async function checkForIndexUpdate(isInitial){
 }
 
 
+
+function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
 const MEMORY_STORE={};
 function safeGet(k){try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:null;}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){}MEMORY_STORE[k]=v; if(CLOUD_KEYS.includes(k) && !suppressCloudSave) cloudSave(); }
@@ -229,18 +228,7 @@ async function cloudSave(){
     }catch(e){ console.log("cloudSave",e); }
   },600);
 }
-let currentHtmlHash=null;
 async function computeHash(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
-async function checkForIndexUpdate(isInitial){
-  try{
-    const res=await fetch(window.location.href.split('?')[0]+'?_v='+Date.now(),{cache:'no-store'});
-    if(!res.ok) return; const txt=await res.text(); const h=await computeHash(txt);
-    if(isInitial){ currentHtmlHash=h; return; }
-    if(currentHtmlHash!==null && h!==currentHtmlHash){ toast('New version - reloading in 10s'); setTimeout(()=>location.reload(true),10000); }
-  }catch(e){}
-}
-
-
 function applyRoleVisibility(){
   let isMgr=isManagerRole(getActualRole());
   let adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive'];
@@ -1381,8 +1369,6 @@ function denyReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); if(!
 function renderUnavail(){ const el=document.getElementById('unavail-list'); if(!el) return; const cur=getCurrentFortnight(); if(!cur){el.innerHTML='<div class="card">No roster</div>';return;} let list=[]; cur.staff.forEach(s=>{ Object.keys(s.absentApproved||{}).forEach(k=>{ let i=parseInt(k); if(s.absentApproved[i]){ let orig=s.originalShifts && s.originalShifts[i] ? s.originalShifts[i] : s.shifts[i]; list.push({name:s.lastName.toUpperCase()+' '+s.firstName, date:cur.dates[i]?.date+' '+cur.dates[i]?.day, shift:orig+' AB'}); } }); }); if(list.length===0) el.innerHTML='<div class="card">No staff currently unavailable/absent</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else el.innerHTML=list.map(l=>'<div class="card"><b>'+l.name+'</b> - '+l.date+' - '+l.shift+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
 function renderTodayWorkers(){ const cur=getCurrentFortnight(); if(!cur) return; const iso=getISO(); let idx=cur.dates.findIndex(d=>d.iso===iso); if(idx===-1) idx=0; const listEl=document.getElementById('today-workers-list'); if(!listEl) return; let workers=[]; cur.staff.forEach(s=>{ const sh=s.shifts[idx]||'OFF'; const isAbs=s.absentApproved && s.absentApproved[idx]; if(isAbs) return; if(sh.toUpperCase()!=='OFF'&&sh!=='NA' && sh.toUpperCase()!=='AB' && !(s.unavailable&&s.unavailable[idx])) workers.push({name:s.lastName.toUpperCase()+' '+s.firstName,shift:fmt(sh)}); }); if(workers.length===0) listEl.innerHTML='<div class="card">No workers rostered today </div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else listEl.innerHTML=workers.map(w=>'<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:900;margin-right:6px">'+(w.shift||'OFF')+'</span> '+w.name+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
 function toast(m){let t=document.getElementById('toast-v141');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500);}
-function openAdmin(){document.getElementById('admin-modal').classList.add('show'); document.getElementById('admin-modal').style.display='flex';}
-function closeAdmin(){const m=document.getElementById('admin-modal'); m.classList.remove('show'); m.style.display='none';}
 function doAdminLogin(){const u=document.getElementById('admin-user').value.trim();const p=document.getElementById('admin-pass').value.trim();const err=document.getElementById('admin-err');if(!['admin','master','manager','chris'].includes(u.toLowerCase())){err.textContent='Only admin/manager';return;}if(p.toLowerCase()!==u.toLowerCase()){err.textContent='Invalid';return;}document.getElementById('admin-login-section').style.display='none';document.getElementById('admin-toggle-section').style.display='block';checkMaintenance();}
 function toggleMaintenance(){
   const cb=document.getElementById('maint-toggle'); let next=cb?cb.checked:(safeGet('maintenance_mode')!=='true');
@@ -1549,6 +1535,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   setTimeout(checkMaintenance,200);
 });
 
+function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
+function closeAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.remove("show"); m.style.display="none"; } }
 </script>
 <div id="hidden-staff-page" class="full-page" style="display:none">
   <div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER - HIDDEN STAFF</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div>
@@ -1571,5 +1559,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>
   </div>
 </div>
+<button id="admin-cog" onclick="openAdmin()" title="Admin" style="position:fixed;bottom:18px;left:18px;z-index:1000000;width:44px;height:44px;border-radius:50%;background:#fff;border:2px solid #111;display:flex;align-items:center;justify-content:center;box-shadow:2px 2px 0 #111;cursor:pointer"><span style="font-size:20px">⚙️</span></button>
 </body>
 </html>
