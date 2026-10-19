@@ -247,9 +247,9 @@ function applyRoleVisibility(){
   });
   let delBtn=document.getElementById('delete-roster-btn');
   if(delBtn) delBtn.style.display = isMgr ? 'inline-block' : 'none';
-  let importBtn=document.querySelector('[id="btn-import" onclick="triggerImport()"]');
-  let csvBtn=document.querySelector('[id="btn-export-csv" onclick="exportCSV()"]');
-  let pdfBtn=document.querySelector('[id="btn-export-pdf" onclick="exportPDF()"]');
+  let importBtn=document.getElementById("btn-import");
+  let csvBtn=document.getElementById("btn-export-csv");
+  let pdfBtn=document.getElementById("btn-export-pdf");
   if(importBtn) importBtn.style.display = isMgr ? 'inline-block' : 'none';
   if(csvBtn) csvBtn.style.display = isMgr ? 'inline-block' : 'none';
   if(pdfBtn) pdfBtn.style.display = isMgr ? 'inline-block' : 'none';
