@@ -105,7 +105,7 @@ button{font-size:11px !important}
     <div class="login-row"><label>PASSWORD:</label><input id="login-pass" type="password"></div>
     <button id="login-signin-btn" type="button" onclick="doLogin()">SIGN IN</button>
     <div id="login-err"></div>
-    </div>
+  </div>
   <button onclick="openAdmin()" style="position:fixed;bottom:16px;left:16px;z-index:10;background:rgba(0,0,0,0.08);border:none;border-radius:50%;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-size:22px" title="Admin">⚙️</button>
 </div>
 
@@ -159,7 +159,14 @@ button{font-size:11px !important}
 
 <script>
 
-const BUILD_ID="20261020200000_SINGLECOG";
+const BUILD_ID="20261020210000_FIXUNDEFINED";
+let currentHtmlHash=null;
+let currentBuildId=BUILD_ID;
+function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
+async function checkForIndexUpdate(isInitial){ try{ const url=window.location.href.split("?")[0].split("#")[0]; const res=await fetch(url+"?_v="+Date.now(),{cache:"no-store", headers:{"Cache-Control":"no-cache"}}); if(!res.ok) return; const txt=await res.text(); const bm=txt.match(/BUILD_ID\s*=\s*"([^"]+)"/); const remoteBuild=bm?bm[1]:null; const h=computeHashSync(txt); if(isInitial){ currentHtmlHash=h; if(remoteBuild) currentBuildId=remoteBuild; return; } if(remoteBuild && remoteBuild!==currentBuildId){ toast("New version - reloading"); setTimeout(()=>location.reload(true),1500); return; } if(currentHtmlHash!==null && h!==currentHtmlHash){ toast("New version - reloading"); setTimeout(()=>location.reload(true),3000); } }catch(e){} }
+
+
+
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -179,8 +186,6 @@ async function checkForIndexUpdate(isInitial){
 }
 
 
-
-function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
 const MEMORY_STORE={};
 function safeGet(k){try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:null;}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){}MEMORY_STORE[k]=v; if(CLOUD_KEYS.includes(k) && !suppressCloudSave) cloudSave(); }
@@ -228,7 +233,18 @@ async function cloudSave(){
     }catch(e){ console.log("cloudSave",e); }
   },600);
 }
+let currentHtmlHash=null;
 async function computeHash(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
+async function checkForIndexUpdate(isInitial){
+  try{
+    const res=await fetch(window.location.href.split('?')[0]+'?_v='+Date.now(),{cache:'no-store'});
+    if(!res.ok) return; const txt=await res.text(); const h=await computeHash(txt);
+    if(isInitial){ currentHtmlHash=h; return; }
+    if(currentHtmlHash!==null && h!==currentHtmlHash){ toast('New version - reloading in 10s'); setTimeout(()=>location.reload(true),10000); }
+  }catch(e){}
+}
+
+
 function applyRoleVisibility(){
   let isMgr=isManagerRole(getActualRole());
   let adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive'];
@@ -589,17 +605,17 @@ function renderBuddies(which){
     if(el) el.innerHTML='<div class="card">Could not find your staff record - contact manager</div>';
     return;
   }
-  const myShiftRaw=myStaff.shifts[idx]||'OFF'; 
+  const myShiftRaw=(myStaff && myStaff.shifts && myStaff.shifts[idx]) ? myStaff.shifts[idx] : 'OFF'; 
   const myParsed=parseShiftRange(myShiftRaw);
   const listId=which==='today'?'buddies-today-list':'buddies-tomorrow-list'; 
   const el=document.getElementById(listId); if(!el) return;
-  const dateLabel=cur.dates[idx]?cur.dates[idx].date+' '+cur.dates[idx].day:todayStr+' '+dayName;
+  const dateLabel=(cur && cur.dates && cur.dates[idx])?cur.dates[idx].date+' '+cur.dates[idx].day:todayStr+' '+dayName;
   let html='<div class="card" style="background:#111;color:#fff"><b>'+which.toUpperCase()+' - '+dateLabel+' </b><br><b>YOU:</b> '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+' - '+fmt(myShiftRaw)+'</div>';
   if(!myParsed){ html+='<div class="card">You are OFF on '+dateLabel+' - No buddies</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK TO ROSTER</button></div>'; el.innerHTML=html; return; }
   let buddies=[]; 
   cur.staff.forEach(s=>{
     if(s===myStaff) return; 
-    const sh=s.shifts[idx]||'OFF'; 
+    const sh=(s && s.shifts && s.shifts[idx]) ? s.shifts[idx] : 'OFF'; 
     if(s.unavailable && s.unavailable[idx]) return; 
     if(s.absentApproved && s.absentApproved[idx]) return;
     const p=parseShiftRange(sh); if(!p) return; 
@@ -622,10 +638,10 @@ function renderMySchedule(){
   let html='<div class="card" style="background:#111;color:#fff"><b>MY SCHEDULE - '+myStaff.lastName.toUpperCase()+' '+myStaff.firstName+'</b><br>'+cur.label+'</div>';
   let hasShift=false;
   cur.dates.forEach((d,i)=>{
-    const sh=myStaff.shifts[i]||'OFF';
+    const sh=(myStaff && myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
     if(sh.toUpperCase()!=='OFF' && sh.toUpperCase()!=='NA' && sh.toUpperCase()!=='AB'){
       hasShift=true;
-      const isGreen=myStaff.cellGreen && myStaff.cellGreen[i];
+      const isGreen=myStaff && myStaff.cellGreen && myStaff.cellGreen[i];
       html+='<div class="card" style="'+(isGreen?'border-color:#0a0a0a;background:#B6F7C5':'')+'"><b>'+d.day+' '+d.date+'</b> - '+fmt(sh)+(isGreen?' <span style="background:#111;color:#fff;border-radius:9999px;padding:2px 6px;font-size:9px">GREEN</span>':'')+'</div>';
     }
   });
@@ -987,24 +1003,28 @@ function changePassword(){
 
 
 
+
 function renderRequests(){
   const el=document.getElementById('requests-list');
   if(!el) return;
   const isMgr=isManagerRole(getActualRole());
   let reqs=safeGetJSON('retail_roster_requests_v2',[]);
+  if(!Array.isArray(reqs)) reqs=[];
   if(isMgr){
-    // Manager view - approve/deny
-    if(reqs.length===0){ el.innerHTML='<div class="card" style="padding:10px">No pending requests</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>'; return; }
-    el.innerHTML=reqs.map(function(r,i){ return '<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">'+(r.type||'request')+' - '+(r.username||'')+' - '+(r.shiftDate||r.dates?.[0]||'')+'</div><div style="font-size:11px">'+(r.reason||'')+' - '+ (r.newShift||'')+'</div><div style="margin-top:6px"><button onclick="approveReq('+i+')" style="background:#111;color:#fff;border-radius:9999px;padding:6px 10px;font-weight:900;margin-right:6px;font-size:10px">APPROVE</button><button onclick="denyReq('+i+')" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:10px">DENY</button></div></div>'; }).join('') + '<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
+    if(reqs.length===0){ el.innerHTML='<div class="card" style="padding:10px;font-size:11px">No pending requests</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>'; return; }
+    el.innerHTML=reqs.map(function(r,i){
+      if(!r || typeof r!=='object'){ return '<div class="card" style="padding:10px;font-size:11px">'+String(r)+'</div>'; }
+      const type=r.type||'request'; const user=r.username||''; const date=r.shiftDate||(r.dates&&r.dates[0])||''; const reason=r.reason||''; const newShift=r.newShift||'';
+      return '<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">'+type+' - '+user+' - '+date+'</div><div style="font-size:11px">'+reason+' - '+newShift+'</div><div style="margin-top:6px"><button onclick="approveReq('+i+')" style="background:#111;color:#fff;border-radius:9999px;padding:6px 10px;font-weight:900;margin-right:6px;font-size:10px">APPROVE</button><button onclick="denyReq('+i+')" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:10px">DENY</button></div></div>';
+    }).join('') + '<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
   } else {
-    // Employee view - can submit unavailability and shift correction
     const cur=getCurrentFortnight();
-    const myStaff=findMyStaff(cur);
+    const myStaff=cur?findMyStaff(cur):null;
     let options='';
-    if(myStaff){
-      cur.dates.forEach((d,i)=>{
-        const sh=myStaff.shifts[i]||'OFF';
-        if(sh.toUpperCase()!=='OFF' && sh!=='NA' && sh.toUpperCase()!=='AB'){
+    if(myStaff && cur && cur.dates){
+      cur.dates.forEach(function(d,i){
+        const sh=(myStaff.shifts && myStaff.shifts[i]) ? myStaff.shifts[i] : 'OFF';
+        if(sh && sh.toUpperCase()!=='OFF' && sh.toUpperCase()!=='NA' && sh.toUpperCase()!=='AB'){
           options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>';
         }
       });
@@ -1013,21 +1033,23 @@ function renderRequests(){
     let html='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:12px;margin-bottom:8px">SUBMIT REQUEST</div>';
     html+='<label style="font-weight:900;font-size:10px">TYPE</label><select id="req-type" onchange="onReqTypeChange()" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin:4px 0 8px 0;font-size:11px"><option value="unavailability">Unavailability</option><option value="shift-correction">Shift Correction</option></select>';
     html+='<div id="req-dynamic-area"></div></div>';
-    // My requests
-    const myReqs=reqs.filter(r=>r.username && r.username.toLowerCase()===safeGet('repco_username').toLowerCase());
+    const myUsername=(safeGet('repco_username')||'').toLowerCase();
+    const myReqs=reqs.filter(function(r){ return r && r.username && r.username.toLowerCase()===myUsername; });
     if(myReqs.length>0){
       html+='<div class="card" style="padding:10px"><div style="font-weight:900;font-size:11px">MY REQUESTS ('+myReqs.length+')</div>';
-      myReqs.forEach((r,i)=>{
-        html+='<div style="border-top:1px solid #ddd;padding:6px 0;font-size:10px"><b>'+r.type+'</b> - '+ (r.shiftDate||r.dates?.[0]||'') +' - '+r.status+'<br>'+ (r.reason||'') +'</div>';
+      myReqs.forEach(function(r){
+        if(!r || typeof r!=='object') return;
+        const date=r.shiftDate||(r.dates&&r.dates[0])||''; const status=r.status||'pending';
+        html+='<div style="border-top:1px solid #ddd;padding:6px 0;font-size:10px"><b>'+(r.type||'')+'</b> - '+date+' - '+status+'<br>'+(r.reason||'')+'</div>';
       });
       html+='</div>';
     }
     html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">← BACK</button></div>';
     el.innerHTML=html;
-    // Trigger initial render
-    setTimeout(()=>{ try{ onReqTypeChange(); }catch(e){} },50);
+    setTimeout(function(){ try{ onReqTypeChange(); }catch(e){} },50);
   }
 }
+
 function onReqTypeChange(){
   const type=document.getElementById('req-type')?.value; const area=document.getElementById('req-dynamic-area'); if(!area) return;
   if(type==='unavailability'){
