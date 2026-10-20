@@ -213,7 +213,7 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022070000_FIX_ALL_V11_FINAL";
+const BUILD_ID="20261023000000_EXCEL_IMPORT_V1";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1069,279 +1069,494 @@ function downloadUploadedExcel(idx){ const list=safeGetJSON('retail_roster_uploa
 function deleteUploadedExcel(idx){ let list=safeGetJSON('retail_roster_uploaded_excels_v1',[]); list.splice(idx,1); safeSetJSON('retail_roster_uploaded_excels_v1',list); viewUploadedExcels(); toast('Deleted'); }
 function renderImportExportPage(){
   const el=document.getElementById('import-export-inner'); if(!el) return;
-  el.innerHTML='<div class="card"><div style="font-weight:900;margin-bottom:8px">IMPORT ROSTER / EXCEL (only first column staff, ignores other names, preserves types)</div><div style="font-size:11px;opacity:.7;margin-bottom:8px">Reads only names in first column that match existing staff list. Ignores stray names outside roster. Auto-title from dates, duplicate check, saves file for cross-device download.</div><input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" style="width:100%;padding:10px;border:2px dashed #111;border-radius:12px"><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="importExcelFile()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">IMPORT EXCEL</button></div><div id="import-status" style="margin-top:10px;font-size:11px"></div></div>'
-  +'<div class="card"><div style="font-weight:900;margin-bottom:8px">EXPORTS</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="btn-export-csv" onclick="exportCSV()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT CSV</button><button id="btn-export-pdf" onclick="exportPDF()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT PDF</button></div></div>'
+  el.innerHTML='<div class="card"><div style="font-weight:900;margin-bottom:8px">IMPORT ROSTER - NEW FORMAT</div><div style="font-size:11px;opacity:.8;margin-bottom:8px;line-height:1.4">Staff names in Column A | Day names Row 2 | Dates Row 1 from Column B every 2 columns | Shifts: Start B3 End C3, D3 E3 etc<br><b>Ignores Column AD and Row 18</b><br>Smart update: Only overwrites cells admin hasn\'t edited on website. If dates are new, creates new roster in list. All live + auto-backed up.</div><input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" style="width:100%;padding:10px;border:2px dashed #111;border-radius:12px"><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="importExcelFile()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">IMPORT EXCEL</button><button onclick="triggerImport()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">BROWSE FILE</button></div><div id="import-status" style="margin-top:10px;font-size:11px;white-space:pre-wrap;line-height:1.4"></div><div id="import-diff" style="margin-top:12px"></div></div>'
+  +'<div class="card"><div style="font-weight:900;margin-bottom:8px">EXPORTS</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="exportCSV()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT CSV</button><button onclick="exportPDF()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT PDF</button></div></div>'
   +'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>';
 }
+function renderImportExportPage(){
+  const el=document.getElementById('import-export-inner'); if(!el) return;
+  el.innerHTML='<div class="card"><div style="font-weight:900;margin-bottom:8px">IMPORT ROSTER - NEW FORMAT</div><div style="font-size:11px;opacity:.8;margin-bottom:8px;line-height:1.4">Staff names in Column A | Day names Row 2 | Dates Row 1 from Column B every 2 columns | Shifts: Start B3 End C3, D3 E3 etc<br><b>Ignores Column AD and Row 18</b><br>Smart update: Only overwrites cells admin hasn\'t edited on website. If dates are new, creates new roster in list. All live + auto-backed up.</div><input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" style="width:100%;padding:10px;border:2px dashed #111;border-radius:12px"><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="importExcelFile()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">IMPORT EXCEL</button><button onclick="triggerImport()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">BROWSE FILE</button></div><div id="import-status" style="margin-top:10px;font-size:11px;white-space:pre-wrap;line-height:1.4"></div><div id="import-diff" style="margin-top:12px"></div></div>'
+  +'<div class="card"><div style="font-weight:900;margin-bottom:8px">EXPORTS</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="exportCSV()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT CSV</button><button onclick="exportPDF()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT PDF</button></div></div>'
+  +'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>';
+}
+
 function importExcelFile(file){
   if(typeof XLSX === 'undefined'){
     let status=document.getElementById('import-status');
     if(status) status.textContent='XLSX library not loaded yet - retrying...';
-    // Try load dynamically
     let s=document.createElement('script');
     s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
     s.onload=()=>{ toast('XLSX loaded, retry import'); importExcelFile(file); };
-    s.onerror=()=>{ if(status) status.textContent='Failed to load XLSX - check internet. Try again.'; toast('XLSX load failed - check internet'); };
+    s.onerror=()=>{ if(status) status.textContent='Failed to load XLSX - check internet.'; toast('XLSX load failed'); };
     document.head.appendChild(s);
     return;
   }
-  let f=file; if(!f){ let inp=document.getElementById('excel-file-input')||document.getElementById('hidden-import-input'); if(inp && inp.files && inp.files[0]) f=inp.files[0]; }
-  if(!f){ let hi=document.getElementById('hidden-import-input'); if(hi){ hi.onchange=function(){ importExcelFile(hi.files[0]); hi.value=''; }; hi.click(); } return; }
-  const status=document.getElementById('import-status'); if(status) status.textContent='Reading '+f.name+'...';
+  let f=file;
+  if(!f){
+    let inp=document.getElementById('excel-file-input')||document.getElementById('hidden-import-input');
+    if(inp && inp.files && inp.files[0]) f=inp.files[0];
+  }
+  if(!f){
+    let hi=document.getElementById('hidden-import-input');
+    if(hi){ hi.onchange=function(){ importExcelFile(hi.files[0]); hi.value=''; }; hi.click(); }
+    return;
+  }
+  const status=document.getElementById('import-status');
+  const diffEl=document.getElementById('import-diff');
+  if(status) status.textContent='Reading '+f.name+'...';
+  if(diffEl) diffEl.innerHTML='';
   const reader=new FileReader();
   reader.onload=function(e){
     try{
-      const data=e.target.result; const wb=XLSX.read(data,{type: f.name.endsWith('.csv')?'string':'array', cellDates:true}); const ws=wb.Sheets[wb.SheetNames[0]];
-      // Get range
-      const ref = ws['!ref'] || 'A1:AG50';
+      const data=e.target.result;
+      const wb=XLSX.read(data,{type: f.name.endsWith('.csv')?'string':'array', cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const ref = ws['!ref'] || 'A1:AB50';
       const range = XLSX.utils.decode_range(ref);
-      // Build dates from row 0 - per your excel: dates in row 0 at columns 1,3,5... (every 2 cols), 14 days max, ignore TOTAL HOURS column
-      let tempDates=[];
-      for(let c=1;c<=range.e.c;c+=2){
-        let addr=XLSX.utils.encode_cell({r:0,c:c});
-        let cell=ws[addr];
-        if(!cell || !cell.v) continue;
-        let v=cell.v;
-        // Skip TOTAL HOURS column
-        if(typeof v==='string' && v.toUpperCase().includes('TOTAL')) break;
+      
+      // === NEW SPEC: Row 1 dates from Column B every 2 cols, Row 2 day names, ignore AD col and Row 18 ===
+      const IGNORE_COL_AD = 29; // AD = 0-based 29
+      const IGNORE_ROW_18 = 17; // Row 18 1-indexed = 17 zero-based
+      
+      function getCell(r,c){
+        if(c===IGNORE_COL_AD) return null;
+        if(r===IGNORE_ROW_18) return null;
+        let addr=XLSX.utils.encode_cell({r:r,c:c});
+        return ws[addr] || null;
+      }
+      
+      function parseDateCell(v){
+        if(!v) return null;
+        let val=v.v;
+        if(val===undefined||val===null||val==='') return null;
+        if(typeof val==='string' && val.trim()==='') return null;
+        // Skip if contains TOTAL or AD header etc
+        if(typeof val==='string' && /TOTAL|HOURS|AD/i.test(val) && val.length<20) {
+          // Might be total hours, but check if it's actually a date string
+          let d=new Date(val);
+          if(isNaN(d) || d.getFullYear()<2020) return null;
+        }
         let dt=null;
-        if(v instanceof Date){ dt=v; }
-        else if(typeof v==='number'){ dt=new Date((v-25569)*86400*1000); }
-        else {
-          let d=new Date(v);
-          if(!isNaN(d) && d.getFullYear()>2020) dt=d;
+        if(val instanceof Date){ dt=val; }
+        else if(typeof val==='number'){
+          // Excel serial date
+          if(val>30000 && val<60000){ dt=new Date((val-25569)*86400*1000); }
+          else if(val<1){ // time fraction, not a date
+            return null;
+          } else {
+            // Could be date number
+            let d=new Date((val-25569)*86400*1000);
+            if(!isNaN(d) && d.getFullYear()>=2020) dt=d;
+          }
+        } else {
+          let d=new Date(val);
+          if(!isNaN(d) && d.getFullYear()>=2020) dt=d;
         }
-        if(dt && !isNaN(dt) && dt.getFullYear()>=2020){
-          let iso=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-          let dayAddr=XLSX.utils.encode_cell({r:1,c:c});
-          let dayCell=ws[dayAddr];
-          let dayName=dayCell && dayCell.v ? String(dayCell.v).toUpperCase().slice(0,3) : ['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()];
-          tempDates.push({day:dayName,date:String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0'),iso:iso});
+        if(dt && !isNaN(dt) && dt.getFullYear()>=2020 && dt.getFullYear()<=2030){
+          return dt;
         }
-        if(tempDates.length>=14) break;
+        return null;
       }
+      
+      // Build dates: Row 0 (Row 1 Excel) from Col B (c=1) every 2 cols
+      let tempDates=[];
+      let dayNamesFromRow2=[];
+      for(let c=1; c<=range.e.c && tempDates.length<14; c+=2){
+        if(c===IGNORE_COL_AD || c+1===IGNORE_COL_AD) continue; // skip if either start or end col is AD
+        let dateCell=getCell(0,c);
+        if(!dateCell){ continue; }
+        let dt=parseDateCell(dateCell);
+        if(!dt) continue;
+        let iso=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+        let dayCell=getCell(1,c); // Row 2 day name
+        let dayName=''; 
+        if(dayCell && dayCell.v){
+          dayName=String(dayCell.v).trim().toUpperCase().slice(0,3);
+          // Normalize day names
+          if(['MON','TUE','WED','THU','FRI','SAT','SUN'].includes(dayName)){}
+          else {
+            // Try full name
+            let full=String(dayCell.v).trim().toUpperCase();
+            if(full.includes('MON')) dayName='MON';
+            else if(full.includes('TUE')) dayName='TUE';
+            else if(full.includes('WED')) dayName='WED';
+            else if(full.includes('THU')) dayName='THU';
+            else if(full.includes('FRI')) dayName='FRI';
+            else if(full.includes('SAT')) dayName='SAT';
+            else if(full.includes('SUN')) dayName='SUN';
+            else dayName=['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()];
+          }
+        } else {
+          dayName=['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()];
+        }
+        tempDates.push({day:dayName,date:String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0'),iso:iso,excelCol:c});
+        dayNamesFromRow2.push(dayName);
+      }
+      
       if(tempDates.length===0){
-        let start=new Date();
-        for(let i=0;i<14;i++){ let d=new Date(start); d.setDate(start.getDate()+i); tempDates.push({day:['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()],date:String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),iso:d.toISOString().slice(0,10)}); }
-      }
-      let dates=tempDates.slice(0,14);
-      let label=dates[0].date+' - '+dates[dates.length-1].date;
-      let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-      // SMART MERGE: If same fortnight exists, only update untouched cells, preserve admin edits / approved requests / G marks
-      let duplicate=null;
-      let newIsoSet=new Set(dates.map(d=>d.iso));
-      let newLabel=label;
-      for(let fn of fns){
-        if(fn.label===newLabel){ duplicate=fn; break; }
-        if(fn.dates.length===dates.length && fn.dates.every((d,i)=>d.iso===dates[i]?.iso)){ duplicate=fn; break; }
-      }
-      // If duplicate exists, merge instead of creating new - preserve edited cells
-      if(duplicate){
-        let updatedCount=0; let preservedCount=0; let newStaffCount=0;
-        // Build map of imported staff by full name
-        let importedMap={};
-        staff.forEach(s=>{ importedMap[(s.firstName+' '+s.lastName).toLowerCase()]=s; });
-        // For each existing staff in duplicate, update only if not edited
-        duplicate.staff.forEach(existingStaff=>{
-          let key=(existingStaff.firstName+' '+existingStaff.lastName).toLowerCase();
-          let imported=importedMap[key];
-          if(!imported) return;
-          // Ensure structures exist
-          if(!existingStaff.originalShifts) existingStaff.originalShifts={};
-          if(!existingStaff.absentApproved) existingStaff.absentApproved={};
-          if(!existingStaff.cellGreen) existingStaff.cellGreen={};
-          if(!existingStaff.unavailable) existingStaff.unavailable=Array(duplicate.dates.length).fill(false);
-          for(let di=0; di<dates.length && di<existingStaff.shifts.length; di++){
-            // Check if this cell was edited/actioned - if so, preserve it
-            let isEdited = false;
-            if(existingStaff.originalShifts && existingStaff.originalShifts[di] !== undefined) isEdited=true;
-            if(existingStaff.absentApproved && existingStaff.absentApproved[di]) isEdited=true;
-            if(existingStaff.cellGreen && existingStaff.cellGreen[di]) isEdited=true;
-            if(existingStaff.unavailable && existingStaff.unavailable[di]) isEdited=true;
-            // Also preserve if current shift is AB (approved unavailability) even without flag
-            // But allow OFF->work updates? No, if flagged as edited, preserve
-            if(isEdited){
-              preservedCount++;
-              continue;
-            }
-            // Not edited - safe to update from import
-            let newShift=imported.shifts[di];
-            if(newShift && existingStaff.shifts[di]!==newShift){
-              existingStaff.shifts[di]=newShift;
-              updatedCount++;
-            }
-          }
-          delete importedMap[key];
-        });
-        // Add any brand new staff from import that didn't exist in duplicate (if any)
-        for(let k in importedMap){
-          let s=importedMap[k];
-          // Only add if not already present (should be new hire)
-          if(!duplicate.staff.find(es=> (es.firstName+' '+es.lastName).toLowerCase()===k)){
-            duplicate.staff.push(s);
-            newStaffCount++;
-          }
-        }
-        duplicate.staff.sort((a,b)=>{ let c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
-        safeSetJSON('retail_roster_byFortnight_v1',fns);
-        try{
-          let b64=''; if(f.name.endsWith('.csv')){ b64=btoa(unescape(encodeURIComponent(e.target.result))); } else { let bytes=new Uint8Array(e.target.result); let binary=''; for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]); b64=btoa(binary); }
-          let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]); ups.push({name:f.name,label:label+' (merged)',fortnightId:duplicate.id,ts:Date.now(),data:b64}); safeSetJSON('retail_roster_uploaded_excels_v1',ups);
-        }catch(ex){}
-        safeSet('retail_roster_currentFortnightId',duplicate.id);
-        if(status) status.textContent='MERGED: '+duplicate.label+' - '+updatedCount+' cells updated, '+preservedCount+' admin-edited/AB/G/NA cells preserved, '+newStaffCount+' new staff added - synced';
-        toast('Merged '+updatedCount+' new, preserved '+preservedCount+' edits');
-        enforceOnly8Fulltime(); populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard();
+        if(status) status.textContent='No dates found in Row 1 Col B every 2 cols. Expected dates like 04/11/2025 in B1, D1, F1 etc';
+        toast('No dates found - check Row 1 B, D, F...');
         return;
       }
-      // No duplicate - also check for overlapping dates to prevent accidental overlap creation
-      for(let fn of fns){
-        for(let d of fn.dates){
-          if(newIsoSet.has(d.iso)){
-            if(status) status.textContent='BLOCKED: Date '+d.date+' already exists in '+fn.label+' - delete or merge instead to protect edits';
-            toast('BLOCKED: Overlapping date '+d.date+' in '+fn.label);
-            return;
-          }
-        }
-      }
-      // Build map of existing staff names to preserve types - FULL NAME ONLY, no first-name matching to avoid duplicates like Michael Evans vs Michael Blaik
-      let existingStaffMap={};
-      fns.forEach(fn=>{ fn.staff.forEach(s=>{ 
-        let key=(s.firstName+' '+s.lastName).toLowerCase().trim(); 
-        let key2=(s.lastName+', '+s.firstName).toLowerCase().trim(); 
-        let key3=(s.lastName+' '+s.firstName).toLowerCase().trim();
-        existingStaffMap[key]=s; 
-        existingStaffMap[key2]=s; 
-        existingStaffMap[key3]=s;
-      }); });
-      let staff=[]; let nameSet=new Set();
-      // Iterate rows 2 onwards (0-indexed) where name in col 0
-      for(let r=2;r<=range.e.r;r++){
-        let nameAddr=XLSX.utils.encode_cell({r:r,c:0});
-        let nameCell=ws[nameAddr];
+      
+      let dates=tempDates.slice(0,14);
+      let label=dates[0].date+' - '+dates[dates.length-1].date;
+      let labelWithYear=dates[0].date+'/'+dates[0].iso.slice(0,4)+' - '+dates[dates.length-1].date+'/'+dates[dates.length-1].iso.slice(0,4);
+      
+      // === Parse staff names from Column A, Row 3 onwards, skip Row 18 and ignore AD ===
+      let staff=[];
+      let nameSet=new Set();
+      for(let r=2; r<=range.e.r; r++){
+        if(r===IGNORE_ROW_18) continue;
+        let nameCell=getCell(r,0); // Column A
         if(!nameCell || !nameCell.v) continue;
         let nameRaw=String(nameCell.v).trim();
         if(!nameRaw) continue;
-        if(['FULL TIME','CASUAL','STAFF','NAME','DATE','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'].includes(nameRaw.toUpperCase())) continue;
-        // Must contain comma or space and not be a time
-        if(nameRaw.match(/^\d{1,2}:\d{2}/)) continue;
-        let last, first;
+        // Ignore headers / totals
+        let up=nameRaw.toUpperCase();
+        if(['FULL TIME','CASUAL','STAFF','NAME','DATE','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY','TOTAL','HOURS','TOTAL HOURS',''].includes(up)) continue;
+        if(up.startsWith('TOTAL')) continue;
+        // Ignore if it's time-like
+        if(/^\d{1,2}:\d{2}/.test(nameRaw)) continue;
+        if(nameRaw.length<2) continue;
+        
+        // Parse name: expecting "Blaik Michael" or "Michael Blaik" or "BLAIK Michael" or "Blaik, Michael"
+        let last='', first='';
         if(nameRaw.includes(',')){
           let parts=nameRaw.split(',');
           last=parts[0].trim().replace(/\s+/g,' ');
           first=parts.slice(1).join(',').trim().replace(/\s+/g,' ');
         } else {
-          // Handle "BALLENTINE Heath" format (LAST First without comma) - first token is last name
           let parts=nameRaw.trim().split(/\s+/);
-          if(parts.length===1){ first=parts[0]; last=''; } 
-          else if(parts[0]===parts[0].toUpperCase() || parts.length===2){
-            // Assume LAST First when first token is all caps or 2-word name without comma (roster style)
-            last=parts[0];
-            first=parts.slice(1).join(' ');
-          } else { 
-            last=parts.pop(); 
-            first=parts.join(' '); 
+          if(parts.length===1){ first=parts[0]; last=''; }
+          else {
+            // Heuristic: if first token is ALL CAPS, it's last name (roster style LAST First)
+            // e.g., "BLAIK Michael" or "BALLENTINE Heath"
+            if(parts[0]===parts[0].toUpperCase() && parts[0].length>1){
+              last=parts[0];
+              first=parts.slice(1).join(' ');
+            } else if(parts[0].length<=3 && parts[0]===parts[0].toUpperCase()){
+              // Short caps maybe initial, treat as first? fallback to last first
+              last=parts[0];
+              first=parts.slice(1).join(' ');
+            } else {
+              // Default: first token first name, rest last name? But example says Michael blaik's name in A3 - could be "Michael Blaik" or "Blaik Michael"
+              // Try: if second token is lower case like "blaik", treat as last? We'll try both
+              // If we have 2 tokens and second is lowercase, assume First Last where last is lowercase? We'll just take last token as last name
+              // For "Michael blaik" -> first=Michael, last=blaik
+              last=parts.pop();
+              first=parts.join(' ');
+            }
           }
         }
-        // Clean extra spaces
         last=last.trim(); first=first.trim();
-        if(!first || !last) continue;
-        let lookupKey=(first+' '+last).toLowerCase();
-        let lookupKey2=(last+', '+first).toLowerCase();
-        // If we have existing staff map, only allow names that exist (ignore stray names outside staff list) - FULL NAME MATCH ONLY
-        if(Object.keys(existingStaffMap).length>0){
-          let exists = existingStaffMap[lookupKey] || existingStaffMap[lookupKey2];
-          if(!exists) continue;
-        }
-        // Deduplicate by normalized final key (first+last lower)
+        if(!first && !last) continue;
+        if(!first) { first=last; last=''; }
+        // Normalize case: Title case first, UPPER last
+        // Keep original for dedup but normalize
         let dedupKey=(first+' '+last).toLowerCase().trim();
         if(nameSet.has(dedupKey)) continue;
         nameSet.add(dedupKey);
+        
+        // Parse shifts for this row: B3/C3 = day0 start/end, D3/E3 = day1 etc
         let shifts=[];
-        let col=1;
-        for(let di=0;di<dates.length;di++){
-          let startAddr=XLSX.utils.encode_cell({r:r,c:col});
-          let endAddr=XLSX.utils.encode_cell({r:r,c:col+1});
-          let sCell=ws[startAddr];
-          let eCell=ws[endAddr];
-          function fmtTime(v){
-            if(v===undefined||v===null||v==='') return null;
-            if(v instanceof Date){ return String(v.getHours()).padStart(2,'0')+':'+String(v.getMinutes()).padStart(2,'0'); }
-            if(typeof v==='number'){
-              // Excel time is fraction of day
+        function fmtTime(v){
+          if(v===undefined||v===null||v==='') return null;
+          if(v instanceof Date){
+            return String(v.getHours()).padStart(2,'0')+':'+String(v.getMinutes()).padStart(2,'0');
+          }
+          if(typeof v==='number'){
+            // Excel time fraction
+            if(v<1){
               let total=Math.round(v*24*60);
               let hh=Math.floor(total/60)%24;
               let mm=total%60;
-              if(total>24*60) { // might be date+time
-                let d=new Date((v-25569)*86400*1000);
-                hh=d.getHours(); mm=d.getMinutes();
-              }
+              return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+            } else if(v>30000){
+              let d=new Date((v-25569)*86400*1000);
+              return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+            } else {
+              // Could be time as number like 8.5 = 8:30?
+              let total=Math.round(v*24*60);
+              let hh=Math.floor(total/60)%24;
+              let mm=total%60;
               return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
             }
-            let str=String(v).trim();
-            if(!str) return null;
-            let up=str.toUpperCase();
-            if(['OFF','ABSENT','AB','NA','-','--',''].includes(up)) return up==='AB'?'AB':up==='ABSENT'?'AB':up;
-            // Handle "8:00" or "8:00 AM" or "08:00"
-            let m=str.match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
-            if(m){
-              let hh=parseInt(m[1]);
-              let mm=m[2]?parseInt(m[2]):0;
-              let ap=m[3];
-              if(ap){
-                if(ap.toUpperCase()==='PM' && hh<12) hh+=12;
-                if(ap.toUpperCase()==='AM' && hh===12) hh=0;
-              }
-              return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
-            }
+          }
+          let str=String(v).trim();
+          if(!str) return null;
+          let up=str.toUpperCase();
+          if(['OFF','ABSENT','AB','NA','-','--',''].includes(up)){
+            if(up==='AB' || up==='ABSENT') return 'AB';
+            if(up==='NA') return 'NA';
+            return 'OFF';
+          }
+          // If already contains dash like "08:00-16:00", return as is
+          if(str.includes('-') && str.match(/\d{1,2}:\d{2}/)){
             return str;
           }
-          let sStr=sCell?fmtTime(sCell.v):null;
-          let eStr=eCell?fmtTime(eCell.v):null;
+          let m=str.match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+          if(m){
+            let hh=parseInt(m[1]); let mm=m[2]?parseInt(m[2]):0; let ap=m[3];
+            if(ap){ if(ap.toUpperCase()==='PM' && hh<12) hh+=12; if(ap.toUpperCase()==='AM' && hh===12) hh=0; }
+            return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+          }
+          // If numeric like "8" or "8.5"
+          let num=parseFloat(str);
+          if(!isNaN(num) && num>=0 && num<=24){
+            let hh=Math.floor(num); let mm=Math.round((num-hh)*60);
+            return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+          }
+          return str;
+        }
+        
+        for(let di=0; di<dates.length; di++){
+          let startCol=1+di*2;
+          let endCol=2+di*2;
+          if(startCol===IGNORE_COL_AD || endCol===IGNORE_COL_AD) { shifts.push('OFF'); continue; }
+          if(startCol>range.e.c){ shifts.push('OFF'); continue; }
+          let startCell=getCell(r,startCol);
+          let endCell=getCell(r,endCol);
+          let sStr=startCell?fmtTime(startCell.v):null;
+          let eStr=endCell?fmtTime(endCell.v):null;
           let shift='OFF';
           if(!sStr && !eStr){ shift='OFF'; }
           else if(sStr==='AB' || eStr==='AB'){ shift='AB'; }
-          else if(sStr==='OFF' || eStr==='OFF'){ shift='OFF'; }
-          else if(sStr && eStr && sStr!=='OFF' && eStr!=='OFF'){
-            // If sStr already contains dash, use it
+          else if(sStr==='OFF' || eStr==='OFF'){ 
+            // If one is OFF and other has time, treat as OFF? Or use the time?
+            if(sStr && sStr!=='OFF' && sStr!=='NA') shift=sStr;
+            else if(eStr && eStr!=='OFF' && eStr!=='NA') shift=eStr;
+            else shift='OFF';
+          }
+          else if(sStr && eStr){
             if(sStr.includes('-')) shift=sStr;
             else shift=sStr+'-'+eStr;
-          } else if(sStr && sStr!=='OFF'){ shift=sStr; }
-          else if(eStr && eStr!=='OFF'){ shift=eStr; }
+          } else if(sStr){
+            shift=sStr;
+          } else if(eStr){
+            shift=eStr;
+          }
+          // Normalize OFF variants
+          if(!shift) shift='OFF';
           shifts.push(shift);
-          col+=2;
         }
-        let existing=existingStaffMap[lookupKey] || existingStaffMap[lookupKey2];
-        let empType=existing?existing.employmentType:'fulltime';
-        let role=existing?existing.role:'staff';
-        // Preserve original casing from existing if found - but only if full name matched
-        if(existing){ first=existing.firstName; last=existing.lastName; empType=existing.employmentType; role=existing.role; }
-        staff.push({firstName:first,lastName:last,role:role,employmentType:empType,shifts:shifts});
+        // Only add if at least one non-OFF or we want to keep all staff
+        staff.push({firstName:first,lastName:last,role:'staff',employmentType:'fulltime',shifts:shifts, rawName:nameRaw});
       }
-      if(staff.length===0){ if(status) status.textContent='No matching staff names found in first column - check staff list (first column must contain LAST, First)'; toast('No staff matched - first column must be names'); return; }
-      staff.sort((a,b)=>{ let c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
-      let id='fn_'+Date.now();
-      fns.push({id:id,label:label,dates:dates,staff:staff});
-      safeSetJSON('retail_roster_byFortnight_v1',fns);
-      try{
-        let b64='';
-        if(f.name.endsWith('.csv')){ b64=btoa(unescape(encodeURIComponent(e.target.result))); }
-        else { let bytes=new Uint8Array(e.target.result); let binary=''; for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]); b64=btoa(binary); }
-        let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]);
-        ups.push({name:f.name,label:label,fortnightId:id,ts:Date.now(),data:b64});
-        safeSetJSON('retail_roster_uploaded_excels_v1',ups);
-      }catch(ex){ let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]); ups.push({name:f.name,label:label,fortnightId:id,ts:Date.now()}); safeSetJSON('retail_roster_uploaded_excels_v1',ups); }
-      safeSet('retail_roster_currentFortnightId',id);
-      if(status) status.textContent='Imported '+label+' - '+staff.length+' staff (first column only), saved for download, synced';
-      toast('Imported '+label+' - '+staff.length+' staff - live sync');
-      enforceOnly8Fulltime(); populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard();
+      
+      if(staff.length===0){
+        if(status) status.textContent='No staff found in Column A from Row 3 onwards (skipping Row 18). Found '+nameSet.size+' names but filtered out.';
+        toast('No staff found - check Column A');
+        return;
+      }
+      
+      // === SMART MERGE / CREATE LOGIC ===
+      let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      let duplicate=null;
+      let newIsoSet=new Set(dates.map(d=>d.iso));
+      // Find duplicate by exact iso match or label
+      for(let fn of fns){
+        if(fn.dates.length===dates.length && fn.dates.every((d,i)=>d.iso===dates[i]?.iso)){
+          duplicate=fn; break;
+        }
+        if(fn.label===label || fn.label===labelWithYear){
+          duplicate=fn; break;
+        }
+        // Also check overlapping start/end
+        if(fn.dates.length>0 && dates.length>0){
+          if(fn.dates[0].iso===dates[0].iso && fn.dates[fn.dates.length-1].iso===dates[dates.length-1].iso){
+            duplicate=fn; break;
+          }
+        }
+      }
+      
+      // Prepare backup before any change (per previously defined backup logic)
+      function doBackup(reason){
+        try{
+          let currentFns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+          safeSetJSON('retail_roster_backup_autosave_v1',{fns:currentFns, ts:Date.now(), by:safeGet('repco_username')||'admin', reason:reason});
+        }catch(e){}
+      }
+      
+      if(duplicate){
+        // UPDATE CURRENT if differences found that admin hasn't adjusted
+        let updatedCount=0; let preservedCount=0; let newStaffCount=0; let diffLog=[];
+        let importedMap={};
+        staff.forEach(s=>{ importedMap[(s.firstName+' '+s.lastName).toLowerCase().trim()]=s; });
+        
+        // Also map by last name only for flexibility? But use full name primary
+        duplicate.staff.forEach(existingStaff=>{
+          let key=(existingStaff.firstName+' '+existingStaff.lastName).toLowerCase().trim();
+          let imported=importedMap[key];
+          // Fallback: try last name + first name swapped? e.g., "Michael Blaik" vs "Blaik Michael"
+          if(!imported){
+            let altKey=(existingStaff.lastName+' '+existingStaff.firstName).toLowerCase().trim();
+            imported=importedMap[altKey];
+          }
+          if(!imported){
+            // Try by last name only if unique? But to avoid Michael Evans vs Michael Blaik, require last name match
+            // Find imported with same last name
+            let candidates=Object.values(importedMap).filter(s=>s.lastName.toLowerCase()===existingStaff.lastName.toLowerCase());
+            if(candidates.length===1) imported=candidates[0];
+          }
+          if(!imported) return;
+          
+          if(!existingStaff.originalShifts) existingStaff.originalShifts={};
+          if(!existingStaff.absentApproved) existingStaff.absentApproved={};
+          if(!existingStaff.cellGreen) existingStaff.cellGreen={};
+          if(!existingStaff.unavailable) existingStaff.unavailable=Array(duplicate.dates.length).fill(false);
+          
+          for(let di=0; di<dates.length && di<existingStaff.shifts.length && di<imported.shifts.length; di++){
+            let isEdited=false;
+            if(existingStaff.originalShifts && existingStaff.originalShifts[di]!==undefined) isEdited=true;
+            if(existingStaff.absentApproved && existingStaff.absentApproved[di]) isEdited=true;
+            if(existingStaff.cellGreen && existingStaff.cellGreen[di]) isEdited=true;
+            if(existingStaff.unavailable && existingStaff.unavailable[di]) isEdited=true;
+            
+            let newShift=imported.shifts[di];
+            let oldShift=existingStaff.shifts[di];
+            if(newShift!==oldShift){
+              if(isEdited){
+                preservedCount++;
+                diffLog.push(existingStaff.firstName+' '+existingStaff.lastName+' '+duplicate.dates[di].date+' '+duplicate.dates[di].day+': Excel='+newShift+' kept Website='+oldShift+' (admin edited)');
+              } else {
+                existingStaff.shifts[di]=newShift;
+                updatedCount++;
+                diffLog.push(existingStaff.firstName+' '+existingStaff.lastName+' '+duplicate.dates[di].date+': '+oldShift+' -> '+newShift+' (updated from Excel)');
+              }
+            }
+          }
+          delete importedMap[key];
+          // Also delete alt keys
+          for(let k in importedMap){
+            if(k===key) delete importedMap[k];
+            if(importedMap[k] && importedMap[k].firstName.toLowerCase()===existingStaff.firstName.toLowerCase() && importedMap[k].lastName.toLowerCase()===existingStaff.lastName.toLowerCase()){
+              delete importedMap[k];
+            }
+          }
+        });
+        
+        // Add brand new staff not in duplicate
+        for(let k in importedMap){
+          let s=importedMap[k];
+          if(!duplicate.staff.find(es=> (es.firstName+' '+es.lastName).toLowerCase().trim()===k)){
+            duplicate.staff.push(s);
+            newStaffCount++;
+            diffLog.push('NEW STAFF added: '+s.firstName+' '+s.lastName);
+          }
+        }
+        
+        duplicate.staff.sort((a,b)=>{ let c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
+        
+        doBackup('pre-merge-'+duplicate.label);
+        safeSetJSON('retail_roster_byFortnight_v1',fns);
+        
+        try{
+          let b64='';
+          if(f.name.endsWith('.csv')){ b64=btoa(unescape(encodeURIComponent(e.target.result))); }
+          else { let bytes=new Uint8Array(e.target.result); let binary=''; for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]); b64=btoa(binary); }
+          let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]);
+          ups.push({name:f.name,label:label+' (merged '+new Date().toLocaleString()+')',fortnightId:duplicate.id,ts:Date.now(),data:b64});
+          safeSetJSON('retail_roster_uploaded_excels_v1',ups);
+        }catch(ex){}
+        
+        safeSet('retail_roster_currentFortnightId',duplicate.id);
+        if(status) status.textContent='UPDATED CURRENT: '+duplicate.label+' - '+updatedCount+' cells updated from Excel, '+preservedCount+' admin-edited cells preserved, '+newStaffCount+' new staff added. Live + backed up.';
+        if(diffEl){
+          diffEl.innerHTML='<div style="max-height:200px;overflow:auto;background:#fff;border:2px solid #111;border-radius:10px;padding:8px;font-size:10px"><b>Changes:</b><br>'+diffLog.slice(0,50).join('<br>')+(diffLog.length>50?'<br>... +'+(diffLog.length-50)+' more':'')+'</div>';
+        }
+        toast('Updated '+duplicate.label+': '+updatedCount+' new, '+preservedCount+' preserved');
+        try{ enforceOnly8Fulltime(); }catch(e){}
+        populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); if(typeof updateMyScheduleCard==='function') updateMyScheduleCard();
+        return;
+      } else {
+        // CREATE NEXT/NEW ROSTER OPTION ON LIST - no duplicate, so create new
+        // Check for overlapping dates? Allow but warn? Per spec: create next/new if not duplicate
+        // Ensure no overlap with existing? If overlap, still create but warn - but per previous logic, block overlap? Spec says update current if differences found, else create next/new. So if dates are new, create new even if overlapping? We'll allow but toast.
+        for(let fn of fns){
+          for(let d of fn.dates){
+            if(newIsoSet.has(d.iso)){
+              if(status) status.textContent='WARNING: Date '+d.date+' already exists in '+fn.label+' - creating as separate roster anyway per new spec (previously would block).';
+              break;
+            }
+          }
+        }
+        
+        doBackup('pre-create-'+label);
+        
+        // Preserve employmentType/role from existing staff map
+        let existingStaffMap={};
+        fns.forEach(fn=>{ fn.staff.forEach(s=>{ 
+          let key=(s.firstName+' '+s.lastName).toLowerCase().trim();
+          existingStaffMap[key]=s;
+          let alt=(s.lastName+' '+s.firstName).toLowerCase().trim();
+          existingStaffMap[alt]=s;
+        }); });
+        
+        staff.forEach(s=>{
+          let key=(s.firstName+' '+s.lastName).toLowerCase().trim();
+          let existing=existingStaffMap[key];
+          if(existing){
+            s.employmentType=existing.employmentType||'fulltime';
+            s.role=existing.role||'staff';
+            // Preserve proper casing
+            s.firstName=existing.firstName;
+            s.lastName=existing.lastName;
+          }
+        });
+        
+        staff.sort((a,b)=>{ let c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
+        let id='fn_'+Date.now();
+        let newFortnight={id:id,label:label,dates:dates,staff:staff};
+        fns.push(newFortnight);
+        // Sort fortnights by start date
+        fns.sort((a,b)=>{
+          if(!a.dates||!b.dates||!a.dates[0]||!b.dates[0]) return 0;
+          return a.dates[0].iso.localeCompare(b.dates[0].iso);
+        });
+        safeSetJSON('retail_roster_byFortnight_v1',fns);
+        
+        try{
+          let b64='';
+          if(f.name.endsWith('.csv')){ b64=btoa(unescape(encodeURIComponent(e.target.result))); }
+          else { let bytes=new Uint8Array(e.target.result); let binary=''; for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]); b64=btoa(binary); }
+          let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]);
+          ups.push({name:f.name,label:label,fortnightId:id,ts:Date.now(),data:b64});
+          safeSetJSON('retail_roster_uploaded_excels_v1',ups);
+        }catch(ex){ 
+          let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]);
+          ups.push({name:f.name,label:label,fortnightId:id,ts:Date.now()});
+          safeSetJSON('retail_roster_uploaded_excels_v1',ups);
+        }
+        
+        safeSet('retail_roster_currentFortnightId',id);
+        if(status) status.textContent='CREATED NEW ROSTER: '+label+' - '+staff.length+' staff, '+dates.length+' days (B,D,F... from Row1, Row2 day names). Ignored AD col & Row 18. Live + backed up.';
+        if(diffEl){
+          diffEl.innerHTML='<div style="background:#B6F7C5;border:2px solid #111;border-radius:10px;padding:8px;font-size:11px"><b>New roster created:</b> '+label+'<br>Dates: '+dates.map(d=>d.date+' '+d.day).join(', ')+'<br>Staff: '+staff.length+'</div>';
+        }
+        toast('Created new roster '+label+' - live');
+        try{ enforceOnly8Fulltime(); }catch(e){}
+        populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); if(typeof updateMyScheduleCard==='function') updateMyScheduleCard();
+        // Also backup again after create
+        doBackup('post-create-'+label);
+      }
     }catch(err){
       console.error(err);
-      if(status) status.textContent='Import error: '+err.message;
+      if(status) status.textContent='Import error: '+err.message+'\n'+err.stack;
       toast('Import error: '+err.message);
     }
   };
   if(f.name.endsWith('.csv')) reader.readAsText(f); else reader.readAsArrayBuffer(f);
+}
+
+function triggerImport(){
+  let hi=document.getElementById('hidden-import-input'); 
+  if(!hi){ 
+    hi=document.createElement('input'); hi.type='file'; hi.id='hidden-import-input'; hi.accept='.xlsx,.xls,.csv'; hi.style.display='none'; document.body.appendChild(hi);
+  } 
+  hi.value=''; 
+  hi.onchange=function(){ if(hi.files && hi.files[0]){ importExcelFile(hi.files[0]); } }; 
+  hi.click();
 }
 
 function triggerImport(){
