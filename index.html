@@ -528,7 +528,6 @@ body:not(.is-admin) .daily-total-casual {
   margin-top: 10px !important;
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body>
 <div class="global-bg"><div class="red-corner-global"></div><div class="black-corner-global"></div></div>
@@ -646,7 +645,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022700017_REMEMBER_ORIGINAL_V141";
+const BUILD_ID = "V157-FORCE-LOGOUT-20261020-173306";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1281,12 +1280,8 @@ async function doLogin(){
   var p=(pEl.value||'').trim();
   var err=document.getElementById('login-err');
   if(!u||!p){ if(err) err.textContent='Enter username & password'; return; }
-
   if(u.toLowerCase()==='admin' && (p==='admin' || p==='admin123' || p==='repcoadmin')){
-    try{
-      localStorage.setItem('repco_username', JSON.stringify('admin'));
-      localStorage.setItem('repco_currentRole', JSON.stringify('admin'));
-    }catch(e){}
+    try{ localStorage.setItem('repco_username', JSON.stringify('admin')); localStorage.setItem('repco_currentRole', JSON.stringify('admin')); }catch(e){}
     try{ safeSet('repco_username','admin'); safeSet('repco_currentRole','admin'); }catch(e){}
     try{
       var users=safeGetJSON('retail_roster_users_v1',[]);
@@ -1307,42 +1302,22 @@ async function doLogin(){
     try{ toast('Welcome Admin - ADMIN MODE'); }catch(e){}
     return;
   }
-
   try{
     var rf=await fetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
-    if(rf.ok){
-      var fUsers=await rf.json();
-      if(Array.isArray(fUsers) && fUsers.length>0){
-        safeSetJSON('retail_roster_users_v1', fUsers);
-      }
-    }
+    if(rf.ok){ var fUsers=await rf.json(); if(Array.isArray(fUsers) && fUsers.length>0){ safeSetJSON('retail_roster_users_v1', fUsers); } }
   }catch(e){}
-
   var users=safeGetJSON('retail_roster_users_v1',[]);
   var found=users.find(function(x){ return x.username && x.username.toLowerCase()===u.toLowerCase() && x.password===p; });
-  if(!found){
-    found=users.find(function(x){ return x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim(); });
-  }
-  if(!found){
-    if(err) err.textContent='Incorrect password or username (try admin / admin)';
-    return;
-  }
+  if(!found){ found=users.find(function(x){ return x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim(); }); }
+  if(!found){ if(err) err.textContent='Incorrect password or username (try admin / admin)'; return; }
   if(found.username && found.username.toLowerCase()==='admin'){ found.role='admin'; }
-  safeSet('repco_username', found.username);
-  safeSet('repco_currentRole', found.role||'staff');
-  safeSetJSON('retail_roster_session_v1', found);
+  safeSet('repco_username', found.username); safeSet('repco_currentRole', found.role||'staff'); safeSetJSON('retail_roster_session_v1', found);
   try{ safeSetJSON('repco_username', found.username); safeSetJSON('repco_currentRole', found.role||'staff'); }catch(e){}
   if(err) err.textContent='';
   var lp2=document.getElementById('login-page'); if(lp2) lp2.style.display='none';
   var gh2=document.getElementById('global-header'); if(gh2){ gh2.style.display='flex'; gh2.classList.add('show'); }
   var v65b=document.getElementById('repco-v65'); if(v65b){ v65b.style.display='block'; v65b.classList.add('show'); }
-  try{ setupActivityTracking(); }catch(e){}
-  try{ applyRoleVisibility(); }catch(e){}
-  try{ populateFortnightSelect(); }catch(e){}
-  try{ renderRosterSafe(); }catch(e){}
-  try{ renderMySchedule(); }catch(e){}
-  try{ renderBuddies('today'); renderBuddies('tomorrow'); }catch(e){}
-  try{ toast('Welcome '+found.firstName); }catch(e){}
+  try{ setupActivityTracking(); }catch(e){} try{ applyRoleVisibility(); }catch(e){} try{ populateFortnightSelect(); }catch(e){} try{ renderRosterSafe(); }catch(e){} try{ renderMySchedule(); }catch(e){} try{ renderBuddies('today'); renderBuddies('tomorrow'); }catch(e){} try{ toast('Welcome '+found.firstName); }catch(e){}
 }
 
 window.doLogin = doLogin;
@@ -6015,6 +5990,9 @@ function renderMySchedule(){
         timeShiftEnd=nextForTime.end;
         isCurrent=false;
       }
+      // FIX DUPLICATE: Don't show TIME TILL SHIFT END if CURRENT SHIFT already shows same countdown
+      var hasCurrentShiftDuplicate = false;
+      try{ if(currentForTime && timeShift && timeShiftDate) { /* check if timePanel is for same shift as currentShift later */ } }catch(e){}
       if(timeShift && timeShiftDate && timeShiftStart && timeShiftEnd){
         var countdownText='';
         var progress=0;
@@ -6037,8 +6015,13 @@ function renderMySchedule(){
           else if(h>0) countdownText='Starts in '+h+'h '+m+'m - '+timeShiftDate.day+' '+timeShiftDate.date+' '+timeShift;
           else countdownText='Starts in '+m+' minutes - '+timeShiftDate.day+' '+timeShiftDate.date+' '+timeShift;
         }
-        var panelTitle=isCurrent?'TIME TILL SHIFT END':'TIME TILL NEXT SHIFT';
+        // FIX: Only show TIME TILL for NEXT shift, not current (current already has countdown in green card) - prevents duplicate as in screenshot
+      if(isCurrent){
+        timePanelHtml=''; // Don't show black TIME TILL SHIFT END when green CURRENT SHIFT already shows same countdown
+      } else {
+      var panelTitle=isCurrent?'TIME TILL SHIFT END':'TIME TILL NEXT SHIFT';
         timePanelHtml='<div class="card" style="background:#111;color:#fff;border:3px solid #E30613;padding:12px"><div style="font-weight:900;font-size:11px;color:#FFEB3B">'+panelTitle+'</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+timeShiftDate.day+' '+timeShiftDate.date+' - '+timeShift+'</div><div style="font-weight:900;font-size:14px;color:#B6F7C5">'+countdownText+'</div>'+(isCurrent?'<div style="margin-top:8px;background:#333;height:8px;border-radius:9999px;overflow:hidden"><div style="width:'+progress+'%;background:#E30613;height:100%"></div></div>':'')+'</div>';
+      }
       }
     }catch(e){ console.error('Time panel error', e); }
     var currentShift=null;
@@ -6499,59 +6482,35 @@ function applyRoleVisibility(){
   try{
     var ar=getActualRole();
     var im=isManagerRole(ar);
-    // HARD OVERRIDE: if username is admin, force manager view
     try{
-      var rawU = localStorage.getItem('repco_username') || localStorage.getItem('repco_username_raw') || '';
+      var rawU = localStorage.getItem('repco_username') || '';
       try{ rawU = JSON.parse(rawU); }catch(e){}
       rawU = String(rawU).toLowerCase();
       if(rawU==='admin'){ im=true; ar='admin'; }
       var sess = safeGetJSON('retail_roster_session_v1',null);
       if(sess && sess.username && sess.username.toLowerCase()==='admin'){ im=true; ar='admin'; }
     }catch(e){}
-    if(im){
-      document.body.classList.remove('staff-view');
-      document.body.classList.add('manager-view');
-    } else {
-      document.body.classList.add('staff-view');
-      document.body.classList.remove('manager-view');
-    }
+    if(im){ document.body.classList.remove('staff-view'); document.body.classList.add('manager-view'); } else { document.body.classList.add('staff-view'); document.body.classList.remove('manager-view'); }
   }catch(e){}
-  var actualRole=getActualRole();
-  var isMgr=isManagerRole(actualRole);
-  try{
-    var rawU2 = localStorage.getItem('repco_username') || '';
-    try{ rawU2 = JSON.parse(rawU2); }catch(e){}
-    if(String(rawU2).toLowerCase()==='admin') isMgr=true;
-  }catch(e){}
+  var actualRole=getActualRole(); var isMgr=isManagerRole(actualRole);
+  try{ var rawU2 = localStorage.getItem('repco_username') || ''; try{ rawU2 = JSON.parse(rawU2); }catch(e){} if(String(rawU2).toLowerCase()==='admin') isMgr=true; }catch(e){}
   var archiveBtn=document.getElementById('btn-archive'); if(archiveBtn){ archiveBtn.style.display='none'; }
   document.querySelectorAll('.r-btn-consistent').forEach(function(btn){ if(btn.textContent.trim().toUpperCase()==='ARCHIVE'){ btn.style.display='none'; } });
   var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive'];
   var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday','btn-import','btn-export-csv','btn-export-pdf','delete-roster-btn'];
   var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster','btn-import','btn-export-csv','btn-export-pdf','delete-roster-btn'];
   allIds.forEach(function(id){
-    var el=document.getElementById(id);
-    if(!el) return;
+    var el=document.getElementById(id); if(!el) return;
     if(id==='btn-archive'){ el.style.display='none'; return; }
     if(id==='btn-hidden' || id==='btn-public-holiday'){ el.style.display='none'; return; }
-    if(isMgr){
-      if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
-    } else {
-      if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
-    }
+    if(isMgr){ if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; } }
+    else { if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; } }
   });
   var delBtn=document.getElementById('delete-roster-btn'); if(delBtn) delBtn.style.display = isMgr ? 'inline-block' : 'none';
   var importBtn=document.getElementById('btn-import'); var csvBtn=document.getElementById('btn-export-csv'); var pdfBtn=document.getElementById('btn-export-pdf');
   if(importBtn) importBtn.style.display = isMgr ? 'inline-block' : 'none';
   if(csvBtn) csvBtn.style.display = isMgr ? 'inline-block' : 'none';
   if(pdfBtn) pdfBtn.style.display = isMgr ? 'inline-block' : 'none';
-  try{
-    var hrsCols=document.querySelectorAll('.r-table th:last-child, .r-table td.hrs');
-    if(!isMgr){
-      hrsCols.forEach(function(el){ el.style.display='none'; });
-    } else {
-      hrsCols.forEach(function(el){ el.style.display=''; });
-    }
-  }catch(e){}
 }
 
 
@@ -7249,29 +7208,89 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
   function bindLoginEnter(){
     var u=document.getElementById('login-user');
     var p=document.getElementById('login-pass');
-    var btn=document.getElementById('login-signin-btn');
-    function onEnter(e){
-      if(e.key==='Enter' || e.keyCode===13){
-        e.preventDefault();
-        try{ doLogin(); }catch(err){ console.error(err); }
-      }
-    }
-    if(u){ u.addEventListener('keydown', onEnter); u.addEventListener('keyup', function(e){ if(e.key==='Enter') { e.preventDefault(); }}); }
-    if(p){ p.addEventListener('keydown', onEnter); p.addEventListener('keyup', function(e){ if(e.key==='Enter') { e.preventDefault(); }}); }
-    // Also make the form submit if present
-    if(btn){ btn.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); try{ doLogin(); }catch(err){} } }); }
+    function onEnter(e){ if(e.key==='Enter' || e.keyCode===13){ e.preventDefault(); try{ doLogin(); }catch(err){} } }
+    if(u){ u.addEventListener('keydown', onEnter); }
+    if(p){ p.addEventListener('keydown', onEnter); }
   }
-  // Bind now and on DOMContentLoaded
   try{ bindLoginEnter(); }catch(e){}
   document.addEventListener('DOMContentLoaded', bindLoginEnter);
-  // Re-bind when login page shown
-  var obs=new MutationObserver(function(){ try{ bindLoginEnter(); }catch(e){} });
-  try{ obs.observe(document.body, {childList:true, subtree:true, attributes:true}); }catch(e){}
-  // Also wrap login-page show
   window.addEventListener('load', bindLoginEnter);
 })();
 
+
+// FORCE LOGOUT & REFRESH ON NEW INDEX.HTML UPLOAD - V157
+const REPCO_BUILD_KEY = 'repco_build_id';
+const REPCO_BUILD_TS_KEY = 'repco_build_ts';
+function forceLogoutAndReload(reason){
+  try{ console.log('FORCE LOGOUT:', reason); }catch(e){}
+  try{ toast('New version detected - logging out & refreshing...'); }catch(e){}
+  try{
+    safeSet('repco_username','');
+    safeSet('repco_currentRole','');
+    safeSet('repco_last_activity','');
+    try{ localStorage.removeItem('repco_username'); localStorage.removeItem('repco_currentRole'); }catch(e){}
+    safeSetJSON('retail_roster_session_v1',{});
+    localStorage.setItem('repco_force_logout_'+BUILD_ID, String(Date.now()));
+  }catch(e){}
+  setTimeout(function(){
+    try{ if('caches' in window){ caches.keys().then(function(names){ names.forEach(function(n){ caches.delete(n); }); }); } }catch(e){}
+    location.reload(true);
+  }, 1200);
+}
+
+function setupBuildVersionWatcher(){
+  try{
+    if(!db) return;
+    // Push our BUILD_ID as current if we are admin (so other clients see new version)
+    var curRole = (safeGet('repco_currentRole')||'').toLowerCase();
+    var curUser = (safeGet('repco_username')||'').toLowerCase();
+    if(curRole==='admin' || curUser==='admin'){
+      try{ db.ref(REPCO_BUILD_KEY).set(BUILD_ID); db.ref(REPCO_BUILD_TS_KEY).set(Date.now()); }catch(e){}
+      try{ fetch(FIREBASE_DB_URL+'/'+REPCO_BUILD_KEY+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(BUILD_ID)}).catch(function(){}); }catch(e){}
+    }
+    // Listen for remote build changes
+    db.ref(REPCO_BUILD_KEY).on('value', function(snap){
+      if(!snap.exists()) return;
+      var remoteBuild = snap.val();
+      if(!remoteBuild) return;
+      if(remoteBuild!==BUILD_ID){
+        console.log('BUILD MISMATCH: local', BUILD_ID, 'remote', remoteBuild, '- forcing logout');
+        // Only force if we have been logged in, to avoid loop on first load
+        var hasSession = safeGet('repco_username') || safeGet('repco_currentRole');
+        if(hasSession){
+          forceLogoutAndReload('build mismatch remote='+remoteBuild+' local='+BUILD_ID);
+        } else {
+          // Even if no session, force hard reload to get new HTML
+          setTimeout(function(){ location.reload(true); }, 800);
+        }
+      }
+    });
+  }catch(e){ console.error('setupBuildVersionWatcher', e); }
+}
+
+function checkForIndexUpdateViaFetch(){
+  try{
+    fetch(window.location.href+'?cb='+Date.now(),{cache:'no-store'}).then(function(res){ return res.text(); }).then(function(html){
+      var m = html.match(/BUILD_ID\s*=\s*["']([^"']+)["']/);
+      if(m && m[1] && m[1]!==BUILD_ID){
+        console.log('FETCH BUILD MISMATCH: fetched', m[1], 'local', BUILD_ID);
+        forceLogoutAndReload('fetch mismatch fetched='+m[1]);
+      }
+    }).catch(function(){});
+  }catch(e){}
+}
+
+// Hook into existing DOMContentLoaded and setupActivity
+(function(){
+  var origSetup = window.setupActivityTracking || function(){};
+  // Periodic check every 30s
+  setInterval(function(){ try{ checkForIndexUpdateViaFetch(); }catch(e){} }, 30000);
+  setTimeout(function(){ try{ setupBuildVersionWatcher(); }catch(e){} }, 1500);
+  setTimeout(function(){ try{ checkForIndexUpdateViaFetch(); }catch(e){} }, 3000);
+})();
+
 </script>
+
 <div id="hidden-staff-page" class="full-page" style="display:none">
   <div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER - HIDDEN STAFF</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div>
   <div class="page-inner" style="padding:14px">
