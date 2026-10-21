@@ -551,11 +551,11 @@ body:not(.is-admin) .daily-total-casual {
     <form class="login-form" onsubmit="event.preventDefault(); doLogin(); return false;" style="display:flex;flex-direction:column;gap:14px;align-items:center;width:100%;max-width:360px">
       <div class="login-row" style="display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between">
         <label style="font-weight:900;font-size:13px;color:#000;letter-spacing:0.3px;white-space:nowrap">USERNAME:</label>
-        <input id="login-user" type="text" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
+        <input id="login-user" type="text" enterkeyhint="next" autocomplete="username" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
       </div>
       <div class="login-row" style="display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between">
         <label style="font-weight:900;font-size:13px;color:#000;letter-spacing:0.3px;white-space:nowrap">PASSWORD:</label>
-        <input id="login-pass" type="password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
+        <input id="login-pass" type="password" enterkeyhint="done" autocomplete="current-password" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
       </div>
       <button id="login-signin-btn" type="submit" onclick="doLogin()" style="margin-top:10px;background:#C4C4C4;color:#000;border:none;border-radius:9999px;padding:12px 0;font-weight:900;font-size:16px;letter-spacing:0.5px;width:100%;max-width:280px;cursor:pointer;box-shadow:none">SIGN IN</button>
       </form>
@@ -1298,7 +1298,7 @@ function setupActivityTracking(){
   }catch(e){ console.error('setupActivityTracking error', e); }
 }
 
-async async function doLogin(){
+async function doLogin(){
   console.log('doLogin triggered');
   try{ seedIfEmpty(); }catch(e){ console.error('seedIfEmpty', e); }
   var uEl=document.getElementById('login-user');
@@ -6237,60 +6237,35 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 </div>
 
 <script>
-// ENTER triggers login - robust for desktop + mobile
-(function(){
-  function setupLogin(){
-    var form=document.querySelector('.login-form');
-    var userEl=document.getElementById('login-user');
-    var passEl=document.getElementById('login-pass');
-    var btn=document.getElementById('login-signin-btn');
-    if(form){
-      // Remove existing listeners to avoid duplicates
-      var newForm=form.cloneNode(true);
-      form.parentNode.replaceChild(newForm, form);
-      form=newForm;
-      form.addEventListener('submit', function(e){
-        e.preventDefault();
-        console.log('Form submit -> doLogin');
-        doLogin();
-        return false;
-      });
-      userEl=document.getElementById('login-user');
-      passEl=document.getElementById('login-pass');
-      btn=document.getElementById('login-signin-btn');
-    }
-    function enterHandler(e){
-      if(e.key==='Enter' || e.keyCode===13){
-        e.preventDefault();
-        console.log('Enter key -> doLogin');
-        doLogin();
-        return false;
-      }
-    }
-    if(userEl){
-      userEl.addEventListener('keydown', enterHandler);
-      userEl.addEventListener('keypress', enterHandler);
-    }
-    if(passEl){
-      passEl.addEventListener('keydown', enterHandler);
-      passEl.addEventListener('keypress', enterHandler);
-    }
-    if(btn){
-      btn.addEventListener('click', function(e){
-        e.preventDefault();
-        console.log('Button click -> doLogin');
-        doLogin();
-      });
+// Simple robust login - Enter + Click
+document.addEventListener('DOMContentLoaded', function(){
+  var form=document.querySelector('.login-form');
+  var userEl=document.getElementById('login-user');
+  var passEl=document.getElementById('login-pass');
+  var btn=document.getElementById('login-signin-btn');
+  if(form){
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      doLogin();
+      return false;
+    });
+  }
+  function handleEnter(e){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      doLogin();
     }
   }
-  if(document.readyState==='loading'){
-    document.addEventListener('DOMContentLoaded', setupLogin);
-  } else {
-    setupLogin();
+  if(userEl) userEl.addEventListener('keydown', handleEnter);
+  if(passEl) passEl.addEventListener('keydown', handleEnter);
+  if(btn){
+    btn.addEventListener('click', function(e){
+      e.preventDefault();
+      doLogin();
+    });
   }
-  setTimeout(setupLogin, 300);
-  setTimeout(setupLogin, 1000);
-})();
+  console.log('Login handlers attached - Enter and Click will work');
+});
 </script>
 
 </body>
