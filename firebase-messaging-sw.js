@@ -27,8 +27,8 @@ try {
     const notificationTitle = payload.notification?.title || payload.data?.title || 'REPCO Roster Update';
     const notificationOptions = {
       body: payload.notification?.body || payload.data?.body || 'Your roster has been updated',
-      icon: './icon-192.png',
-      badge: './icon-192.png',
+      icon: '/icon-192.png',
+      badge: '/badge-72.png',
       tag: payload.data?.tag || 'repco-roster',
       data: payload.data || {},
       vibrate: [200, 100, 200],
@@ -61,8 +61,8 @@ self.addEventListener('push', function(event) {
   const title = data.title || data.notification?.title || 'REPCO Roster Update';
   const options = {
     body: data.body || data.notification?.body || 'Your roster has been updated - tap to view',
-    icon: data.icon || './icon-192.png',
-    badge: './icon-192.png',
+    icon: data.icon || '/icon-192.png',
+    badge: '/badge-72.png',
     tag: data.tag || 'repco-roster-update',
     data: data.data || { url: '/' },
     vibrate: [200, 100, 200],
@@ -81,7 +81,7 @@ self.addEventListener('notificationclick', function(event) {
 
   const action = event.action;
   const data = event.notification.data || {};
-  const urlToOpen = data.url || self.location.origin + self.location.pathname;
+  const urlToOpen = data.url || self.location.origin + '/';
 
   if (action === 'close') {
     return;

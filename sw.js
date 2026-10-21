@@ -6,7 +6,7 @@ const CACHE_NAME = 'repco-roster-alpha-v1';
 const urlsToCache = [
   '/',
   '/index.html',
-  './icon-192.png',
+  '/icon-192.png',
   '/icon-512.png'
 ];
 
@@ -68,8 +68,8 @@ self.addEventListener('push', function(event) {
   const title = payload.title || 'REPCO Roster Update';
   const options = {
     body: payload.body || 'Your roster has been updated',
-    icon: './icon-192.png',
-    badge: './icon-192.png',
+    icon: '/icon-192.png',
+    badge: '/badge-72.png',
     tag: 'repco-update',
     data: { url: self.location.origin },
     vibrate: [200, 100, 200]

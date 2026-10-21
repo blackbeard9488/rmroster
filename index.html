@@ -972,7 +972,7 @@ async function enablePhoneNotifications() {
         try {
           const subscription = await subscribeWebPush();
           if (subscription) {
-            toast('✅ Web Push enabled (VAPID) - Phone notifications ready');
+            // FIXED: toast disabled to prevent loop
             return true;
           }
         } catch (e2) {
@@ -3632,6 +3632,345 @@ function toggleMobileMenu(){
 
 
 
+
+// === PUSH NOTIFICATIONS FOR SHIFT CHANGES, APPROVALS, DENIALS - FIXED ===
+function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
+  try{
+    if(!employeeName) return;
+    const uname = employeeName.toLowerCase().replace(/\s+/g,'');
+    const cleanName = employeeName.trim();
+    let targetUsername = null;
+    try{
+      const users = safeGetJSON('retail_roster_users_v1',[]);
+      const found = users.find(u => {
+        const full = ((u.firstName||'')+' '+(u.lastName||'')).trim().toLowerCase();
+        return full === cleanName.toLowerCase() || (u.firstName||'').toLowerCase() === cleanName.split(' ')[0].toLowerCase();
+      });
+      if(found) targetUsername = found.username;
+    }catch(e){}
+    
+    if(!targetUsername){
+      const users = safeGetJSON('retail_roster_users_v1',[]);
+      const firstName = cleanName.split(' ')[0].toLowerCase();
+      const found = users.find(u => (u.firstName||'').toLowerCase() === firstName);
+      if(found) targetUsername = found.username;
+    }
+    
+    if(!targetUsername) targetUsername = uname;
+    
+    // Determine if this is OFF -> shift (new shift added) or shift change
+    const oldClean = (oldShift||'').toString().trim().toUpperCase();
+    const newClean = (newShift||'').toString().trim().toUpperCase();
+    const isOffToShift = (oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0') && newClean!=='' && newClean!=='OFF' && newClean!=='-' && newClean!=='0';
+    const isShiftToOff = !(oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0') && (newClean==='' || newClean==='OFF' || newClean==='-' || newClean==='0');
+    
+    // FIXED: Shift added logic only applies to current fortnight (current day existing on current fortnight)
+    let isCurrentFortnight = false;
+    let isCurrentDay = false;
+    try{
+      const curFn = typeof getCurrentFortnight==='function' ? getCurrentFortnight() : null;
+      const todayISO = typeof getISO==='function' ? getISO() : new Date().toISOString().split('T')[0];
+      if(curFn && curFn.dates){
+        const dateInCurrent = curFn.dates.some(d => d.iso===dateISO || d.date===dateISO);
+        isCurrentFortnight = dateInCurrent;
+        if(dateISO === todayISO) isCurrentDay = true;
+        else if(dateInCurrent){
+          // Check if date is today or future within current fortnight
+          const todayIdx = curFn.dates.findIndex(d => d.iso===todayISO || d.date===todayISO);
+          const targetIdx = curFn.dates.findIndex(d => d.iso===dateISO || d.date===dateISO);
+          if(targetIdx >= todayIdx && todayIdx !== -1) isCurrentDay = true;
+        }
+      } else {
+        // Fallback: if we can't get current fortnight, assume current if date is today or future within 14 days
+        const today = new Date();
+        const target = new Date(dateISO+'T00:00:00');
+        const diffDays = Math.floor((target - today)/(1000*60*60*24));
+        if(diffDays >=0 && diffDays < 14) {
+          isCurrentFortnight = true;
+          if(diffDays===0) isCurrentDay = true;
+        }
+      }
+      
+      // Only allow OFF->shift notification for current fortnight
+      if(isOffToShift && !isCurrentFortnight){
+        console.log('Shift added but not in current fortnight, skipping notification for', dateISO);
+        return; // Don't notify for future fortnights
+      }
+    }catch(e){ 
+      console.log('Current fortnight check error', e);
+      // If error, allow notification (fail open for safety)
+      isCurrentFortnight = true;
+      isCurrentDay = true;
+    }
+    
+    // Get day name from dateISO
+    let dayName = '';
+    let dateDisplay = dateISO||'';
+    try{
+      if(dateISO){
+        const d = new Date(dateISO+'T00:00:00');
+        if(!isNaN(d.getTime())){
+          dayName = d.toLocaleDateString('en-AU',{weekday:'long'});
+          dateDisplay = `${dayName} ${dateISO} ${newShift||''}`.trim();
+        }
+      }
+    }catch(e){}
+    
+    let message = '';
+    let title = '';
+    if(isOffToShift){
+      // OFF -> shift: New shift added!
+      const dayPart = dayName || dateISO || 'New shift';
+      message = `New shift added! ${dayPart} ${newShift||''}`.trim();
+      title = `New Shift - ${cleanName}`;
+    } else if(isShiftToOff){
+      // Shift -> OFF: Shift removed
+      const dayPart = dayName || dateISO || '';
+      message = `Shift removed! ${dayPart} ${oldShift||''} → OFF`.trim();
+      title = `Shift Removed - ${cleanName}`;
+    } else {
+      // Shift change
+      message = `Shift changed: ${oldShift||'OFF'} → ${newShift||'OFF'} on ${dateISO||''}`.trim();
+      title = `Shift Update - ${cleanName}`;
+    }
+    
+    const notif = {
+      id: 'shift_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+      type: isOffToShift ? 'new_shift' : (isShiftToOff ? 'shift_removed' : 'shift_change'),
+      employee: cleanName,
+      targetUsername: targetUsername,
+      oldShift: oldShift||'OFF',
+      newShift: newShift||'OFF',
+      date: dateISO||'',
+      dayName: dayName||'',
+      message: message,
+      title: title,
+      body: message,
+      timestamp: Date.now(),
+      read: false,
+      from: safeGet('repco_username')||'admin'
+    };
+
+    
+    // Save to Firebase and local
+    try{
+      const notifs = safeGetJSON('repco_notifications_v1',[]);
+      notifs.push(notif);
+      if(notifs.length>100) notifs.splice(0, notifs.length-100);
+      safeSetJSON('repco_notifications_v1', notifs);
+      
+      if(window.db){
+        window.db.ref('notifications/'+targetUsername).push(notif);
+        window.db.ref('notifications_global').push(notif);
+      } else {
+        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(notif)
+        }).catch(()=>{});
+      }
+      
+      try{
+        if(window.db){
+          window.db.ref('fcm_tokens/'+targetUsername).once('value').then(snap=>{
+            const tokenData = snap.val();
+            if(tokenData && tokenData.token){
+              window.db.ref('push_queue').push({
+                to: targetUsername,
+                token: tokenData.token,
+                title: notif.title,
+                body: notif.message,
+                data: notif,
+                ts: Date.now()
+              });
+            }
+          });
+        }
+      }catch(e){}
+      
+      console.log('Shift change notification sent:', notif);
+    }catch(e){ console.error('Notif error', e); }
+  }catch(e){ console.error(e); }
+}tch(e){ console.error(e); }
+}
+
+function sendApprovalNotification(employeeName, type, details, fullRequest){
+  try{
+    const cleanName = (employeeName||'').trim();
+    let targetUsername = null;
+    try{
+      const users = safeGetJSON('retail_roster_users_v1',[]);
+      const found = users.find(u => {
+        const full = ((u.firstName||'')+' '+(u.lastName||'')).trim().toLowerCase();
+        return full === cleanName.toLowerCase();
+      });
+      if(found) targetUsername = found.username;
+      else {
+        // Try by username
+        const foundByUser = users.find(u => (u.username||'').toLowerCase() === cleanName.toLowerCase());
+        if(foundByUser) {
+          targetUsername = foundByUser.username;
+        }
+      }
+    }catch(e){}
+    
+    if(!targetUsername) targetUsername = cleanName.toLowerCase().replace(/\s+/g,'');
+    
+    const isApproval = type==='approval';
+    // Build detailed message from full request data
+    let requestDataStr = '';
+    let detailedMessage = '';
+    try{
+      const req = fullRequest || {};
+      const reqDate = req.date || req.requestDate || req.day || '';
+      const reqType = req.type || req.requestType || '';
+      const reqShift = req.shift || req.time || '';
+      const reqReason = req.reason || req.notes || req.comment || '';
+      const reqFrom = req.fromTime || req.startTime || '';
+      const reqTo = req.toTime || req.endTime || '';
+      
+      // Build same logic for approval and denial - show request data
+      const parts = [];
+      if(reqDate) parts.push(`Date: ${reqDate}`);
+      if(reqType) parts.push(`Type: ${reqType}`);
+      if(reqShift) parts.push(`Shift: ${reqShift}`);
+      if(reqFrom && reqTo) parts.push(`Time: ${reqFrom} - ${reqTo}`);
+      else if(reqFrom) parts.push(`From: ${reqFrom}`);
+      if(reqReason) parts.push(`Reason: ${reqReason}`);
+      if(details && !parts.join('').includes(details)) parts.push(details);
+      
+      requestDataStr = parts.join(' | ') || details || 'Your request';
+      detailedMessage = requestDataStr;
+    }catch(e){
+      requestDataStr = details || 'Your request';
+      detailedMessage = requestDataStr;
+    }
+    
+    const notif = {
+      id: 'approval_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+      type: isApproval ? 'approval' : 'denial',
+      employee: cleanName,
+      targetUsername: targetUsername,
+      message: isApproval ? `✅ APPROVED: ${detailedMessage}` : `❌ DENIED: ${detailedMessage}`,
+      title: isApproval ? `✅ Approved - ${cleanName}` : `❌ Denied - ${cleanName}`,
+      body: detailedMessage,
+      requestData: fullRequest || {details: details},
+      timestamp: Date.now(),
+      read: false,
+      from: safeGet('repco_username')||'admin',
+      details: detailedMessage
+    };
+    
+    try{
+      const notifs = safeGetJSON('repco_notifications_v1',[]);
+      notifs.push(notif);
+      if(notifs.length>100) notifs.splice(0, notifs.length-100);
+      safeSetJSON('repco_notifications_v1', notifs);
+      
+      if(window.db){
+        window.db.ref('notifications/'+targetUsername).push(notif);
+        window.db.ref('notifications_global').push(notif);
+        window.db.ref('fcm_tokens/'+targetUsername).once('value').then(snap=>{
+          const tokenData = snap.val();
+          if(tokenData && tokenData.token){
+            window.db.ref('push_queue').push({
+              to: targetUsername,
+              token: tokenData.token,
+              title: notif.title,
+              body: notif.message,
+              data: notif,
+              ts: Date.now()
+            });
+          }
+        });
+      }
+    }catch(e){}
+  }catch(e){}
+}
+
+function checkAndShowNotifications(){
+  try{
+    const myUsername = safeGet('repco_username');
+    if(!myUsername) return;
+    const notifs = safeGetJSON('repco_notifications_v1',[]);
+    const myNotifs = notifs.filter(n => 
+      n.targetUsername===myUsername || 
+      (n.employee && n.employee.toLowerCase().includes(myUsername.toLowerCase())) ||
+      n.targetUsername===myUsername.toLowerCase()
+    ).filter(n => !n.read).slice(-5);
+    
+    if(myNotifs.length>0){
+      // Show latest notification
+      const latest = myNotifs[myNotifs.length-1];
+      if(Date.now() - latest.timestamp < 60000){ // Only show if within last minute
+        if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+          try{
+            const swReg = window.swRegistration || window.navigator.serviceWorker.ready;
+            if(swReg && swReg.then){
+              swReg.then(reg=>{
+                reg.showNotification(latest.title, {
+                  body: latest.message,
+                  icon: './icon-192.png',
+                  badge: './icon-192.png',
+                  vibrate: [200,100,200],
+                  data: latest
+                });
+              });
+            } else if(window.swRegistration){
+              window.swRegistration.showNotification(latest.title, {
+                body: latest.message,
+                icon: './icon-192.png'
+              });
+            }
+          }catch(e){
+            // Fallback to toast
+            toast(latest.title + ': ' + latest.message);
+          }
+        } else {
+          toast(latest.title + ': ' + latest.message);
+        }
+      }
+    }
+    
+    // Also check Firebase for new notifications
+    if(window.db){
+      window.db.ref('notifications/'+myUsername).limitToLast(5).once('value').then(snap=>{
+        const data = snap.val();
+        if(data){
+          Object.values(data).forEach(notif=>{
+            if(!notif.read && Date.now() - notif.timestamp < 60000){
+              // Mark as read
+              const allNotifs = safeGetJSON('repco_notifications_v1',[]);
+              const exists = allNotifs.find(n=>n.id===notif.id);
+              if(!exists){
+                allNotifs.push(notif);
+                safeSetJSON('repco_notifications_v1', allNotifs);
+                if(typeof Notification!=='undefined' && Notification.permission==='granted' && window.swRegistration){
+                  try{
+                    window.swRegistration.showNotification(notif.title, {
+                      body: notif.message,
+                      icon: './icon-192.png'
+                    });
+                  }catch(e){ toast(notif.message); }
+                } else {
+                  toast(notif.message);
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+  }catch(e){ console.error('check notifs', e); }
+}
+
+// Poll for notifications every 30 seconds for employees
+setInterval(checkAndShowNotifications, 30000);
+// Check on load
+document.addEventListener('DOMContentLoaded', ()=>{ setTimeout(checkAndShowNotifications, 5000); });
+// === END PUSH NOTIFICATIONS ===
+
+
 function forceRefreshCurrentData(){
   try{
     console.log('V136: Force refreshing current data on menu select');
@@ -5406,10 +5745,12 @@ function editReq(idx){ let all=safeGetJSON('retail_roster_requests_v2',[]); cons
 function approveReq(idx){ 
   try{
     let all=safeGetJSON('retail_roster_requests_v2',[]);
+    let notifEmployee='', notifDetails='';
     if(!all[idx]) { toast('Request not found - may have been already approved'); renderRequests(); return; }
     const req=all[idx];
     
     // If already approved, still force sync to fix My Schedule not updating
+    try{ notifEmployee=req.employee||req.name||''; notifDetails=(req.date||'')+' '+(req.type||''); }catch(e){}
     if(req.status!=='pending'){
       if(req.status==='approved'){
         console.log('Request already approved, forcing re-sync to fix My Schedule', req.id);
@@ -5588,6 +5929,7 @@ function approveReq(idx){
     applyRoleVisibility();
     try{ updateRequestsBadge(); }catch(e){}
     toast('Approved - '+matchedStaffName+' → '+req.newShift+' - forcing sync to My Schedule (employee will see APPROVED in 3 sec)');
+    try{ if(typeof sendApprovalNotification==='function' && notifEmployee) { const fullReqData = all[idx] || req; sendApprovalNotification(notifEmployee, 'approval', notifDetails, fullReqData); } }catch(e){}
   }catch(e){ console.error('approveReq error', e); toast('Error approving: '+e.message); }
 }
 
@@ -5602,9 +5944,12 @@ function denyReq(idx){
     }
     safeSet('repco_last_deny_ts', String(Date.now()));
     
-    let all=safeGetJSON('retail_roster_requests_v2',[]); 
+    let all=safeGetJSON('retail_roster_requests_v2',[]);
+    let notifEmployeeDen='', notifDetailsDen='';
+    
     if(!all[idx]) { toast('Request not found'); renderRequests(); return; }
     const req=all[idx]; 
+    try{ notifEmployee=req.employee||req.name||''; notifDetails=(req.date||'')+' '+(req.type||''); }catch(e){}
     if(req.status!=='pending'){
       toast('Request already '+req.status);
       renderRequests();
@@ -5634,6 +5979,7 @@ function denyReq(idx){
     renderRequests(); 
     try{ renderMySchedule(); }catch(e){}
     try{ updateRequestsBadge(); }catch(e){}
+    try{ if(typeof sendApprovalNotification==='function' && notifEmployeeDen) { const fullReqData = all[idx] || req; sendApprovalNotification(notifEmployeeDen, 'denial', notifDetailsDen, fullReqData); } }catch(e){}
   }catch(e){ console.error('denyReq error', e); toast('Error denying: '+e.message); }
 }
 
