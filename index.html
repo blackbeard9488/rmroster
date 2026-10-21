@@ -1798,7 +1798,7 @@ async function cloudLoad(){
 
 
 
-async let cloudSaveTimer=null;
+let cloudSaveTimer=null;
 function cloudSave(){
   if(suppressCloudSave) return;
   if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
