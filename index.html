@@ -1170,7 +1170,7 @@ window.showMain = function(){
   applyRoleVisibility();
 };
 
-function isManagerRolefunction isManagerRole(r,u){
+function isManagerRole(r,u){
   r=(r||safeGet('repco_currentRole')||'').toLowerCase();
   u=(u||safeGet('repco_username')||'').toLowerCase();
   // FIXED: role is source of truth, not hardcoded username
