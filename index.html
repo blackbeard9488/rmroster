@@ -1207,6 +1207,11 @@ function isManagerRole(r,u){
 }
 function getActualRole(){
   try{
+    let raw = localStorage.getItem('repco_username') || '';
+    try{ raw = JSON.parse(raw); }catch(e){}
+    if(String(raw).toLowerCase()==='admin') return 'admin';
+  }catch(e){}
+  try{
     let curU=(safeGet('repco_username')||'').toLowerCase();
     let curR=(safeGet('repco_currentRole')||'').toLowerCase();
     if(curU==='admin') return 'admin';
@@ -6494,6 +6499,15 @@ function applyRoleVisibility(){
   try{
     var ar=getActualRole();
     var im=isManagerRole(ar);
+    // HARD OVERRIDE: if username is admin, force manager view
+    try{
+      var rawU = localStorage.getItem('repco_username') || localStorage.getItem('repco_username_raw') || '';
+      try{ rawU = JSON.parse(rawU); }catch(e){}
+      rawU = String(rawU).toLowerCase();
+      if(rawU==='admin'){ im=true; ar='admin'; }
+      var sess = safeGetJSON('retail_roster_session_v1',null);
+      if(sess && sess.username && sess.username.toLowerCase()==='admin'){ im=true; ar='admin'; }
+    }catch(e){}
     if(im){
       document.body.classList.remove('staff-view');
       document.body.classList.add('manager-view');
@@ -6502,21 +6516,25 @@ function applyRoleVisibility(){
       document.body.classList.remove('manager-view');
     }
   }catch(e){}
-  var actualRole=getActualRole(); var isMgr=isManagerRole(actualRole);
-  // Keep archive hidden as requested earlier, but keep hidden staff visible for admin
+  var actualRole=getActualRole();
+  var isMgr=isManagerRole(actualRole);
+  try{
+    var rawU2 = localStorage.getItem('repco_username') || '';
+    try{ rawU2 = JSON.parse(rawU2); }catch(e){}
+    if(String(rawU2).toLowerCase()==='admin') isMgr=true;
+  }catch(e){}
   var archiveBtn=document.getElementById('btn-archive'); if(archiveBtn){ archiveBtn.style.display='none'; }
   document.querySelectorAll('.r-btn-consistent').forEach(function(btn){ if(btn.textContent.trim().toUpperCase()==='ARCHIVE'){ btn.style.display='none'; } });
-  // Admin sees: roster, requests, staff unavailable, options, hidden staff. Hides today/tomorrow/mysched/archive
-  // Staff sees: today, tomorrow, mysched, requests, account, roster
-  var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive']; // public holiday visible for admin
-  var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday'];
-  var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster'];
+  var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive'];
+  var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday','btn-import','btn-export-csv','btn-export-pdf','delete-roster-btn'];
+  var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster','btn-import','btn-export-csv','btn-export-pdf','delete-roster-btn'];
   allIds.forEach(function(id){
     var el=document.getElementById(id);
     if(!el) return;
     if(id==='btn-archive'){ el.style.display='none'; return; }
+    if(id==='btn-hidden' || id==='btn-public-holiday'){ el.style.display='none'; return; }
     if(isMgr){
-      if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; if(id==='btn-hidden'){ el.style.background='#111'; el.style.color='#fff'; } }
+      if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
     } else {
       if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
     }
@@ -6534,9 +6552,8 @@ function applyRoleVisibility(){
       hrsCols.forEach(function(el){ el.style.display=''; });
     }
   }catch(e){}
-
-  try{ var phBtn=document.getElementById('btn-public-holiday'); if(phBtn){ var role=getActualRole(); var isAdmin=isManagerRole(role)||isAdminUser(); phBtn.style.display=isAdmin?'':'none'; } }catch(e){}
 }
+
 
 
 
@@ -7225,6 +7242,34 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 
 
 
+
+
+// FIX: Pressing Enter on login should sign in (mobile + desktop)
+(function(){
+  function bindLoginEnter(){
+    var u=document.getElementById('login-user');
+    var p=document.getElementById('login-pass');
+    var btn=document.getElementById('login-signin-btn');
+    function onEnter(e){
+      if(e.key==='Enter' || e.keyCode===13){
+        e.preventDefault();
+        try{ doLogin(); }catch(err){ console.error(err); }
+      }
+    }
+    if(u){ u.addEventListener('keydown', onEnter); u.addEventListener('keyup', function(e){ if(e.key==='Enter') { e.preventDefault(); }}); }
+    if(p){ p.addEventListener('keydown', onEnter); p.addEventListener('keyup', function(e){ if(e.key==='Enter') { e.preventDefault(); }}); }
+    // Also make the form submit if present
+    if(btn){ btn.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); try{ doLogin(); }catch(err){} } }); }
+  }
+  // Bind now and on DOMContentLoaded
+  try{ bindLoginEnter(); }catch(e){}
+  document.addEventListener('DOMContentLoaded', bindLoginEnter);
+  // Re-bind when login page shown
+  var obs=new MutationObserver(function(){ try{ bindLoginEnter(); }catch(e){} });
+  try{ obs.observe(document.body, {childList:true, subtree:true, attributes:true}); }catch(e){}
+  // Also wrap login-page show
+  window.addEventListener('load', bindLoginEnter);
+})();
 
 </script>
 <div id="hidden-staff-page" class="full-page" style="display:none">
