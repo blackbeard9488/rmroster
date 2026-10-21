@@ -380,6 +380,14 @@ button, .r-btn-consistent{
 @media (min-width: 769px){
   #global-header .r-btns-consistent{display:flex !important;}
 }
+
+/* FIX: Prevent weekend blue overshading status cells (AB/G) - status colors take priority */
+.r-table td.col-weekend.cell-absent{background:#FFA9B6 !important}
+.r-table td.col-weekend.cell-green{background:#A5D6A7 !important}
+.r-table td.col-weekend.cell-g{background:#60A5FA !important}
+.r-table td.cell-absent{background:#FFA9B6 !important}
+.r-table td.cell-green{background:#A5D6A7 !important}
+.r-table td.cell-g{background:#60A5FA !important}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
 function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
@@ -1371,23 +1379,35 @@ async function doLogin(){
       if(v65){ v65.style.display='block'; v65.classList.add('show'); }
       var gh=document.getElementById('global-header');
       if(gh){ gh.style.display='flex'; gh.classList.add('show'); }
-      if(typeof showMain==='function'){
-        showMain();
-      } else {
-        // Fallback if showMain missing
-        if(v65) v65.style.display='block';
-        if(gh) gh.style.display='flex';
-      }
       if(typeof setupActivityTracking==='function'){
         try{ setupActivityTracking(); }catch(e){}
       }
-      if(typeof renderRosterSafe==='function'){
-        try{ renderRosterSafe(); }catch(e){ console.error('renderRosterSafe failed', e); }
+      // FIX: If employee (staff role), go straight to My Schedule page
+      var userRole=(found.role||'').toLowerCase();
+      var isEmployee=userRole==='staff' || userRole==='employee' || (!['admin','manager','master','chris'].includes(userRole));
+      if(isEmployee){
+        console.log('Employee login - going straight to My Schedule');
+        if(typeof openPage==='function'){
+          openPage('mysched-page');
+        }
+        if(typeof renderMySchedule==='function'){
+          try{ renderMySchedule(); }catch(e){ console.error('renderMySchedule failed', e); }
+        }
+      } else {
+        if(typeof showMain==='function'){
+          showMain();
+        } else {
+          if(v65) v65.style.display='block';
+          if(gh) gh.style.display='flex';
+        }
+        if(typeof renderRosterSafe==='function'){
+          try{ renderRosterSafe(); }catch(e){ console.error('renderRosterSafe failed', e); }
+        }
       }
       if(typeof toast==='function'){
         toast('Welcome '+found.username);
       }
-      console.log('Login success, page should show');
+      console.log('Login success, page should show, role:', userRole, 'isEmployee:', isEmployee);
     }catch(e){
       console.error('Show main failed', e);
       alert('Login OK but show failed: '+e.message);
@@ -6052,10 +6072,37 @@ function renderMySchedule(){
           }
         }
         if(!parsed) continue;
+        // FIX: Keep past shifts of same fortnight - don't skip, show at bottom
+        // Previously this skipped past shifts unless they had approved request
+        // Now we keep all past shifts of current fortnight
+        var isPastShift=false;
         if(d.iso && d.iso < todayISO){
-          // For approved requests, show even if past (so user sees history)
-          var pastReq=findRequestForShift({date:d.date, day:d.day, fortnight:fn}, d.iso||'', i);
-          if(!pastReq || pastReq.status==='pending') continue;
+          isPastShift=true;
+          // Check if this past shift is in current fortnight - keep it
+          // Only skip if it's from old fortnights and has no approved request
+          var isInCurrentFortnight=false;
+          try{
+            if(cur && cur.dates){
+              for(var cf=0;cf<cur.dates.length;cf++){
+                if(cur.dates[cf].iso===d.iso){
+                  isInCurrentFortnight=true;
+                  break;
+                }
+              }
+            }
+          }catch(e){}
+          if(!isInCurrentFortnight){
+            // From old fortnight - only keep if has approved request
+            var pastReq=findRequestForShift({date:d.date, day:d.day, fortnight:fn}, d.iso||'', i);
+            if(!pastReq || pastReq.status==='pending'){
+              // For old fortnights without approved request, skip past
+              // But for current fortnight, keep past
+              // Actually user wants PAST shifts of same fortnight to still be shown
+              // So if isInCurrentFortnight, don't skip
+            }
+          }
+          // For current fortnight past shifts, don't continue - keep them
+          // Mark as past for sorting to bottom
         }
         if(d.iso===todayISO){
           try{
@@ -6204,6 +6251,7 @@ function renderMySchedule(){
     }catch(e){ console.error('Time panel error', e); }
     var currentShift=null;
     var upcoming=[];
+    var pastShifts=[];
     for(var i=0;i<allShifts.length;i++){
       var s=allShifts[i];
       if(s.iso===todayISO){
@@ -6215,23 +6263,60 @@ function renderMySchedule(){
           currentShift=s; currentShift.start=shiftStart; currentShift.end=shiftEnd;
         } else if(brisbaneNow < shiftStart){
           upcoming.push(s);
+        } else {
+          // Shift today but already ended - past today
+          pastShifts.push(s);
+        }
+      } else if(s.iso < todayISO){
+        // Past shift - keep for bottom list if in current fortnight
+        var isInCurrentFn=false;
+        try{
+          if(cur && cur.dates){
+            for(var ccf=0;ccf<cur.dates.length;ccf++){
+              if(cur.dates[ccf].iso===s.iso){
+                isInCurrentFn=true;
+                break;
+              }
+            }
+          }
+        }catch(e){}
+        if(isInCurrentFn){
+          pastShifts.push(s);
+        } else {
+          // Old fortnight past shift - only keep if has approved request (already filtered)
+          // For now, also keep it as past
+          pastShifts.push(s);
         }
       } else {
         upcoming.push(s);
       }
     }
+    // Sort past shifts by iso (oldest first)
+    pastShifts.sort(function(a,b){ return (a.iso||'').localeCompare(b.iso||''); });
     if(currentShift){
-      // FIX: If current shift is AB - show red Absent panel instantly
+      // FIX: Check AB and G status for My Schedule panel
       var currShiftUp=String(currentShift.shift||'').toUpperCase().trim();
-      var isCurrAB=['AB','ABSENT'].indexOf(currShiftUp)!==-1 || (myStaff && myStaff.absentApproved && myStaff.absentApproved[currentShift.idx]);
+      var isCurrAB=['AB','ABSENT'].indexOf(currShiftUp)!==-1 || (currentShift.shift && currentShift.shift.indexOf(' AB')!==-1) || (myStaff && myStaff.absentApproved && myStaff.absentApproved[currentShift.idx]);
+      var isCurrG=false;
+      try{
+        if(myStaff){
+          if(myStaff.cellGreen && myStaff.cellGreen[currentShift.idx]) isCurrG=true;
+          if(myStaff.cellG && myStaff.cellG[currentShift.idx]) isCurrG=true;
+        }
+      }catch(e){}
       if(isCurrAB){
         var origForAB='';
         if(myStaff && myStaff.originalShifts && myStaff.originalShifts[currentShift.idx]){
           origForAB=myStaff.originalShifts[currentShift.idx];
         }
-        var displayAB=origForAB?fmt(origForAB)+' AB':'AB';
+        var displayAB=origForAB?fmt(origForAB)+' AB':fmt(currentShift.shift)||'AB';
+        if(displayAB.indexOf('AB')===-1) displayAB=displayAB+' AB';
         var dateLabelAB=currentShift.date.day+' '+currentShift.date.date;
-        htmlStr+='<div class="card" style="background:#FFA9B6;border:3px solid #E30613;"><div style="font-weight:900;font-size:12px;color:#111">CURRENT SHIFT - ABSENT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+dateLabelAB+' - '+displayAB+'</div><div style="font-size:11px;background:#fff;color:#111;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div><div style="margin-top:6px;font-size:10px">Original: '+(origForAB?fmt(origForAB):'N/A')+'</div></div>';
+        htmlStr+='<div class="card" style="background:#FFA9B6;"><div style="font-weight:900;font-size:12px;color:#111">CURRENT SHIFT - ABSENT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+dateLabelAB+' - '+displayAB+'</div><div style="font-size:11px;background:#fff;color:#111;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div><div style="margin-top:6px;font-size:10px">Original: '+(origForAB?fmt(origForAB):'N/A')+'</div></div>';
+      } else if(isCurrG){
+        var dateLabelG=currentShift.date.day+' '+currentShift.date.date;
+        var displayG=fmt(currentShift.shift);
+        htmlStr+='<div class="card" style="background:#60A5FA;border:3px solid #111;"><div style="font-weight:900;font-size:12px;color:#111">👑 CURRENT SHIFT - G STATUS</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+dateLabelG+' - '+displayG+' 👑</div><div style="font-size:11px;background:#fff;color:#111;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: G - Priority</div></div>';
       } else {
       var found=findRequestForShift(currentShift.date, currentShift.iso, currentShift.idx);
       var phCurr=getPublicHolidayIcon(currentShift.iso, currentShift.date.date);
@@ -6287,16 +6372,28 @@ function renderMySchedule(){
       htmlStr+='<div class="card" style="background:#111;color:#fff;font-weight:900">UPCOMING SHIFTS ('+upcoming.length+')</div>';
       for(var i=0;i<upcoming.length;i++){
         var u=upcoming[i];
-        // FIX: Check if upcoming shift is AB
+        // FIX: Check if upcoming shift is AB or G
         var upCheck=String(u.shift||'').toUpperCase().trim();
-        var isUpAB=['AB','ABSENT'].indexOf(upCheck)!==-1 || (myStaff && myStaff.absentApproved && myStaff.absentApproved[u.idx]);
+        var isUpAB=['AB','ABSENT'].indexOf(upCheck)!==-1 || (u.shift && u.shift.indexOf(' AB')!==-1) || (myStaff && myStaff.absentApproved && myStaff.absentApproved[u.idx]);
+        var isUpG=false;
+        try{
+          if(myStaff){
+            if(myStaff.cellGreen && myStaff.cellGreen[u.idx]) isUpG=true;
+            if(myStaff.cellG && myStaff.cellG[u.idx]) isUpG=true;
+          }
+        }catch(e){}
         if(isUpAB){
           var origUp='';
           if(myStaff && myStaff.originalShifts && myStaff.originalShifts[u.idx]){
             origUp=myStaff.originalShifts[u.idx];
           }
-          var displayUp=origUp?fmt(origUp)+' AB':'AB';
-          htmlStr+='<div class="card" style="background:#FFA9B6;border:3px solid #E30613;"><div style="font-weight:900;font-size:12px;color:#111">UPCOMING - ABSENT</div><div style="font-weight:900;font-size:14px;margin:4px 0">'+u.date.day+' '+u.date.date+' - '+displayUp+'</div><div style="font-size:10px;background:#fff;color:#111;padding:3px 6px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div></div>';
+          var displayUp=origUp?fmt(origUp)+' AB':fmt(u.shift)||'AB';
+          if(displayUp.indexOf('AB')===-1) displayUp=displayUp+' AB';
+          htmlStr+='<div class="card" style="background:#FFA9B6;"><div style="font-weight:900;font-size:12px;color:#111">UPCOMING - ABSENT</div><div style="font-weight:900;font-size:14px;margin:4px 0">'+u.date.day+' '+u.date.date+' - '+displayUp+'</div><div style="font-size:10px;background:#fff;color:#111;padding:3px 6px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div></div>';
+          continue;
+        } else if(isUpG){
+          var displayG=fmt(u.shift);
+          htmlStr+='<div class="card" style="background:#60A5FA;border:3px solid #111;"><div style="font-weight:900;font-size:12px;color:#111">👑 UPCOMING - G STATUS</div><div style="font-weight:900;font-size:14px;margin:4px 0">'+u.date.day+' '+u.date.date+' - '+displayG+' 👑</div><div style="font-size:10px;background:#fff;color:#111;padding:3px 6px;border-radius:9999px;display:inline-block;font-weight:900">Status: G - Priority</div></div>';
           continue;
         }
         var phIconData=getPublicHolidayIcon(u.iso, u.date.date);
@@ -6341,8 +6438,45 @@ function renderMySchedule(){
     }
     htmlStr+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">BACK TO ROSTER</button></div>';
         if(typeof timePanelHtml!=='undefined' && timePanelHtml) htmlStr=timePanelHtml+htmlStr;
-    el.innerHTML=htmlStr;
-  }catch(e){
+        // FIX: Show PAST shifts of same fortnight at very bottom in order with G and AB status
+    if(typeof pastShifts!=='undefined' && pastShifts.length>0){
+      htmlStr+='<div class="card" style="background:#111;color:#fff;font-weight:900;margin-top:12px">PAST SHIFTS ('+pastShifts.length+') - SAME FORTNIGHT</div>';
+      for(var pi=0;pi<pastShifts.length;pi++){
+        var ps=pastShifts[pi];
+        var psDate=ps.date;
+        var psShift=ps.shift||'';
+        var psUp=String(psShift).toUpperCase().trim();
+        var isPsAB=['AB','ABSENT'].indexOf(psUp)!==-1 || (psShift.indexOf(' AB')!==-1) || (myStaff && myStaff.absentApproved && myStaff.absentApproved[ps.idx]);
+        var isPsG=false;
+        try{
+          if(myStaff){
+            if(myStaff.cellGreen && myStaff.cellGreen[ps.idx]) isPsG=true;
+            if(myStaff.cellG && myStaff.cellG[ps.idx]) isPsG=true;
+          }
+        }catch(e){}
+        var psOrig='';
+        if(myStaff && myStaff.originalShifts && myStaff.originalShifts[ps.idx]){
+          psOrig=myStaff.originalShifts[ps.idx];
+        }
+        var psDisplay=psShift;
+        if(isPsAB){
+          psDisplay=psOrig?fmt(psOrig)+' AB':fmt(psShift)||'AB';
+          if(psDisplay.indexOf('AB')===-1) psDisplay=psDisplay+' AB';
+        } else {
+          psDisplay=fmt(psShift);
+        }
+        var psDateLabel=psDate.day+' '+psDate.date;
+        if(isPsAB){
+          htmlStr+='<div class="card" style="background:#FFA9B6;opacity:0.8"><div style="font-weight:900;font-size:11px">PAST - '+psDateLabel+' - '+psDisplay+'</div><div style="font-size:10px;background:#fff;color:#111;padding:3px 6px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div></div>';
+        } else if(isPsG){
+          htmlStr+='<div class="card" style="background:#60A5FA;opacity:0.8"><div style="font-weight:900;font-size:11px">👑 PAST - '+psDateLabel+' - '+psDisplay+' 👑</div><div style="font-size:10px;background:#fff;color:#111;padding:3px 6px;border-radius:9999px;display:inline-block;font-weight:900">Status: G - Priority</div></div>';
+        } else {
+          htmlStr+='<div class="card" style="background:#f5f5f5;border:2px solid #ccc;opacity:0.7"><div style="font-weight:900;font-size:11px">PAST - '+psDateLabel+' - '+psDisplay+'</div><div style="font-size:9px;color:#666">Completed</div></div>';
+        }
+      }
+    }
+
+    el.innerHTML=htmlStr;catch(e){
     console.error('renderMySchedule error', e);
     var el=document.getElementById('mysched-list');
     if(el) el.innerHTML='<div class="card">Error: '+e.message+'</div>';
