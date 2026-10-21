@@ -113,11 +113,11 @@ button{cursor:pointer}
 .r-table td.cell-work{background:#fff !important;cursor:pointer;font-weight:400 !important}
 .r-table td.cell-off{background:#9DA0A3 !important;color:transparent !important;cursor:pointer}
 .r-table td.cell-na{background:#111 !important;color:#fff !important}
-.r-table td.cell-absent{background:#FFA9B6 !important}
+.r-table td.cell-absent{background:#FFA9B6 !important;color:#111 !important;border:3px solid #E30613 !important;font-weight:900}
 .r-table td.col-weekend{background:#D6EBFF !important}
 .r-table td.col-weekend.cell-work{background:#D6EBFF !important}
 .r-table td.col-weekend.cell-off{background:#A8C4D8 !important;color:transparent !important}
-.r-table td.col-weekend.cell-absent{background:#FF9AA8 !important}
+.r-table td.col-weekend.cell-absent{background:#FFA9B6 !important;color:#111 !important;border:3px solid #E30613 !important;font-weight:900}
 .r-table th.weekend-start{border-left:1.6px solid #222 !important} .r-table th.weekend-end{border-right:1.6px solid #222 !important} .r-table td.weekend-start{border-left:1.6px solid #222 !important} .r-table td.weekend-end{border-right:1.6px solid #222 !important}
 .r-table td.cell-green{background:#B6F7C5 !important;border:1.6px solid #222 !important}
 .r-table td.col-weekend.cell-green{background:#8FD9A8 !important;border:1.6px solid #222 !important}
@@ -663,7 +663,7 @@ async function checkForIndexUpdate(isInitial){
     if(isInitial){ currentHtmlHash=h; if(remoteBuild) currentBuildId=remoteBuild; return; }
     if(remoteBuild && remoteBuild!==currentBuildId){
       console.log('V136: BUILD_ID changed from', currentBuildId, 'to', remoteBuild, '- forcing logout');
-      toast("New version detected ("+remoteBuild+") - logging out and reloading");
+      toast("New version detected ("+remoteBuild+") - logging out and reloading - backing up"); try{ backupBeforeUpdate(); }catch(e){}
       try{
         safeSet('repco_username','');
         safeSet('repco_last_activity','');
@@ -675,7 +675,7 @@ async function checkForIndexUpdate(isInitial){
     }
     if(currentHtmlHash!==null && h!==currentHtmlHash){
       console.log('V136: Hash changed - forcing logout, old', currentHtmlHash, 'new', h);
-      toast("New version detected - logging out and reloading");
+      toast("New version detected - logging out and reloading - backing up"); try{ backupBeforeUpdate(); }catch(e){}
       try{
         safeSet('repco_username','');
         safeSet('repco_last_activity','');
@@ -688,11 +688,60 @@ async function checkForIndexUpdate(isInitial){
     // V136: Also check if BUILD_ID missing but hash changed - GitHub Pages CDN may delay BUILD_ID extraction
     if(currentBuildId && !remoteBuild && currentHtmlHash!==null && h!==currentHtmlHash){
       console.log('V136: Hash changed but no BUILD_ID found - forcing reload for GitHub Pages');
-      toast("Update detected - reloading");
+      toast("Update detected - reloading - backing up"); try{ backupBeforeUpdate(); }catch(e){}
       setTimeout(()=>{ location.reload(true); },1500);
     }
   }catch(e){ console.error('checkForIndexUpdate', e); }
 }
+
+// SAFETY: Backup before GitHub html update - ensures data not lost
+function backupBeforeUpdate(){
+  try{
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var users=safeGetJSON('retail_roster_users_v1',[]);
+    var reqs=safeGetJSON('retail_roster_requests_v2',[]);
+    if(fns && fns.length>0){
+      safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, users:users, reqs:reqs, ts:Date.now(), by:safeGet('repco_username')||'', reason:'pre-update-backup GitHub'});
+      // Push to Firebase immediately
+      try{
+        var state=getAllState();
+        state._ts=Date.now();
+        state._preUpdateBackup=true;
+        if(typeof db!=='undefined' && db && db.ref){
+          db.ref('repco_state').set(state);
+        } else {
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
+        }
+      }catch(e){}
+    }
+  }catch(e){ console.error('backupBeforeUpdate error', e); }
+}
+
+function recoverDataAfterUpdate(){
+  try{
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var isEmpty=!fns || fns.length===0;
+    var backup=safeGetJSON('retail_roster_backup_autosave_v1',null);
+    if(isEmpty && backup && backup.fns && backup.fns.length>0){
+      console.log('RECOVERY: Restoring from backup after GitHub update', backup.reason);
+      safeSetJSON('retail_roster_byFortnight_v1', backup.fns);
+      if(backup.users) safeSetJSON('retail_roster_users_v1', backup.users);
+      if(backup.reqs) safeSetJSON('retail_roster_requests_v2', backup.reqs);
+      try{ toast('Data recovered from backup after update'); }catch(e){}
+      return true;
+    }
+    if(isEmpty){
+      // Try cloud
+      fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ return r.json(); }).then(function(cloudFns){
+        if(Array.isArray(cloudFns) && cloudFns.length>0){
+          safeSetJSON('retail_roster_byFortnight_v1', cloudFns);
+          try{ renderRosterSafe(); }catch(e){}
+        }
+      }).catch(function(){});
+    }
+  }catch(e){ console.error('recoverDataAfterUpdate error', e); }
+}
+
 
 
 
@@ -1924,7 +1973,17 @@ function renderRosterSafe(){
         } else if(isG){
           txt='G';
           // Keep original shift in title for reference, but display G
-        } else if(isAbsentApproved && orig){ txt=fmt(orig)+' AB'; }
+        } else if(isAbsentApproved && orig){ 
+          var fmtOrig=fmt(orig);
+          if(!fmtOrig || fmtOrig.toUpperCase()==='OFF' || fmtOrig.toUpperCase()==='AB' || fmtOrig===''){
+            txt='AB';
+          } else {
+            txt=fmtOrig+' AB';
+          }
+        } else if(isAbsentApproved){ 
+          // AB without orig - show AB
+          txt='AB'; 
+        }
         else if(na && orig){ txt=fmt(disp)+' ('+fmt(orig)+')'; if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA') txt='UA'; }
         else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
         else if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA'){ txt='UA'; }
@@ -2552,6 +2611,22 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             }
           }
           safeSetJSON('retail_roster_byFortnight_v1',fns);
+          
+          // INSTANT LIVE SAVE - Push AB change to all users immediately
+          try{
+            var state=getAllState();
+            state._ts=Date.now();
+            if(typeof db!=='undefined' && db && db.ref){
+              db.ref('repco_state').set(state);
+              safeSet('repco_cloud_ts', String(state._ts));
+            } else {
+              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
+            }
+            // Also push roster directly
+            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors',cache:'no-store'}).catch(function(){});
+          }catch(e){ console.error('Live save AB error', e); }
+          try{ if(typeof BroadcastChannel!=='undefined'){ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'roster_update', ts:Date.now()}); } }catch(e){}
+
           
           // V130: If admin manually edits a shift that had approved/denied request, REVERT GREEN as if never requested - use admin's new edit
           try{
@@ -5623,7 +5698,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       }
     }
   }catch(e){ console.error('Session restore', e); }
-  setTimeout(()=>{ cloudLoad(); }, 500);
+  setTimeout(()=>{ try{ recoverDataAfterUpdate(); }catch(e){} cloudLoad(); }, 500);
   setTimeout(()=>{ checkForIndexUpdate(true); }, 1000);
   setInterval(()=>{ checkForIndexUpdate(false); }, 10000); // V136: Every 10s for faster logout on GitHub Pages
   setInterval(()=>{ if(!db) cloudLoad(); }, 20000);
