@@ -1973,16 +1973,20 @@ function renderRosterSafe(){
         } else if(isG){
           txt='G';
           // Keep original shift in title for reference, but display G
-        } else if(isAbsentApproved && orig){ 
-          var fmtOrig=fmt(orig);
-          if(!fmtOrig || fmtOrig.toUpperCase()==='OFF' || fmtOrig.toUpperCase()==='AB' || fmtOrig===''){
+        } else if(isAbsentApproved){
+          // FIX: Show "08:00-16:00 AB" - keep times, add AB, red cell
+          var shiftVal=disp||sh||'';
+          var cleanShift=shiftVal.replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim();
+          var origClean=orig ? String(orig).replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim() : '';
+          var timeToShow=cleanShift||origClean||'';
+          var fmtTime=fmt(timeToShow);
+          if(!fmtTime || fmtTime.toUpperCase()==='OFF' || fmtTime===''){
+            txt='AB';
+          } else if(fmtTime.toUpperCase()==='AB'){
             txt='AB';
           } else {
-            txt=fmtOrig+' AB';
+            txt=fmtTime+' AB';
           }
-        } else if(isAbsentApproved){ 
-          // AB without orig - show AB
-          txt='AB'; 
         }
         else if(na && orig){ txt=fmt(disp)+' ('+fmt(orig)+')'; if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA') txt='UA'; }
         else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
@@ -2498,18 +2502,23 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               console.log('Toggling OFF AB for', staff.firstName, colIdx);
             } else {
               isAB=true;
-              // Keep current shift as actualShift, but mark as AB
-              if(current && current.toUpperCase()!=='AB' && current.toUpperCase()!=='OFF' && current!==''){
-                actualShift=current;
-              } else if(staff.originalShifts && staff.originalShifts[colIdx] && staff.originalShifts[colIdx].toUpperCase()!=='AB'){
-                actualShift=staff.originalShifts[colIdx];
-              } else {
-                actualShift=current||'';
+              // FIX: Keep current shift time and add AB text - e.g., "08:00-16:00 AB"
+              var keepTime=current;
+              if(!keepTime || keepTime.toUpperCase()==='AB' || keepTime.toUpperCase()==='ABSENT' || keepTime.toUpperCase()==='OFF' || keepTime===''){
+                if(staff.originalShifts && staff.originalShifts[colIdx] && staff.originalShifts[colIdx].toUpperCase()!=='AB' && staff.originalShifts[colIdx].toUpperCase()!=='OFF' && staff.originalShifts[colIdx]!==''){
+                  keepTime=staff.originalShifts[colIdx];
+                }
               }
-              if(!actualShift || actualShift.toUpperCase()==='OFF' || actualShift===''){
+              // Clean time - remove any existing AB
+              if(keepTime){
+                keepTime=keepTime.replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim();
+              }
+              if(!keepTime || keepTime.toUpperCase()==='OFF' || keepTime===''){
                 actualShift='AB';
+              } else {
+                actualShift=keepTime+' AB';
               }
-              console.log('Toggling ON AB for', staff.firstName, colIdx, 'keeping', actualShift);
+              console.log('Toggling ON AB for', staff.firstName, colIdx, 'keeping', keepTime, '->', actualShift);
             }
           } else if(up==='UA' || up==='UNAVAILABLE' || up==='U' || up==='NA'){
             isNA=true;
