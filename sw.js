@@ -2,7 +2,7 @@
 // Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready
 // Verified, possible with HTTPS + VAPID
 
-const CACHE_NAME = 'repco-roster-alpha-v1';
+const CACHE_NAME = 'repco-roster-alpha-v169'; // V168 - forces update for blank pill + hidden staff + hover + push fixes
 const urlsToCache = [
   '/',
   '/index.html',

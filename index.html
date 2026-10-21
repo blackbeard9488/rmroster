@@ -2591,14 +2591,41 @@ function renderRosterSafe(){
         var clickAttr=''; if(isMgr){ clickAttr=' onclick="editCell(this,'+globalStaffIdx+','+idx+',\''+title+'\')" '; }
         rows+='<td class="'+cls+'"'+clickAttr+'>'+txt+'</td>';
       });
-      // V132: Hidden staff - no HRS column required, blank
+      // FIXED V169: Hidden staff - NO HRS column at all
       if(isHiddenStaff){
-        rows+='<td class="hrs" style="background:#FFE0E0;color:#999">HIDDEN</td></tr>';
+        rows+='</tr>'; // No HRS column for hidden staff
       } else {
         rows+='<td class="hrs">'+hrs.toFixed(1)+'h</td></tr>';grand+=hrs;
       }
-    }); var totalsRow=''; if(isMgr){ totalsRow='<tr class="totals"><td class="staff-cell">DAY TOTALS (excl. hidden)</td>'; dayTotals.forEach(function(t,i){ totalsRow+='<td>'+(t>0?t.toFixed(1)+'h':'0')+'</td>';}); totalsRow+='<td class="hrs">'+grand.toFixed(1)+'h</td></tr>'; } var head='<tr><th class="staff-col">STAFF</th>';cur.dates.forEach(function(d,i){ var cl=isWeekend(d.day)?'day-blue col-weekend':'day-yellow'; if(isWeekend(d.day)){ var prevWeekend=i>0?isWeekend(cur.dates[i-1].day):false; var nextWeekend=i<cur.dates.length-1?isWeekend(cur.dates[i+1].day):false; /* Removed thick weekend border */ /* Removed thick weekend border */ } head+='<th class="'+cl+'">'+d.day+'<br>'+d.date+'</th>'; });head+='<th class="staff-col">HRS</th></tr>';
-    return {html:'<div class="roster-section"><div class="sec-head '+cssClass+'"><span>'+title+' • '+list.length+'</span><span>'+cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date+'</span></div><div class="r-table-wrap"><table class="r-table"><thead>'+head+'</thead><tbody>'+rows+totalsRow+'</tbody></table></div></div>', grand:grand};
+    }); 
+    // FIXED V169: Hidden staff has NO HRS column and NO totals, NO title
+    var isHiddenTable = (cssClass==='hidden');
+    var totalsRow=''; 
+    if(!isHiddenTable && isMgr){ 
+      totalsRow='<tr class="totals"><td class="staff-cell">DAY TOTALS (excl. hidden)</td>'; 
+      dayTotals.forEach(function(t,i){ totalsRow+='<td>'+(t>0?t.toFixed(1)+'h':'0')+'</td>';}); 
+      totalsRow+='<td class="hrs">'+grand.toFixed(1)+'h</td></tr>'; 
+    } 
+    var head='<tr><th class="staff-col">STAFF</th>';
+    cur.dates.forEach(function(d,i){ 
+      var cl=isWeekend(d.day)?'day-blue col-weekend':'day-yellow'; 
+      if(isWeekend(d.day)){ var prevWeekend=i>0?isWeekend(cur.dates[i-1].day):false; var nextWeekend=i<cur.dates.length-1?isWeekend(cur.dates[i+1].day):false; } 
+      head+='<th class="'+cl+'">'+d.day+'<br>'+d.date+'</th>'; 
+    });
+    if(!isHiddenTable){
+      head+='<th class="staff-col">HRS</th>';
+    }
+    head+='</tr>';
+    var secHeadHtml='';
+    if(!isHiddenTable && title && title.trim()!==''){
+      secHeadHtml='<div class="sec-head '+cssClass+'"><span>'+title+' • '+list.length+'</span><span>'+cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date+'</span></div>';
+    } else if(isHiddenTable){
+      // No title for hidden staff table - just a subtle divider, no header
+      secHeadHtml='';
+    } else {
+      secHeadHtml='<div class="sec-head '+cssClass+'"><span>'+title+' • '+list.length+'</span><span>'+cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date+'</span></div>';
+    }
+    return {html:'<div class="roster-section"'+(isHiddenTable?' style="border:2px dashed #999;background:#F9F9F9"':'')+' >'+secHeadHtml+'<div class="r-table-wrap"><table class="r-table"><thead>'+head+'</thead><tbody>'+rows+totalsRow+'</tbody></table></div></div>', grand:grand};
   }
   var fullRes=build('Full Time',full,''); var casRes=build('Casual',cas,'casual'); 
   // FIXED V165: Hidden staff below casual table
@@ -2607,7 +2634,7 @@ function renderRosterSafe(){
     var isNewHidden=s.hidden || hiddenStaffV1.some(function(h){ return h.username && s.username && h.username.toLowerCase()===s.username.toLowerCase(); });
     return isOldHidden || isNewHidden;
   });
-  var hiddenRes=build('Hidden Staff',hiddenList,'hidden');
+  var hiddenRes=build('',hiddenList,'hidden'); // FIXED V169: No title for hidden staff
   var combinedGrand=(fullRes.grand||0)+(casRes.grand||0);
   var adminBadge=document.getElementById('admin-total-badge'); if(adminBadge){ if(isMgr){ adminBadge.style.display='inline-block'; adminBadge.textContent='TOTAL: '+combinedGrand.toFixed(1)+'h'; } else adminBadge.style.display='none'; }
   var html='';if(full.length>0)html+=fullRes.html;if(cas.length>0)html+=casRes.html;if(hiddenList.length>0)html+=hiddenRes.html;
