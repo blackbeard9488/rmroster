@@ -5006,40 +5006,8 @@ function doDenyOffer(offer, offers, idx, offerId){
       safeSetJSON('retail_roster_byFortnight_v1', fns);
     }catch(e){ console.error('Deny roster update error', e); }
     
-    // V169: Admin must get notification on Requests page if shift denied
-    try{
-      var allReqs = safeGetJSON('retail_roster_requests_v2',[]);
-      var denialReq = {
-        id: 'denial_'+offer.id+'_'+Date.now(),
-        type: 'shift-offer-denied',
-        username: offer.targetUsername,
-        employee: offer.employee,
-        dates: [offer.formattedDate||offer.date],
-        shiftDate: offer.formattedDate||offer.date,
-        shiftISO: offer.date,
-        oldShift: offer.newShift,
-        newShift: offer.oldShift||'OFF',
-        reason: '❌ DENIED new shift offer '+offer.newShift+' on '+offer.formattedDate+' - Employee rejected',
-        status: 'pending',
-        readByAdmin: false,
-        readByStaff: true,
-        ts: Date.now(),
-        isDenialNotification: true,
-        offerId: offer.id,
-        formattedDate: offer.formattedDate
-      };
-      allReqs.push(denialReq);
-      safeSetJSON('retail_roster_requests_v2', allReqs);
-      try{ localStorage.setItem('retail_roster_requests_update_ts', String(Date.now())); }catch(e){}
-      console.log('V169: Created Requests page notification for denied shift');
-      if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqs),mode:'cors'}).catch(function(){});
-      }
-      if(window.db){
-        try{ window.db.ref('retail_roster_requests_v2').set(allReqs); }catch(e){}
-      }
-      try{ if(typeof updateRequestsBadge==='function') updateRequestsBadge(); }catch(e){}
-    }catch(e){ console.log('Denial Requests error', e); }
+    // V170: Admin denial kept only in Shift Offers page, NOT Requests page (user preference)
+    // No Requests page entry - admin sees result in Shift Offers history and via notification toast
     
     // Admin notification
     try{
@@ -7781,18 +7749,8 @@ function renderRequestsPage(){
       return;
     }
     let html='';
-    // V169: Show denied shift offers first with red highlight - admin must get notification on Requests page if shift denied
-    let deniedOffers = all.filter(r=>r.type==='shift-offer-denied' && r.status==='pending');
-    if(deniedOffers.length>0){
-      html+='<div style="background:#E30613;color:#fff;border:3px solid #111;border-radius:12px;padding:10px;margin-bottom:12px;font-weight:900;font-size:12px">❌ SHIFT DENIED NOTIFICATIONS - '+deniedOffers.length+' employee(s) denied new shifts</div>';
-      deniedOffers.forEach((req,idx)=>{
-        let realIdx = all.indexOf(req);
-        html+='<div class="card" style="background:#FFA9B6;border:3px solid #E30613;border-radius:12px;padding:14px;margin-bottom:10px;animation:pulse-red 1s infinite"><div style="display:flex;justify-content:space-between"><b style="background:#E30613;color:#fff;border-radius:9999px;padding:4px 10px;font-size:10px">❌ SHIFT DENIED</b><small>'+(req.username||'')+'</small></div><div style="margin-top:8px;font-size:12px"><b>'+(req.employee||req.username||'')+'</b> DENIED shift<br><b>'+(req.shiftDate||'')+'</b> - Offered: '+(req.oldShift||'')+' → Wanted: OFF<br><small>'+(req.reason||'')+'</small><br><small style="background:#FFEB3B;padding:2px 6px;border-radius:9999px;font-weight:900">Roster now shows OFF (normal) - was YELLOW pending</small></div><div style="display:flex;gap:8px;margin-top:10px"><button onclick="dismissDenialReq('+realIdx+')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">✓ DISMISS - Seen</button><button onclick="reOfferShift('+realIdx+')" style="flex:1;background:#fff;color:#E30613;border:2px solid #E30613;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">RE-OFFER SHIFT</button></div></div>';
-      });
-    }
     all.forEach((req,idx)=>{
       if(req.status!=='pending') return;
-      if(req.type==='shift-offer-denied') return; // Already shown above
       let typeLabel=req.type==='unavailability'?'UNAVAILABILITY':'SHIFT CORRECTION';
       let typeColor=req.type==='unavailability'?'#FFEB3B':'#8FC6F5';
       html+='<div class="card" style="background:#fff;border:3px solid #111;border-radius:12px;padding:14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between"><b style="background:'+typeColor+';border-radius:9999px;padding:4px 10px;font-size:10px">'+typeLabel+'</b><small>'+(req.username||'')+'</small></div><div style="margin-top:8px;font-size:12px"><b>'+(req.username||'')+'</b> - '+(req.dates?req.dates.join(', '):(req.shiftDate||''))+'<br>Reason: '+(req.reason||'No reason')+'<br>'+(req.newShift?'New: '+req.newShift:'')+'</div><div style="display:flex;gap:8px;margin-top:10px"><button onclick="approveReq('+idx+')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">APPROVE</button><button onclick="denyReq('+idx+')" style="flex:1;background:#fff;color:#111;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">DENY</button></div></div>';
