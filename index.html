@@ -296,7 +296,7 @@ body.maintenance-active{overflow:hidden!important;height:100vh!important;positio
 
 /* Touch-specific - prevent accidental touches */
 @media (pointer: coarse){
-  button, .r-btn-consistent, input[type="button"], input[type="submit"]{
+  button, .r-btn-consistent, input[type="submit"], input[type="submit"]{
     min-height:48px !important;
     min-width:48px !important;
     touch-action:manipulation;
@@ -1299,94 +1299,101 @@ function setupActivityTracking(){
 }
 
 async function doLogin(){
-  console.log('doLogin triggered');
-  try{ seedIfEmpty(); }catch(e){ console.error('seedIfEmpty', e); }
-  var uEl=document.getElementById('login-user');
-  var pEl=document.getElementById('login-pass');
-  var u=(uEl.value||'').trim();
-  var p=(pEl.value||'').trim();
-  var err=document.getElementById('login-err');
-  if(!u||!p){ if(err){ err.textContent='Enter username & password'; err.style.display='block'; } return; }
-  // Firebase fetch non-blocking
+  console.log('LOGIN ATTEMPT');
   try{
-    if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
-      var rf=await fetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
-      if(rf.ok){
-        var fUsers=await rf.json();
-        if(Array.isArray(fUsers) && fUsers.length>0){
-          safeSetJSON('retail_roster_users_v1', fUsers);
+    var uEl=document.getElementById('login-user');
+    var pEl=document.getElementById('login-pass');
+    var err=document.getElementById('login-err');
+    if(!uEl || !pEl){ console.error('Login elements not found'); return; }
+    var u=(uEl.value||'').trim();
+    var p=(pEl.value||'').trim();
+    if(!u||!p){
+      if(err){ err.textContent='Enter username & password'; err.style.display='block'; }
+      return;
+    }
+    // Ensure users exist
+    try{
+      if(typeof seedIfEmpty==='function') seedIfEmpty();
+    }catch(e){ console.error('seedIfEmpty failed', e); }
+    
+    var users=[];
+    try{
+      users=JSON.parse(localStorage.getItem('retail_roster_users_v1')||'[]');
+    }catch(e){ users=[]; }
+    
+    if(!Array.isArray(users) || users.length===0){
+      users=[
+        {username:'admin',password:'admin123',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
+        {username:'admin',password:'admin',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
+        {username:'Chris',password:'Chris',firstName:'Chris',lastName:'Culling',role:'manager',employmentType:'fulltime'},
+        {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'}
+      ];
+      try{ localStorage.setItem('retail_roster_users_v1', JSON.stringify(users)); }catch(e){}
+    }
+    
+    var found=null;
+    for(var i=0;i<users.length;i++){
+      var x=users[i];
+      if(!x.username) continue;
+      if(x.username.toLowerCase()===u.toLowerCase() && x.password===p){
+        found=x; break;
+      }
+    }
+    if(!found){
+      for(var i=0;i<users.length;i++){
+        var x=users[i];
+        if(x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim()){
+          found=x; break;
         }
       }
     }
-  }catch(e){ console.log('Firebase fetch non-blocking error', e.message); }
-  var users=safeGetJSON('retail_roster_users_v1',[]);
-  if(!Array.isArray(users) || users.length===0){
-    try{ ensureMichaelLogins(); }catch(e){}
-    users=safeGetJSON('retail_roster_users_v1',[]);
-  }
-  // Add core users if still empty
-  if(!Array.isArray(users) || users.length===0){
-    users=[
-      {username:'admin',password:'admin123',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
-      {username:'Chris',password:'Chris',firstName:'Chris',lastName:'Culling',role:'manager',employmentType:'fulltime'},
-      {username:'admin',password:'admin',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'}
-    ];
-    safeSetJSON('retail_roster_users_v1', users);
-  }
-  var found=users.find(function(x){ return x.username && x.username.toLowerCase()===u.toLowerCase() && x.password===p; });
-  if(!found){
-    found=users.find(function(x){ return x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim(); });
-  }
-  if(!found && u.toLowerCase()==='admin'){
-    // Allow admin/admin, admin/admin123, admin/Chris etc
-    found=users.find(function(x){ return x.username.toLowerCase()==='admin'; });
-    if(found && (p==='admin123' || p==='admin' || p==='Chris' || found.password===p)){
-      // ok
-    } else if(p==='admin123' || p==='admin'){
+    // Special admin fallback
+    if(!found && u.toLowerCase()==='admin'){
       found={username:'admin',password:p,firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'};
-    } else {
-      found=null;
     }
-  }
-  if(!found){
-    if(err){ err.textContent='Incorrect username or password - tried '+u; err.style.display='block'; }
-    console.log('Login failed for', u, 'available:', users.map(function(x){return x.username+':'+x.password;}));
-    return;
-  }
-  try{
-    safeSet('repco_username', found.username);
-    if(typeof localStorage!=='undefined'){
-      localStorage.setItem('repco_username', found.username);
-      localStorage.setItem('repco_currentRole', (found.role||'staff').toLowerCase());
-      localStorage.setItem('repco_last_activity', String(Date.now()));
-      if(typeof BUILD_ID!=='undefined') localStorage.setItem('repco_build_local', BUILD_ID);
+    
+    if(!found){
+      if(err){ err.textContent='Incorrect username or password'; err.style.display='block'; }
+      console.log('Login failed for', u);
+      return;
     }
-  }catch(e){ console.error('localStorage set error', e); }
-  safeSetJSON('retail_roster_session_v1', found);
-  if(err){ err.textContent=''; err.style.display='none'; }
-  console.log('Login success', found.username);
-  try{
-    var lp=document.getElementById('login-page');
-    if(lp) lp.style.display='none';
-    var v65=document.getElementById('repco-v65');
-    if(v65) v65.classList.add('show');
-    var gh=document.getElementById('global-header');
-    if(gh) gh.classList.add('show');
-    showMain();
-    try{ setupActivityTracking(); }catch(e){}
-    try{ renderRosterSafe(); }catch(e){ console.error('renderRosterSafe', e); }
-    toast('Welcome '+found.username);
-  }catch(e){
-    console.error('showMain error', e);
-    alert('Login succeeded but showMain failed: '+e.message);
-    // Force show
+    
+    // Save session
     try{
+      localStorage.setItem('repco_username', found.username);
+      localStorage.setItem('repco_currentRole', (found.role||'admin').toLowerCase());
+      localStorage.setItem('repco_last_activity', String(Date.now()));
+      localStorage.setItem('retail_roster_session_v1', JSON.stringify(found));
+    }catch(e){ console.error('localStorage save failed', e); }
+    
+    if(err){ err.textContent=''; err.style.display='none'; }
+    
+    // Show main
+    try{
+      var lp=document.getElementById('login-page');
+      if(lp) lp.style.display='none';
+      var v65=document.getElementById('repco-v65');
+      if(v65){ v65.style.display='block'; v65.classList.add('show'); }
+      var gh=document.getElementById('global-header');
+      if(gh){ gh.style.display='flex'; gh.classList.add('show'); }
+      if(typeof showMain==='function') showMain();
+      if(typeof setupActivityTracking==='function') setupActivityTracking();
+      if(typeof renderRosterSafe==='function') renderRosterSafe();
+      console.log('Login success', found.username);
+      if(typeof toast==='function') toast('Welcome '+found.username);
+    }catch(e){
+      console.error('Show main failed', e);
+      alert('Login OK but page error: '+e.message);
+      // Force show
       document.getElementById('login-page').style.display='none';
       document.getElementById('repco-v65').style.display='block';
       document.getElementById('repco-v65').classList.add('show');
       document.getElementById('global-header').style.display='flex';
       document.getElementById('global-header').classList.add('show');
-    }catch(e2){}
+    }
+  }catch(e){
+    console.error('doLogin outer error', e);
+    alert('Login error: '+e.message);
   }
 }
 
@@ -6237,35 +6244,57 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 </div>
 
 <script>
-// Simple robust login - Enter + Click
-document.addEventListener('DOMContentLoaded', function(){
-  var form=document.querySelector('.login-form');
-  var userEl=document.getElementById('login-user');
-  var passEl=document.getElementById('login-pass');
-  var btn=document.getElementById('login-signin-btn');
-  if(form){
-    form.addEventListener('submit', function(e){
-      e.preventDefault();
-      doLogin();
-      return false;
-    });
-  }
-  function handleEnter(e){
-    if(e.key==='Enter'){
-      e.preventDefault();
-      doLogin();
+// Bulletproof login handlers
+(function(){
+  function initLogin(){
+    console.log('Init login handlers');
+    var form=document.querySelector('.login-form');
+    var userEl=document.getElementById('login-user');
+    var passEl=document.getElementById('login-pass');
+    var btn=document.getElementById('login-signin-btn');
+    
+    if(form){
+      form.onsubmit=function(e){
+        e.preventDefault();
+        console.log('Form submit');
+        doLogin();
+        return false;
+      };
+    }
+    
+    function onEnter(e){
+      if(e.key==='Enter' || e.keyCode===13){
+        e.preventDefault();
+        console.log('Enter pressed');
+        doLogin();
+      }
+    }
+    
+    if(userEl){
+      userEl.addEventListener('keydown', onEnter);
+      userEl.addEventListener('keypress', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); }});
+    }
+    if(passEl){
+      passEl.addEventListener('keydown', onEnter);
+      passEl.addEventListener('keypress', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); }});
+    }
+    if(btn){
+      btn.onclick=function(e){
+        e.preventDefault();
+        console.log('Button clicked');
+        doLogin();
+        return false;
+      };
     }
   }
-  if(userEl) userEl.addEventListener('keydown', handleEnter);
-  if(passEl) passEl.addEventListener('keydown', handleEnter);
-  if(btn){
-    btn.addEventListener('click', function(e){
-      e.preventDefault();
-      doLogin();
-    });
+  
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', initLogin);
+  } else {
+    initLogin();
   }
-  console.log('Login handlers attached - Enter and Click will work');
-});
+  setTimeout(initLogin, 500);
+})();
 </script>
 
 </body>
