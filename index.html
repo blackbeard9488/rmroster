@@ -1170,34 +1170,7 @@ window.showMain = function(){
   applyRoleVisibility();
 };
 
-let _origOpenPage = window.openPage;
-window.openPage = function(id){
-  let isMgr=isManagerRole(getActualRole());
-  // Block buddies for admin/master/manager
-  if((id==='buddies-today-page-v141' || id==='buddies-tomorrow-page-v141' || id==='mysched-page') && isMgr){
-    toast('Buddies/My Schedule only for employee accounts');
-    return;
-  }
-  // Block admin-only pages for employees
-  if((id==='unavail-page' || id==='options-page' || id==='archive-page' || id==='account-mgmt-page') && !isMgr){
-    toast('Admin only');
-    return;
-  }
-  if(typeof _origOpenPage === 'function') _origOpenPage(id);
-  else {
-    let rv=document.getElementById('repco-v65'); if(rv) rv.classList.remove('show');
-    document.querySelectorAll('.full-page').forEach(e=>{ if(e.id!==id) e.classList.remove('show'); });
-    let el=document.getElementById(id); if(el) el.classList.add('show');
-  }
-  applyRoleVisibility();
-  // Render specific pages
-  if(id==='buddies-today-page-v141') renderBuddies('today');
-  if(id==='buddies-tomorrow-page-v141') renderBuddies('tomorrow');
-  if(id==='mysched-page') renderMySchedule();
-  if(id==='account-page') renderAccountPage();
-};
-
-function isManagerRole(r,u){
+function isManagerRolefunction isManagerRole(r,u){
   r=(r||safeGet('repco_currentRole')||'').toLowerCase();
   u=(u||safeGet('repco_username')||'').toLowerCase();
   // FIXED: role is source of truth, not hardcoded username
@@ -1263,7 +1236,7 @@ function restoreEditDraftIfNeeded(){
 
 function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
 
-async function doLogin(){
+async async function doLogin(){
   console.log('DO LOGIN CALLED');
   try{
     var uEl=document.getElementById('login-user');
@@ -1800,9 +1773,14 @@ function applyAutoGStatus(){
         var fnLower=(st.firstName||'').toLowerCase();
         if(fnLower!=='luke' && fnLower!=='chris' && fnLower!=='christopher') continue;
         if(!st.cellG) st.cellG=[];
+        if(!st.cellGreen) st.cellGreen=[];
         for(var d=0;d<st.shifts.length;d++){
           var sh=st.shifts[d];
           if(!sh) continue;
+          // FIX: Don't auto-apply G if manually marked green (cellGreen) - manual green takes priority
+          if(st.cellGreen[d]){
+            continue;
+          }
           if(isGShift(sh, st.firstName)){
             if(!st.cellG[d]){
               st.cellG[d]=true;
@@ -1814,7 +1792,7 @@ function applyAutoGStatus(){
     }
     if(changed){
       safeSetJSON('retail_roster_byFortnight_v1', fns);
-      console.log('Auto G applied to Luke/Chris');
+      console.log('Auto G applied to Luke/Chris (skipped manual green cells)');
     }
   }catch(e){ console.error('applyAutoGStatus', e); }
 }
@@ -1897,7 +1875,10 @@ function renderRosterSafe(){
           }
         }
         var txt=fmt(disp);
-        if(isG){
+        // FIX: If manually green, keep original shift text, don't show G
+        if(isGreen){
+          // Keep original shift text, just green background
+        } else if(isG){
           txt='G';
           // Keep original shift in title for reference, but display G
         } else if(isAbsentApproved && orig){ txt=fmt(orig)+' AB'; }
@@ -1905,17 +1886,18 @@ function renderRosterSafe(){
         else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
         else if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA'){ txt='UA'; }
         var isG=isGShift(disp, st.firstName) || (st.cellG && st.cellG[idx]);
-        var isG=isGShift(disp, st.firstName) || (st.cellG && st.cellG[idx]);
         var off=['OFF',''].includes((disp||'').toUpperCase().trim()) || (isG && false); var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
         var isUA=['UA','NA','UNAVAILABLE','U'].includes((disp||'').toUpperCase().trim()) || na;
         var cls=''; 
-        if(isG){ 
+        // FIX: Manual green (G typed) takes priority over auto G for Luke/Chris
+        if(isGreen){
+          cls='cell-green';
+        } else if(isG){ 
           cls='cell-g'; 
         } else if(isUA) cls='cell-na'; 
         else if(na) cls='cell-na'; 
         else if(absent) cls='cell-absent'; 
         else if(off) cls='cell-off'; 
-        else if(isGreen) cls='cell-green'; 
         else cls='cell-work';
         var isWeekendCol=isWeekend(cur.dates[idx].day); var weekendClass=''; if(isWeekendCol){ var prevWeekend=idx>0?isWeekend(cur.dates[idx-1].day):false; var nextWeekend=idx<cur.dates.length-1?isWeekend(cur.dates[idx+1].day):false; if(!prevWeekend) /*weekendClass+=' weekend-start'*/; if(!nextWeekend) /*weekendClass+=' weekend-end'*/; cls+=' col-weekend'+weekendClass; }
         var isFull=!isCasual(st); var net; if(isAbsentApproved){ net = isFull ? netH(orig||sh) : 0; } else if(isFull){ if(na){ net=netH(orig||sh); } else { net=netH(sh); } } else { if(na||off||absent){ net=0; } else { net=netH(sh); } }
@@ -3009,13 +2991,14 @@ function forceRefreshCurrentData(){
 
 function openPage(id){
   try{ if(typeof updateActivity==='function') updateActivity(); }catch(e){}
-  // V136: Refresh data on every menu select - no manual browser refresh needed
-  try{ forceRefreshCurrentData(); }catch(e){}
+  // Prevent refresh - stop propagation
+  if(typeof event!=='undefined' && event){ try{ event.preventDefault(); event.stopPropagation(); }catch(e){} }
+  
   var repco=document.getElementById('repco-v65');
   if(repco){ repco.classList.remove('show'); repco.style.display='none'; }
-  document.querySelectorAll('.full-page').forEach(e=>{if(e.id!==id)e.classList.remove('show'); e.style.display='none';});
+  document.querySelectorAll('.full-page').forEach(function(e){if(e.id!==id)e.classList.remove('show'); e.style.display='none';});
   const el=document.getElementById(id);
-  if(el){ el.classList.add('show'); el.style.display='block'; }
+  if(el){ el.classList.add('show'); el.style.display='block'; el.classList.add('active'); }
   var gh=document.getElementById('global-header');
   if(gh){
     gh.style.display='flex';
@@ -3028,39 +3011,40 @@ function openPage(id){
       }
     },10);
   }
-  try{ var gh=document.getElementById('global-header'); if(gh) gh.classList.remove('mobile-open'); var mt=document.getElementById('mobile-menu-toggle'); if(mt) mt.textContent='☰'; }catch(e){}
-  // V136: Always render with latest data after short delay to allow fetch to apply
+  try{ 
+    var gh2=document.getElementById('global-header'); 
+    if(gh2) gh2.classList.remove('mobile-open'); 
+    var mt=document.getElementById('mobile-menu-toggle'); 
+    if(mt) mt.textContent='☰'; 
+  }catch(e){}
+  
+  // Render immediately
+  try{
+    if(id==='options-page') renderOptions();
+    if(id==='today-workers-page') renderTodayWorkers();
+    if(id==='requests-page') renderRequests();
+    if(id==='buddies-today-page-v141') renderBuddies('today');
+    if(id==='buddies-tomorrow-page-v141') renderBuddies('tomorrow');
+    if(id==='mysched-page') renderMySchedule();
+    if(id==='account-page') renderAccountPage();
+    if(id==='hidden-staff-page'){ try{ renderHiddenStaffPage(); }catch(e){} }
+    if(id==='public-holiday-page'){ try{ renderPublicHolidayPage(); }catch(e){} }
+    if(id==='unavail-page') { try{ renderUnavailablePage(); }catch(e){ try{ renderUnavailable(); }catch(e2){} } }
+    if(id==='account-mgmt-page') renderAccountMgmtPage();
+    if(id==='archive-page') renderArchivePage();
+    if(id==='import-export-page') renderImportExportPage();
+  }catch(e){ console.error('openPage render error', e); }
+  
   setTimeout(function(){
     try{
       if(id==='options-page') renderOptions();
-      if(id==='today-workers-page') renderTodayWorkers();
       if(id==='requests-page') renderRequests();
-      if(id==='buddies-today-page-v141') renderBuddies('today');
-      if(id==='buddies-tomorrow-page-v141') renderBuddies('tomorrow');
       if(id==='mysched-page') renderMySchedule();
       if(id==='account-page') renderAccountPage();
-      if(id==='hidden-staff-page'){ try{ renderHiddenStaffPage(); }catch(e){ console.error('hidden staff page', e); } }
-      if(id==='public-holiday-page'){ try{ renderPublicHolidayPage(); }catch(e){ console.error('public holiday page', e); } }
-      if(id==='unavail-page') { try{ renderUnavailablePage(); }catch(e){ try{ renderUnavailable(); }catch(e2){} } }
-      if(id==='account-mgmt-page') renderAccountMgmtPage();
-      if(id==='archive-page') renderArchivePage();
-      if(id==='import-export-page') renderImportExportPage();
-    }catch(e){ console.error('openPage render error', e); }
+    }catch(e){}
   }, 200);
-  // Also render immediately for instant feedback
-  if(id==='options-page') renderOptions();
-  if(id==='today-workers-page') renderTodayWorkers();
-  if(id==='requests-page') renderRequests();
-  if(id==='buddies-today-page-v141') renderBuddies('today');
-  if(id==='buddies-tomorrow-page-v141') renderBuddies('tomorrow');
-  if(id==='mysched-page') renderMySchedule();
-  if(id==='account-page') renderAccountPage();
-  if(id==='hidden-staff-page'){ try{ renderHiddenStaffPage(); }catch(e){ console.error('hidden staff page', e); } }
-  if(id==='public-holiday-page'){ try{ renderPublicHolidayPage(); }catch(e){ console.error('public holiday page', e); } }
-  if(id==='unavail-page') { try{ renderUnavailablePage(); }catch(e){ try{ renderUnavailable(); }catch(e2){} } }
-  if(id==='account-mgmt-page') renderAccountMgmtPage();
-  if(id==='archive-page') renderArchivePage();
-  if(id==='import-export-page') renderImportExportPage();
+  
+  try{ if(typeof applyRoleVisibility==='function') applyRoleVisibility(); }catch(e){}
 }
 function showMain(){
   try{
@@ -6546,29 +6530,39 @@ function applyRoleVisibility(){
     }
   }catch(e){}
   var actualRole=getActualRole(); var isMgr=isManagerRole(actualRole);
-  // Keep archive hidden as requested earlier, but keep hidden staff visible for admin
+  
+  // HIDE ARCHIVE, HIDDEN STAFF, PUBLIC HOLIDAY from main menu bar for ALL - per request
+  var alwaysHiddenIds=['btn-archive','btn-hidden','btn-public-holiday'];
+  
   var archiveBtn=document.getElementById('btn-archive'); if(archiveBtn){ archiveBtn.style.display='none'; }
-  document.querySelectorAll('.r-btn-consistent').forEach(function(btn){ if(btn.textContent.trim().toUpperCase()==='ARCHIVE'){ btn.style.display='none'; } });
-  // Admin sees: roster, requests, staff unavailable, options, hidden staff. Hides today/tomorrow/mysched/archive
-  // Staff sees: today, tomorrow, mysched, requests, account, roster
-  var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive']; // public holiday visible for admin
-  var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday'];
+  document.querySelectorAll('.r-btn-consistent').forEach(function(btn){ 
+    var t=btn.textContent.trim().toUpperCase();
+    if(t==='ARCHIVE' || t==='HIDDEN STAFF' || t==='PUBLIC HOLIDAYS'){ btn.style.display='none'; } 
+  });
+  
+  // Admin sees: roster, requests, staff unavailable, options
+  // Staff sees: today, tomorrow, mysched, account, roster
+  var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive','btn-hidden','btn-public-holiday'];
+  var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday','btn-requests'];
   var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster'];
+  
   allIds.forEach(function(id){
     var el=document.getElementById(id);
     if(!el) return;
-    if(id==='btn-archive'){ el.style.display='none'; return; }
+    if(alwaysHiddenIds.includes(id)){ el.style.display='none'; return; }
     if(isMgr){
-      if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; if(id==='btn-hidden'){ el.style.background='#111'; el.style.color='#fff'; } }
+      if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
     } else {
       if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
     }
   });
+  
   var delBtn=document.getElementById('delete-roster-btn'); if(delBtn) delBtn.style.display = isMgr ? 'inline-block' : 'none';
   var importBtn=document.getElementById('btn-import'); var csvBtn=document.getElementById('btn-export-csv'); var pdfBtn=document.getElementById('btn-export-pdf');
   if(importBtn) importBtn.style.display = isMgr ? 'inline-block' : 'none';
   if(csvBtn) csvBtn.style.display = isMgr ? 'inline-block' : 'none';
   if(pdfBtn) pdfBtn.style.display = isMgr ? 'inline-block' : 'none';
+  
   try{
     var hrsCols=document.querySelectorAll('.r-table th:last-child, .r-table td.hrs');
     if(!isMgr){
@@ -6577,8 +6571,6 @@ function applyRoleVisibility(){
       hrsCols.forEach(function(el){ el.style.display=''; });
     }
   }catch(e){}
-
-  try{ var phBtn=document.getElementById('btn-public-holiday'); if(phBtn){ var role=getActualRole(); var isAdmin=isManagerRole(role)||isAdminUser(); phBtn.style.display=isAdmin?'':'none'; } }catch(e){}
 }
 
 
