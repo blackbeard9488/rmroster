@@ -6793,7 +6793,6 @@ function exportPDF_fallback(){
     toast('PDF exported (fallback)'); 
   }catch(e){ toast('PDF error: '+e.message); }
 }
-function showCustomConfirm(title, body, cb){
 function showCustomConfirm(title, body, cb){ const modal=document.getElementById('custom-modal'); const t=document.getElementById('custom-modal-title'); const b=document.getElementById('custom-modal-body'); const ok=document.getElementById('custom-modal-ok'); const cancel=document.getElementById('custom-modal-cancel'); t.textContent=title; b.innerHTML='<div style="font-size:13px">'+(body||'')+'</div>'; ok.textContent='CONFIRM'; cancel.style.display='block'; cancel.textContent='CANCEL'; modal.classList.add('show'); function cleanup(){ modal.classList.remove('show'); ok.onclick=null; cancel.onclick=null; } ok.onclick=()=>{ cleanup(); cb(true); }; cancel.onclick=()=>{ cleanup(); cb(false); }; }
 function showCustomPrompt(title, bodyHtml, cb){ const modal=document.getElementById('custom-modal'); const t=document.getElementById('custom-modal-title'); const b=document.getElementById('custom-modal-body'); const ok=document.getElementById('custom-modal-ok'); const cancel=document.getElementById('custom-modal-cancel'); t.textContent=title; b.innerHTML=bodyHtml; ok.textContent='SAVE'; cancel.style.display='block'; cancel.textContent='CANCEL'; modal.classList.add('show'); function cleanup(){ modal.classList.remove('show'); ok.onclick=null; cancel.onclick=null; } ok.onclick=()=>{ cleanup(); cb(true); }; cancel.onclick=()=>{ cleanup(); cb(false); }; }
 
