@@ -683,7 +683,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V158_NOTIFICATIONS_PERSIST_AFTER_LOGOUT";
+const BUILD_ID="20261022_V160_FIX_HIDDEN_PILL_PASSWORDS_ALL_USERS";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1440,12 +1440,22 @@ async function sendRosterPushNotification(targetUsername, title, body) {
 // Poll for push notifications (fallback when FCM not available, works with SW)
 setInterval(async function() {
   try {
-    let username = safeGet('repco_username') || safeGet('repco_last_username');
+    let currentUsername = safeGet('repco_username');
+    let username = currentUsername || safeGet('repco_last_username');
     if (!username) return;
-    // FIXED V157: Poll for notifications even when logged out, using last username
-    const isLoggedOut = !safeGet('repco_username');
+    // FIXED V158: If logged in, poll ONLY for current user (latest employee). If logged out, poll for last user.
+    // This prevents notifying first employee when second employee logged in on same device
+    const isLoggedOut = !currentUsername;
     if(isLoggedOut){
-      console.log('Polling notifications for logged out user:', username);
+      console.log('Polling notifications for logged out user (single device, last user):', username);
+    } else {
+      // When logged in, username is current user only - previous user's notifications won't show
+      if(safeGet('repco_last_username') && safeGet('repco_last_username')!==currentUsername){
+        // Same device had different user before - ensure we don't poll for old user
+        console.log('Polling for current user only:', currentUsername, '(previous was', safeGet('repco_last_username'), 'but now cleared to current)');
+        // Update last_username to current to prevent confusion
+        try{ safeSet('repco_last_username', currentUsername); }catch(e){}
+      }
     }
     if (Notification.permission !== 'granted') return;
     
@@ -2022,15 +2032,35 @@ async function doLogin(){
     console.log('Login found', found.username, found.role);
     
     try{
+      var previousLastUser = '';
+      try{ previousLastUser = safeGet('repco_last_username')||''; }catch(e){}
+      var currentUserBeforeLogin = safeGet('repco_username')||'';
+      
       localStorage.setItem('repco_username', found.username);
-      localStorage.setItem('repco_currentRole', (found.role||'staff').toLowerCase());
+      localStorage.setItem('repco_currentRole', (found.role||'').toLowerCase());
       localStorage.setItem('repco_last_activity', String(Date.now()));
       localStorage.setItem('retail_roster_session_v1', JSON.stringify(found));
+      try{ localStorage.setItem('repco_last_username', JSON.stringify(found.username)); }catch(e){ try{ localStorage.setItem('repco_last_username', found.username); }catch(e2){} }
       // Also safeSet if exists
       if(typeof safeSet==='function'){
         try{ safeSet('repco_username', found.username); }catch(e){}
+        try{ safeSet('repco_last_username', found.username); }catch(e){}
         try{ safeSetJSON('retail_roster_session_v1', found); }catch(e){}
       }
+      
+      // FIXED V159: Same device switch - only latest user gets notifications
+      if(currentUserBeforeLogin && currentUserBeforeLogin.toLowerCase()!==found.username.toLowerCase()){
+        console.log('Different user login on same device: '+currentUserBeforeLogin+' -> '+found.username+' - notifications now for '+found.username+' only');
+      }
+      try{
+        var fcmToken = safeGet('repco_fcm_token')||'';
+        if(fcmToken && db && db.ref){
+          db.ref('fcm_tokens/'+found.username).set({token: fcmToken, username: found.username, ts: Date.now()});
+          if(previousLastUser && previousLastUser!==found.username){
+            try{ db.ref('fcm_tokens/'+previousLastUser).remove(); }catch(e){}
+          }
+        }
+      }catch(e){}
     }catch(e){ console.error('Save session failed', e); }
     
     if(err){ err.textContent=''; err.style.display='none'; }
@@ -2208,6 +2238,40 @@ function seedIfEmpty(){
       }catch(e){}
       return true;
     }).map(s=>({...s,shifts:Array(14).fill('OFF'),originalShifts:{},absentApproved:{},cellGreen:{},unavailable:Array(14).fill(false)}));
+    // FIXED V160: Auto-create user accounts from roster staff if not exist
+    try{
+      var rosterUsers = users.slice();
+      var existingUsernames = {};
+      rosterUsers.forEach(function(u){ if(u.username) existingUsernames[u.username.toLowerCase()]=true; });
+      var createdCount = 0;
+      fullStaff.forEach(function(s){
+        var baseUsername = (s.firstName||'').toLowerCase();
+        if(!baseUsername) return;
+        // Skip if username exists
+        if(existingUsernames[baseUsername]) return;
+        // Skip Michaels - they have special usernames
+        if(s.firstName==='Michael' && (s.lastName==='BLAIK' || s.lastName==='EVANS')) return;
+        // Create user account
+        var newUser = {
+          username: baseUsername,
+          password: s.firstName||baseUsername,
+          firstName: s.firstName,
+          lastName: s.lastName,
+          role: 'staff',
+          employmentType: s.employmentType||'casual',
+          isHidden: false
+        };
+        rosterUsers.push(newUser);
+        existingUsernames[baseUsername]=true;
+        createdCount++;
+      });
+      if(createdCount>0){
+        console.log('Auto-created', createdCount, 'user accounts from roster staff');
+        users = rosterUsers;
+        safeSetJSON('retail_roster_users_v1',users);
+      }
+    }catch(e){ console.error('Auto-create users error', e); }
+    
     
 
 function datesFrom(startStr){
@@ -2599,6 +2663,8 @@ function isRosterEditing(){
   return false;
 }
 function renderRosterSafe(){
+ try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){ console.log('populate error', e); }
+
   try{
     if(isRosterEditing()){
       console.log('renderRosterSafe skipped - editing active');
@@ -4334,11 +4400,17 @@ function sendApprovalNotification(employeeName, type, details, fullRequest){
 
 function checkAndShowNotifications(){
   try{
-    let myUsername = safeGet('repco_username') || safeGet('repco_last_username');
+    // FIXED V158: If logged in, ONLY show notifications for current user, not previous user on same device
+    let currentUsername = safeGet('repco_username');
+    let myUsername = currentUsername || safeGet('repco_last_username');
     if(!myUsername) return;
-    const wasLoggedOut = !safeGet('repco_username');
+    const wasLoggedOut = !currentUsername;
     if(wasLoggedOut){
-      console.log('Checking notifications for logged out user:', myUsername, '- notifications still active');
+      console.log('Checking notifications for logged out user:', myUsername, '- notifications still active (single device, last user only)');
+    } else {
+      // Logged in - ensure we only show for current user, not previous last user
+      // myUsername is already currentUsername in this case
+      console.log('Checking notifications for logged in user:', myUsername);
     }
     const notifs = safeGetJSON('repco_notifications_v1',[]);
     const myNotifs = notifs.filter(n => 
@@ -5219,6 +5291,7 @@ function adminSetAllPasswordsToFirstname(){
       var excludedFirstLast=[{first:'Michael',last:'BLAIK'},{first:'Michael',last:'EVANS'}];
       var changed=0;
       var skipped=[];
+      console.log('Setting all passwords to firstname, users:', users.length, 'hidden:', Object.keys(hiddenUsernames).length);
       for(var i=0;i<users.length;i++){
         var u=users[i];
         if(!u || !u.username) continue;
@@ -5705,7 +5778,36 @@ function renderHiddenStaffPage(){
       return;
     }
     var hidden=[];
-    try{ hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]); }catch(e){ hidden=[]; }
+    try{ 
+      hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]); 
+      // FIXED V160: Also check old keys for hidden employee data
+      if(!hidden || hidden.length===0){
+        var oldHidden = safeGetJSON('retail_roster_hidden_v1',[]);
+        var oldHiddenShifts = safeGetJSON('retail_roster_hidden_shifts_v1',{});
+        if(oldHidden && oldHidden.length>0){
+          console.log('Migrating old hidden data:', oldHidden);
+          // Convert old format (array of names) to new format (array of objects)
+          if(typeof oldHidden[0]==='string'){
+            hidden = oldHidden.map(function(name){
+              var parts = name.split(' ');
+              var first = parts[0]||name;
+              var last = parts.slice(1).join(' ')||'';
+              var shifts = [];
+              try{
+                if(oldHiddenShifts[name]) shifts = oldHiddenShifts[name];
+                else if(oldHiddenShifts[first]) shifts = oldHiddenShifts[first];
+                else shifts = Array(14).fill('OFF');
+              }catch(e){ shifts = Array(14).fill('OFF'); }
+              return {firstName: first, lastName: last, username: first.toLowerCase(), type: 'casual', shifts: shifts, constantAcrossRosters: false, createdTs: Date.now()};
+            });
+            safeSetJSON('retail_roster_hidden_staff_v1', hidden);
+            console.log('Migrated', hidden.length, 'hidden staff from old format');
+          } else {
+            hidden = oldHidden;
+          }
+        }
+      }
+    }catch(e){ console.error('Hidden staff load error', e); hidden=[]; }
     if(!Array.isArray(hidden)) hidden=[];
     console.log('Hidden staff count:', hidden.length, hidden);
     var html='<div class="card" style="padding:8px;background:#B6F7C5;border:2px solid #111;font-size:10px">Total hidden staff: '+hidden.length+'</div>';
