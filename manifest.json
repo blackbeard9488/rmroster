@@ -1,13 +1,18 @@
 {
   "name": "REPCO Roster - ALPHA",
   "short_name": "REPCO Roster",
-  "description": "REPCO Roster",
-  "start_url": "./",
+  "description": "REPCO Roster - Staff scheduling",
+  "start_url": "./?v=175",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#111",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "background_color": "#111111",
   "theme_color": "#E30613",
   "orientation": "portrait",
+  "categories": ["business", "productivity"],
+  "lang": "en-AU",
+  "dir": "ltr",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "./icon-192.png",
@@ -32,6 +37,13 @@
       "sizes": "2000x2000",
       "type": "image/png",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Today's Roster",
+      "url": "./?today=1",
+      "description": "View today's roster"
     }
   ]
 }

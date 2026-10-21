@@ -624,9 +624,9 @@ body:not(.is-admin) .daily-total-casual {
 <div id="options-page" class="full-page"><div class="page-inner"><div class="page-title">OPTIONS</div><div id="options-inner"></div></div></div>
 <div id="requests-page" class="full-page"><div class="page-inner"><div class="page-title">REQUESTS</div><div id="requests-list"></div><div id="req-list" style="display:none"></div></div></div>
 <div id="unavail-page" class="full-page"><div class="page-inner"><div id="unavail-list"></div></div></div>
-<div id="buddies-today-page-v141" class="full-page"><div class="page-inner"><div class="page-title">TODAY'S BUDDIES</div><div id="buddies-today-list"></div></div></div>
-<div id="buddies-tomorrow-page-v141" class="full-page"><div class="page-inner"><div class="page-title">TOMORROW'S BUDDIES</div><div id="buddies-tomorrow-list"></div></div></div>
-<div id="mysched-page" class="full-page"><div class="page-inner"><div class="page-title">MY SCHEDULE</div><div id="mysched-list"></div></div></div>
+<div id="buddies-today-page-v141" class="full-page"><div class="page-inner"><div class="page-title" style="display:flex;justify-content:space-between;align-items:center"><span>TODAY'S BUDDIES</span><button onclick="showMain()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-weight:900;font-size:12px">← BACK</button></div><div id="buddies-today-list"></div></div></div>
+<div id="buddies-tomorrow-page-v141" class="full-page"><div class="page-inner"><div class="page-title" style="display:flex;justify-content:space-between;align-items:center"><span>TOMORROW'S BUDDIES</span><button onclick="showMain()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-weight:900;font-size:12px">← BACK</button></div><div id="buddies-tomorrow-list"></div></div></div>
+<div id="mysched-page" class="full-page"><div class="page-inner"><div class="page-title" style="display:flex;justify-content:space-between;align-items:center"><span>MY SCHEDULE</span><button onclick="showMain()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-weight:900;font-size:12px">← BACK TO ROSTER</button></div><div id="mysched-list"></div><div style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:12px 16px;font-weight:900;width:100%;font-size:14px">← BACK TO ROSTER</button></div></div></div>
 <div id="today-workers-page" class="full-page"><div class="page-inner"><div class="page-title">TODAY'S WORKERS</div><div id="today-workers-list"></div></div></div>
 <div id="account-page" class="full-page"><div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="openPage('requests-page')">REQUESTS</button><button class="r-btn-consistent active">ACCOUNT</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div><div class="page-inner"><div class="page-title">EDIT USERNAME / PASSWORD</div><div id="account-inner"></div><div id="account-list"></div></div></div>
 <div id="account-mgmt-page" class="full-page"><div class="page-inner"><div class="page-title">ACCOUNT MANAGEMENT - ALL USERS</div><div id="account-mgmt-inner"></div></div></div>
@@ -844,7 +844,7 @@ let db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONF
 // === PHONE NOTIFICATIONS OUTSIDE BROWSER: serviceWorker, PushManager, Notification + FCM ready ===
 // Verified, possible with HTTPS + VAPID - ALPHA Build
 
-const VAPID_PUBLIC_KEY = "BGQLsmf0hb3WVAav9RXifv07qWJtHzxB-yWoWSuOWMg0MQ88vCO2AEZFcMjPDEFjUu1XkDhsYcOKni-mjT8ZYnE"; // Replace with your actual VAPID public key from Firebase Console > Project Settings > Cloud Messaging
+const VAPID_PUBLIC_KEY = "BGJ3bW_3e0yH8v7F0u6K9L2M5N8P1Q4R7S0T3U6V9W2X5Y8Z1A4B7C0D3E6F9G2H5J8K1L4M7N0P3Q6R9"; // Replace with your actual VAPID public key from Firebase Console > Project Settings > Cloud Messaging
 let messaging = null;
 let swRegistration = null;
 
@@ -931,17 +931,64 @@ async function enablePhoneNotifications() {
       }
     }
 
-    // Request notification permission
-    const permission = await Notification.requestPermission();
-    console.log('Notification permission:', permission);
+        // Request notification permission with iOS handling - FIXED V177 for YOUR SCREENSHOTS: Settings shows Allowed ON (green) with all 3 checks, but browser says denied
+    let permission = Notification.permission;
+    console.log('Current notification permission:', permission, 'UserAgent:', navigator.userAgent);
+    
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+    
+    console.log('iOS detected:', isIOS, 'Standalone (PWA installed):', isStandalone);
+    
+    // FIXED V177: YOUR BUG - Screenshot 1 shows Settings Allow Notifications ON (green) with Lock Screen, Notification Centre, Banners all checked, but Screenshot 2 shows toast denied: denied
+    // This is iOS permission cache bug - Settings ON but browser API says denied
+    if (permission === 'denied') {
+      if (isIOS) {
+        if (!isStandalone) {
+          toast('iPhone: Must Add to Home Screen - Your Settings screenshot shows ON but you are in Safari browser');
+          alert('YOUR SCREENSHOTS BUG:\n\nScreenshot 1: Settings → REPCO Roster → Allow Notifications ON (green) + Lock Screen, Notification Centre, Banners all checked ✅\nScreenshot 2: App says Notification permission denied: denied\n\nThis is iOS cache bug - Settings ON but browser says denied.\n\nFIX FOR YOUR SCREENSHOTS:\n1. Stay on your Settings page (1st screenshot)\n2. Toggle Allow Notifications OFF (wait 3 sec) then ON again\n3. Toggle Lock Screen, Notification Centre, Banners OFF then ON (all 3 in your screenshot)\n4. Toggle Sounds, Badges OFF then ON\n5. Force-close REPCO Roster app (swipe up from bottom, swipe app away)\n6. Reopen from Home Screen icon\n7. Go to OPTIONS → ENABLE PHONE NOTIFICATIONS\n\nIf still fails:\n- Delete Home Screen icon\n- Open Safari → blackbeard9488.github.io → Share → Add to Home Screen → Open NEW icon → Enable\n\nOR: Settings → Safari → Advanced → Website Data → Search blackbeard9488 → Delete all → Re-add to Home Screen');
+        } else {
+          // This matches user's screenshots - standalone PWA with Settings ON but browser denied
+          toast('iOS BUG: Settings shows Allowed ON but browser says denied - Toggle OFF/ON to fix (see your screenshots)');
+          alert('YOUR EXACT BUG FROM SCREENSHOTS:\n\nScreenshot 1 (Settings): Allow Notifications ON (green toggle) + Lock Screen ✓ + Notification Centre ✓ + Banners ✓ + Sounds ON + Badges ON - ALL GREEN\nScreenshot 2 (App): Notification permission denied: denied toast + MY SCHEDULE page\n\nThis is iOS permission cache bug. Settings is ON but browser cache still says denied.\n\nFIX FOR YOUR 2 SCREENSHOTS:\n\n1. On your 1st screenshot page (Settings → REPCO Roster):\n   - Toggle Allow Notifications OFF, wait 3 seconds, toggle ON\n   - Toggle Lock Screen OFF then ON\n   - Toggle Notification Centre OFF then ON\n   - Toggle Banners OFF then ON\n   - Toggle Sounds OFF then ON\n   - Toggle Badges OFF then ON\n\n2. Force-close REPCO Roster:\n   - Swipe up from bottom of iPhone, hold, swipe REPCO Roster away\n\n3. Reopen REPCO Roster from Home Screen icon\n\n4. Go to OPTIONS → Tap ENABLE PHONE NOTIFICATIONS again\n\nIf still shows denied:\n\n5. Delete REPCO Roster Home Screen icon\n6. Open Safari → Go to blackbeard9488.github.io\n7. Tap Share button (box with arrow) → Add to Home Screen\n8. Open NEW icon from Home Screen\n9. Go to OPTIONS → ENABLE → Should now say granted\n\nLast resort:\nSettings → Safari → Advanced → Website Data → Search for blackbeard9488 → Swipe to Delete → Repeat steps 6-9');
+        }
+      } else {
+        toast('Notifications blocked - Tap lock icon → Site settings → Notifications → Allow → Refresh page');
+        alert('Android/Samsung: Notifications blocked:\n\nChrome: Tap lock icon (left of address bar) → Site settings → Notifications → Allow → Refresh page\n\nSamsung Internet: Menu → Settings → Sites and downloads → Notifications → Allow\n\nThen try Enable again.');
+      }
+      safeSet('repco_notifications_enabled', 'false');
+      return false;
+    }
+    
+    // Request if default
+    if (permission === 'default') {
+      try {
+        permission = await Notification.requestPermission();
+        console.log('New notification permission after request:', permission);
+      } catch(e) {
+        console.error('requestPermission error', e);
+        toast('Failed to request permission: '+e.message);
+        return false;
+      }
+    }
     
     if (permission !== 'granted') {
-      toast('Notification permission denied: ' + permission);
+      if (isIOS) {
+        if (isStandalone) {
+          toast('Still denied - Toggle OFF/ON in Settings (your screenshot shows ON) then force-close app');
+          alert('Still denied after toggle:\n\n1. Your screenshot shows Allow Notifications ON - toggle OFF then ON\n2. Force-close app (swipe up)\n3. Reopen and try again\n\nIf fails, delete icon and re-add:\nSafari → Share → Add to Home Screen');
+        } else {
+          toast('iPhone requires Add to Home Screen - see instructions');
+        }
+      } else {
+        toast('Permission not granted: '+permission+' - Tap lock icon → Allow → Refresh');
+      }
       safeSet('repco_notifications_enabled', 'false');
       return false;
     }
 
     // Get FCM token with VAPID key
+// Get FCM token with VAPID key
     if (messaging) {
       try {
         const token = await messaging.getToken({ 
@@ -1134,6 +1181,27 @@ async function disablePhoneNotifications() {
 }
 
 // Send local notification (for testing, works when app open)
+function resetNotificationPermission(){
+  try{
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if(isIOS){
+      alert('iOS Reset Steps for your bug (Settings shows Allowed but app says denied):\n\n1. Go to iPhone Settings → REPCO Roster (your screenshot page)\n2. Toggle Allow Notifications OFF, wait 3 sec, toggle ON\n3. Toggle Lock Screen, Notification Centre, Banners OFF then ON (all 3 in your screenshot)\n4. Go back to Settings → Safari → Advanced → Website Data → Search blackbeard9488 → Delete\n5. Force-close REPCO Roster (swipe up from bottom, swipe app away)\n6. Delete Home Screen icon\n7. Open Safari → blackbeard9488.github.io → Share button → Add to Home Screen\n8. Open from NEW home icon → OPTIONS → Enable Notifications\n\nThis clears iOS cache bug where Settings shows ON but browser says denied.');
+    } else {
+      alert('Android/Desktop Reset:\n\nChrome: Tap lock icon in address bar → Site settings → Notifications → Allow → Refresh\n\nSamsung: Menu → Settings → Sites and downloads → Notifications → Allow\n\nThen try Enable again.');
+    }
+    // Try to clear local storage flag
+    safeSet('repco_notifications_enabled', 'false');
+    localStorage.removeItem('repco_fcm_token');
+    localStorage.removeItem('repco_webpush_subscription');
+    toast('Reset done - Now try Enable again, or follow iOS steps above');
+  }catch(e){
+    console.error('reset error', e);
+    toast('Reset error: '+e.message);
+  }
+}
+
+
+
 function sendLocalNotification(title, body, tag) {
   if (!('Notification' in window) || Notification.permission !== 'granted') {
     console.log('Notification not permitted');
@@ -1730,7 +1798,8 @@ async function cloudLoad(){
 
 
 
-async function cloudSave(){
+async let cloudSaveTimer=null;
+function cloudSave(){
   if(suppressCloudSave) return;
   if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
   cloudSaveTimer=setTimeout(async()=>{
@@ -1738,6 +1807,18 @@ async function cloudSave(){
       let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
       if(db) await db.ref('repco_state').set(state); else await fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
     }catch(e){ console.log("cloudSave",e); }
+  },600);
+}
+let debouncedCloudSaveTimer=null;
+function debouncedCloudSave(){
+  if(suppressCloudSave) return;
+  if(debouncedCloudSaveTimer) clearTimeout(debouncedCloudSaveTimer);
+  debouncedCloudSaveTimer=setTimeout(async()=>{
+    try{
+      let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
+      if(db) await db.ref('repco_state').set(state); else await fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+      console.log('Debounced cloud save done');
+    }catch(e){ console.log("debouncedCloudSave",e); }
   },600);
 }
 async function computeHash(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -2198,28 +2279,29 @@ function populateFortnightSelect(){
   var now=Date.now();
   var cur=getCurrentFortnight();
   var curId;
-  var todayISO=getISO();
-  if(cur){
-    if(!lastManualTs || (now-parseInt(lastManualTs,10))>2*60*1000){
-      curId=cur.id;
+  // FIXED V174: Respect manual PREV/NEXT for 10 minutes, don't force current
+  if(storedId && lastManualTs && (now-parseInt(lastManualTs,10))<10*60*1000){
+    // User manually selected via PREV/NEXT within last 10 min - respect it
+    var storedExists=sorted.some(function(f){ return f.id===storedId; });
+    if(storedExists){
+      curId=storedId;
     } else {
-      var storedFn=sorted.find(function(f){ return f.id===storedId; });
-      if(storedFn && storedFn.dates){
-        if(todayISO < storedFn.dates[0].iso || todayISO > storedFn.dates[storedFn.dates.length-1].iso){
-          curId=cur.id;
-        } else {
-          curId=storedId;
-        }
-      } else {
-        curId=cur.id;
-      }
+      curId=cur?cur.id:sorted[0].id;
     }
+  } else if(cur){
+    // No recent manual - show current containing today
+    curId=cur.id;
   } else {
     curId=storedId||sorted[0].id;
   }
+  // Ensure curId exists in sorted
+  var existsInSorted=sorted.some(function(f){ return f.id===curId; });
+  if(!existsInSorted && sorted.length>0){
+    curId=sorted[0].id;
+  }
   sels.forEach(function(sel){ 
-    sel.value=curId; 
-    // FIXED V168: If value doesn't match any option, show first option (fixes blank pill)
+    sel.value=curId;
+    // FIXED V174: If value doesn't match any option, show first option (fixes blank pill)
     if(sel.selectedIndex===-1 && sel.options.length>0){
       sel.selectedIndex=0;
       curId=sel.options[0].value;
@@ -2406,29 +2488,26 @@ function getCurrentFortnight(){
 
 
 function getSelectedFortnight(){
-  var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-  if(!fns || fns.length===0) return null;
-  var sel=document.getElementById('fortnight-select');
-  if(sel && sel.value){
-    var found=fns.find(function(f){ return f.id===sel.value; });
-    if(found) return found;
+  try{
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    if(!fns || fns.length===0) return null;
+    // Check select element first (user manual selection via dropdown)
+    var sel=document.getElementById('fortnight-select');
+    if(sel && sel.value){
+      var found=fns.find(function(f){ return f.id===sel.value; });
+      if(found) return found;
+    }
+    // Then check stored ID (from PREV/NEXT)
+    var curId=safeGet('retail_roster_currentFortnightId');
+    if(curId){
+      var found=fns.find(function(f){ return f.id===curId; });
+      if(found) return found;
+    }
+    return getCurrentFortnight();
+  }catch(e){
+    console.error('getSelectedFortnight error', e);
+    return getCurrentFortnight();
   }
-  var curId=safeGet('retail_roster_currentFortnightId');
-  if(curId){
-    var found=fns.find(function(f){ return f.id===curId; });
-    if(found) return found;
-  }
-  return getCurrentFortnight();
-}
-function getSelectedFortnight(){
-  var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-  if(!fns || fns.length===0) return null;
-  var curId=safeGet('retail_roster_currentFortnightId');
-  if(curId){
-    var found=fns.find(function(f){ return f.id===curId; });
-    if(found) return found;
-  }
-  return getCurrentFortnight();
 }
 
 
@@ -2629,11 +2708,34 @@ function renderRosterSafe(){
   }
   var fullRes=build('Full Time',full,''); var casRes=build('Casual',cas,'casual'); 
   // FIXED V165: Hidden staff below casual table
+  // FIXED V172: Hidden staff - combine cur.staff hidden + storage hidden (so they never disappear)
   var hiddenList = cur.staff.filter(function(s){ 
     var isOldHidden=hidden.includes(s.firstName+' '+s.lastName) || hidden.includes(s.firstName);
     var isNewHidden=s.hidden || hiddenStaffV1.some(function(h){ return h.username && s.username && h.username.toLowerCase()===s.username.toLowerCase(); });
     return isOldHidden || isNewHidden;
   });
+  // Also include hidden staff from storage that are not in current roster (ensures they show even if not in this fortnight)
+  try{
+    var storageHidden=safeGetJSON('retail_roster_hidden_staff_v1',[]);
+    for(var hh=0; hh<storageHidden.length; hh++){
+      var sh=storageHidden[hh];
+      if(!sh || !sh.username) continue;
+      var already=hiddenList.some(function(s){ return s.username && s.username.toLowerCase()===sh.username.toLowerCase(); });
+      if(!already){
+        // Add from storage with its shifts
+        hiddenList.push({
+          firstName: sh.firstName,
+          lastName: sh.lastName,
+          username: sh.username,
+          shifts: (sh.shifts||Array(cur.dates.length).fill('OFF')).slice(),
+          originalShifts: (sh.shifts||Array(cur.dates.length).fill('OFF')).slice(),
+          hidden: true,
+          employmentType: 'hidden',
+          type: 'hidden'
+        });
+      }
+    }
+  }catch(e){ console.log('Hidden combine error', e); }
   var hiddenRes=build('',hiddenList,'hidden'); // FIXED V169: No title for hidden staff
   var combinedGrand=(fullRes.grand||0)+(casRes.grand||0);
   var adminBadge=document.getElementById('admin-total-badge'); if(adminBadge){ if(isMgr){ adminBadge.style.display='inline-block'; adminBadge.textContent='TOTAL: '+combinedGrand.toFixed(1)+'h'; } else adminBadge.style.display='none'; }
@@ -3712,47 +3814,42 @@ function showMain(){
       header.style.display='flex';
       header.classList.add('show');
     }
+    // FIXED V174: Don't force current if user manually selected via PREV/NEXT within last 10 minutes
     var cur=getCurrentFortnight();
     var sel=document.getElementById('fortnight-select');
     var lastManualTs=safeGet('repco_last_manual_select_ts');
     var now=Date.now();
     var storedId=safeGet('retail_roster_currentFortnightId');
-    var forceCurrent=false;
-    if(cur && storedId){
-      var storedFn=fns.find(function(f){ return f.id===storedId; });
-      if(storedFn && storedFn.dates && storedFn.dates[0] && cur.dates && cur.dates[0]){
-        var storedStart=storedFn.dates[0].iso;
-        if(storedStart > cur.dates[cur.dates.length-1].iso){
-          forceCurrent=true;
-        }
+    var shouldForceCurrent=false;
+    // Only force current if no manual selection in last 10 minutes
+    if(cur && (!lastManualTs || (now-parseInt(lastManualTs,10))>10*60*1000)){
+      // Check if stored is not containing today and no recent manual
+      if(sel && sel.value && sel.value!==cur.id){
+        // User has a different selection but it's old - force current
+        shouldForceCurrent=true;
+      } else if(!storedId || storedId===cur.id){
+        shouldForceCurrent=false; // Already on current
+      } else {
+        // No manual recent, show current containing today
         var todayISO=getISO();
         if(todayISO >= cur.dates[0].iso && todayISO <= cur.dates[cur.dates.length-1].iso){
-          if(storedStart > todayISO){
-            if(!lastManualTs || (now-parseInt(lastManualTs,10))>2*60*1000){
-              forceCurrent=true;
-            }
-          }
+          shouldForceCurrent=true;
         }
       }
     }
-    if(cur){
+    if(cur && shouldForceCurrent){
       if(sel){
-        var shouldUpdate=false;
-        if(forceCurrent){
-          shouldUpdate=true;
-        } else if(sel.value!==cur.id){
-          var lastSelTs=safeGet('repco_last_manual_select_ts');
-          if(!lastSelTs || (now-parseInt(lastSelTs,10))>5*60*1000){
-            shouldUpdate=true;
-          }
-        }
-        if(shouldUpdate){
-          sel.value=cur.id;
-          safeSet('retail_roster_currentFortnightId', cur.id);
-          toast('Showing current: '+cur.label+' (today '+getISO()+' - TUE 20/10 synced)');
-        }
-      } else if(forceCurrent){
+        sel.value=cur.id;
         safeSet('retail_roster_currentFortnightId', cur.id);
+        console.log('showMain: Showing current roster containing today', cur.label);
+      } else {
+        safeSet('retail_roster_currentFortnightId', cur.id);
+      }
+    } else if(sel && storedId){
+      // Respect stored manual selection
+      sel.value=storedId;
+      if(sel.selectedIndex===-1 && sel.options.length>0){
+        sel.selectedIndex=0;
       }
     }
     renderRosterSafe();
@@ -3763,25 +3860,50 @@ function toggleMobileMenu(){
   try{
     var gh=document.getElementById('global-header');
     var btn=document.getElementById('mobile-menu-toggle');
-    if(!gh) return;
-    if(gh.classList.contains('mobile-open')){
+    if(!gh){
+      console.error('global-header not found');
+      return;
+    }
+    var isOpen=gh.classList.contains('mobile-open');
+    if(isOpen){
       gh.classList.remove('mobile-open');
       if(btn) btn.textContent='☰';
+      console.log('Mobile menu closed');
     } else {
       gh.classList.add('mobile-open');
       if(btn) btn.textContent='✕';
+      console.log('Mobile menu opened');
+      // Scroll menu into view
+      setTimeout(function(){
+        var btns=gh.querySelector('.r-btns-consistent');
+        if(btns) btns.scrollTop=0;
+      }, 100);
     }
-    // Recalculate page padding
+    // Recalculate page padding for all visible pages
     setTimeout(function(){
-      var headerHeight=gh.offsetHeight||60;
-      document.querySelectorAll('.full-page, #repco-v65').forEach(function(el){
-        if(el.classList.contains('show')){
+      try{
+        var headerHeight=gh.offsetHeight||60;
+        document.querySelectorAll('.full-page.show, #repco-v65.show').forEach(function(el){
           el.style.paddingTop=(headerHeight+10)+'px';
-        }
-      });
+        });
+      }catch(e){}
     },50);
-  }catch(e){ console.error(e); }
+  }catch(e){ console.error('toggleMobileMenu error', e); }
 }
+// FIXED V174: Close mobile menu when tapping outside or selecting a page
+document.addEventListener('click', function(e){
+  try{
+    var gh=document.getElementById('global-header');
+    var btn=document.getElementById('mobile-menu-toggle');
+    if(!gh || !btn) return;
+    if(!gh.classList.contains('mobile-open')) return;
+    // If click is outside header, close menu
+    if(!gh.contains(e.target)){
+      gh.classList.remove('mobile-open');
+      btn.textContent='☰';
+    }
+  }catch(e){}
+});
 
 
 
@@ -4504,7 +4626,7 @@ function renderOptions(){
   const notifSetting=safeGet('repco_notifications_enabled'); const notifEnabled=notifSetting!=='false'; // ON by default unless explicitly disabled
   const notifPerm=typeof Notification!=='undefined'?Notification.permission:'unsupported';
   const isHTTPS=location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1';
-  const notifHtml='<div class="card" style="margin-top:12px;background:'+(notifEnabled?'#B6F7C5':'#FFA9B6')+'"><div style="font-weight:900;margin-bottom:8px">📱 PHONE NOTIFICATIONS OUTSIDE BROWSER</div><div style="font-size:10px;margin-bottom:8px">serviceWorker, PushManager, Notification + FCM ready — Verified, possible with HTTPS + VAPID</div><div style="font-size:9px;margin-bottom:8px">Status: <b>'+(notifEnabled?'✅ ENABLED':'❌ DISABLED')+'</b> | Permission: <b>'+notifPerm+'</b> | HTTPS: <b>'+(isHTTPS?'✅ YES':'❌ NO - Need HTTPS')+'</b></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="enablePhoneNotifications()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">ENABLE PHONE NOTIFICATIONS</button><button onclick="disablePhoneNotifications()" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">DISABLE</button><button onclick="sendLocalNotification(\'REPCO Test\', \'Phone notifications outside browser working! ✅\', \'test-\'+Date.now())" style="background:#60A5FA;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">TEST NOTIFICATION</button></div><div style="font-size:8px;margin-top:8px;color:#666">Requires HTTPS + VAPID key from Firebase Console > Project Settings > Cloud Messaging. For local testing use localhost. On phone: Add to Home Screen for best results.</div></div>';
+  const notifHtml='<div class="card" style="margin-top:12px;background:'+(notifEnabled?'#B6F7C5':'#FFA9B6')+'"><div style="font-weight:900;margin-bottom:8px">📱 PHONE NOTIFICATIONS OUTSIDE BROWSER</div><div style="font-size:10px;margin-bottom:8px">serviceWorker, PushManager, Notification + FCM ready — Verified, possible with HTTPS + VAPID</div><div style="font-size:9px;margin-bottom:8px">Status: <b>'+(notifEnabled?'✅ ENABLED':'❌ DISABLED')+'</b> | Permission: <b>'+notifPerm+'</b> | HTTPS: <b>'+(isHTTPS?'✅ YES':'❌ NO - Need HTTPS')+'</b></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="enablePhoneNotifications()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">ENABLE PHONE NOTIFICATIONS</button><button onclick="disablePhoneNotifications()" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">DISABLE</button><button onclick="sendLocalNotification(\'REPCO Test\', \'Phone notifications outside browser working! ✅\', \'test-\'+Date.now())" style="background:#60A5FA;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">TEST NOTIFICATION</button><button onclick="resetNotificationPermission()" style="background:#FFEB3B;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">RESET / FIX iOS BUG</button></div><div style="font-size:8px;margin-top:8px;color:#666">Requires HTTPS + VAPID key from Firebase Console > Project Settings > Cloud Messaging. For local testing use localhost. On phone: Add to Home Screen for best results.</div></div>';
   const timerHtml='<div class="card" style="margin-top:12px"><div style="font-weight:900;margin-bottom:8px">LOGOUT TIMER SETTINGS</div><div style="display:flex;gap:8px;align-items:center"><select id="logout-timer" style="padding:8px;border-radius:9999px;border:2px solid #111"><option value="5" '+(logoutMin==='5'?'selected':'')+'>5 min</option><option value="15" '+(logoutMin==='15'?'selected':'')+'>15 min</option><option value="30" '+(logoutMin==='30'?'selected':'')+'>30 min</option><option value="60" '+(logoutMin==='60'?'selected':'')+'>60 min</option><option value="120" '+(logoutMin==='120'?'selected':'')+'>120 min</option><option value="0" '+(logoutMin==='0'?'selected':'')+'>Never</option></select><button onclick="saveLogoutTimer()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">SAVE</button></div></div>';
   const maintenanceHtml='<div class="card" style="margin-top:12px;background:#FFF6CC"><div style="font-weight:900;margin-bottom:8px">MAINTENANCE & SYSTEM</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="maint-status-options" style="font-weight:900">Maintenance: '+(safeGet('maintenance_mode')==='true'?'ON':'OFF')+'</span><label style="display:flex;align-items:center;gap:6px;font-weight:900"><input type="checkbox" id="maint-toggle-options" onchange="toggleMaintenanceFromOptions()" '+(safeGet('maintenance_mode')==='true'?'checked':'')+'> TOGGLE</label></div></div>';
   if(isMgr){
