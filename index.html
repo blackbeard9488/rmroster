@@ -112,7 +112,7 @@ button{cursor:pointer}
 .r-controls select,.r-controls button{border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;background:#fff;min-width:80px}.r-controls select#fortnight-select{min-width:260px;max-width:90vw;background:#fff !important;color:#111 !important;font-weight:900 !important;border:2px solid #111 !important}
 .roster-section{margin:16px 10px;border:3px solid #111;border-radius:12px;overflow:hidden;background:#fff;position:relative;z-index:1;box-shadow:4px 4px 0 #111}
 .sec-head{display:flex;justify-content:space-between;align-items:center;background:#FFF6CC;border-bottom:3px solid #111;padding:10px 14px;font-weight:900;font-size:14px} .sec-head.casual{background:#D6EEFF}
-.r-table-wrap{overflow:auto;width:100%;background:#fff} .r-table{width:max-content;min-width:100%;border-collapse:collapse;background:#fff;table-layout:fixed}
+.r-table-wrap{overflow:auto;width:100%;background:#fff;scroll-behavior:auto} .r-table-wrap::-webkit-scrollbar{height:8px} #roster-mount .roster-section{overflow:hidden} #roster-mount .roster-section .r-table-wrap{border-top:2px solid #111} .r-table{width:max-content;min-width:100%;border-collapse:collapse;background:#fff;table-layout:fixed} .r-table th,.r-table td{box-sizing:border-box}
 .r-table th{border:1.6px solid #222;text-align:center;padding:7px 2px;font-size:10px;font-weight:900;min-width:88px;width:88px;max-width:88px;background:#111;color:#fff}
 .r-table th.day-yellow{background:#FDE9A3 !important;color:#111 !important;border-bottom:3px solid #111}
 .r-table th.day-blue{background:#8FC6F5 !important;color:#111 !important;border-bottom:4px solid #111}
@@ -2673,6 +2673,22 @@ function renderRosterSafe(){
   }
   setTimeout(function(){ var isM=isManagerRole(getActualRole()); document.querySelectorAll('#delete-roster-btn').forEach(function(b){ b.style.display=isM?'inline-block':'none'; }); },50);
   var mountEl=document.getElementById('roster-mount'); if(mountEl) mountEl.innerHTML=html;
+  // FIXED V170: Sync horizontal scroll across all roster tables so day columns line up
+  setTimeout(function(){
+    try{
+      var wraps=document.querySelectorAll('#roster-mount .r-table-wrap');
+      if(wraps.length>1){
+        wraps.forEach(function(wrap){
+          wrap.addEventListener('scroll', function(){
+            var scrollLeft=this.scrollLeft;
+            wraps.forEach(function(other){
+              if(other!==wrap) other.scrollLeft=scrollLeft;
+            });
+          });
+        });
+      }
+    }catch(e){ console.log('Scroll sync error', e); }
+  }, 100);
   var labelEl=document.getElementById('fortnight-label'); if(labelEl) labelEl.textContent=cur.label;
   // Update secondary headers that show 07/10 to 20/10
   document.querySelectorAll('.sec-head span:last-child').forEach(function(el){ if(el.textContent.indexOf('/')!==-1) el.textContent=cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date; });
@@ -4498,8 +4514,7 @@ function renderOptions(){
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'archive-page\')">ARCHIVE - ROSTERS</button>'
       +'<button class="card" style="font-weight:900;text-align:left;background:#FFEB3B" onclick="openPage(\'hidden-staff-page\')">HIDDEN STAFF</button>'
       +'<button class="card" style="font-weight:900;text-align:left;background:#FFEB3B" onclick="openPage(\'public-holiday-page\')">PUBLIC HOLIDAYS</button>'
-      +'<button class="card" style="font-weight:900;text-align:left;background:#8FC6F5" id="btn-import" onclick="triggerImport()">IMPORT ROSTER</button>'
-      +'<button class="card" style="font-weight:900;text-align:left;background:#B6F7C5" onclick="openPage(\'import-export-page\')">📤 EXPORT / IMPORT EXCEL</button>'
+      +'<button class="card" style="font-weight:900;text-align:left;background:#B6F7C5" onclick="openPage(\'import-export-page\')">📤 IMPORT / EXPORT EXCEL</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="exportCSV()">EXPORT CSV</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="exportPDF()">EXPORT PDF</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'requests-page\')">ALL REQUESTS / APPROVALS</button>'
@@ -6594,8 +6609,191 @@ function exportCSV(){
   cur.staff.forEach(st=>{ let total=0; (st.shifts||[]).forEach((s,idx)=>{ let orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : s; let isAbsent=st.absentApproved && st.absentApproved[idx]; let isFull=st.employmentType!=='casual'; let net; if(isAbsent){ net = isFull ? netH(orig) : 0; } else { let up=(s||'').toUpperCase().trim(); if(['OFF','NA','AB','ABSENT',''].includes(up)) net=0; else net=netH(s); } total+=net; }); csv+='"'+st.lastName+' '+st.firstName+'",'+(st.shifts||[]).map((s,i)=>{ let orig=st.originalShifts && st.originalShifts[i] ? st.originalShifts[i] : ''; let isAbs=st.absentApproved && st.absentApproved[i]; if(isAbs && orig) return '"'+orig+' AB"'; if(s==='OFF' || s==='' ) return '""'; return '"'+s+'"'; }).join(',')+',"'+total.toFixed(1)+'h"\n'; });
   let blob=new Blob([csv],{type:'text/csv'});let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=cur.label+'.csv';a.click();toast('CSV exported');
 }
-function exportPDF(){ let cur=getCurrentFortnight(); if(!cur){ toast('No roster'); return; } try{ const { jsPDF } = window.jspdf; const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'}); doc.setFontSize(14); doc.text('REPCO ROSTER - '+cur.label,10,12); doc.setFontSize(8); let y=18; let header=['STAFF',...cur.dates.map(d=>d.day+' '+d.date),'HRS']; let colW=12; let x=10; header.forEach(h=>{ doc.text(String(h).slice(0,12),x,y); x+=colW; if(x>280){ x=10; y+=6; } }); y+=6; cur.staff.forEach(st=>{ x=10; let total=0; let row=[st.lastName+', '+st.firstName]; (st.shifts||[]).forEach((s,idx)=>{ let orig=st.originalShifts && st.originalShifts[idx]?st.originalShifts[idx]:s; let isAbs=st.absentApproved && st.absentApproved[idx]; let disp=isAbs && orig ? orig+' AB' : s; row.push(disp===''||disp==='OFF'?'':disp); let isFull=st.employmentType!=='casual'; let net; if(isAbs) net=isFull?netH(orig):0; else net=netH(s); total+=net; }); row.push(total.toFixed(1)+'h'); row.forEach(cell=>{ if(y>190){ doc.addPage(); y=12; } doc.text(String(cell).slice(0,15),x,y); x+=colW; if(x>280){ x=10; y+=6; } }); y+=6; }); doc.save(cur.label.replace(/[^a-z0-9]/gi,'_')+'.pdf'); toast('PDF exported'); }catch(e){ toast('PDF error: '+e.message); }
+function exportPDF(){ 
+  let cur=getSelectedFortnight(); 
+  if(!cur){ toast('No roster'); return; } 
+  toast('Generating PDF - capturing roster tables...');
+  
+  // Load html2canvas if not present
+  function loadHtml2Canvas(cb){
+    if(typeof html2canvas !== 'undefined'){
+      cb();
+      return;
+    }
+    var script=document.createElement('script');
+    script.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    script.onload=cb;
+    script.onerror=function(){
+      toast('Failed to load PDF capture library - trying fallback');
+      exportPDF_fallback();
+    };
+    document.head.appendChild(script);
+  }
+  
+  loadHtml2Canvas(function(){
+    try{
+      var mount=document.getElementById('roster-mount');
+      if(!mount || !mount.innerHTML.trim()){
+        toast('No roster to export - showing roster first');
+        try{ renderRosterSafe(); }catch(e){}
+        mount=document.getElementById('roster-mount');
+      }
+      if(!mount){
+        toast('Roster mount not found');
+        return;
+      }
+      
+      // FIXED V170: Reset all table scrolls to 0 so day columns line up in PDF
+      var originalStyle=mount.style.cssText;
+      var originalScrolls=[];
+      try{
+        var wraps=mount.querySelectorAll('.r-table-wrap');
+        wraps.forEach(function(w){
+          originalScrolls.push({el:w, left:w.scrollLeft});
+          w.scrollLeft=0;
+        });
+      }catch(e){}
+      
+      html2canvas(mount, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: mount.scrollWidth,
+        height: mount.scrollHeight,
+        windowWidth: mount.scrollWidth,
+        windowHeight: mount.scrollHeight
+      }).then(function(canvas){
+        try{
+          // Restore scroll positions after capture
+          try{
+            originalScrolls.forEach(function(item){
+              if(item.el) item.el.scrollLeft=item.left;
+            });
+          }catch(e){}
+          const { jsPDF } = window.jspdf;
+          var imgData=canvas.toDataURL('image/png');
+          
+          var imgWidth=canvas.width;
+          var imgHeight=canvas.height;
+          
+          // Use A3 landscape but calculate to fit width
+          // A3 landscape: 420mm x 297mm
+          var pdfWidth=420;
+          var pdfHeight=297;
+          
+          // Calculate aspect ratio
+          var ratio=imgHeight/imgWidth;
+          var pdfImgHeight=pdfWidth*ratio;
+          
+          var doc;
+          if(pdfImgHeight > pdfHeight){
+            // Need custom height or multiple pages
+            // Use larger format or split into pages
+            var totalPages=Math.ceil(pdfImgHeight/pdfHeight);
+            doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
+            
+            // For long rosters, split into multiple pages
+            if(totalPages>1){
+              var y=0;
+              var remainingHeight=pdfImgHeight;
+              var canvasSliceHeight=(pdfHeight/pdfWidth)*imgWidth; // height in canvas pixels per PDF page
+              
+              for(var i=0;i<totalPages;i++){
+                if(i>0) doc.addPage();
+                
+                // Calculate slice
+                var sliceY=i*canvasSliceHeight;
+                var sliceHeight=Math.min(canvasSliceHeight, imgHeight-sliceY);
+                
+                // Create temporary canvas for slice
+                var sliceCanvas=document.createElement('canvas');
+                sliceCanvas.width=imgWidth;
+                sliceCanvas.height=sliceHeight;
+                var ctx=sliceCanvas.getContext('2d');
+                ctx.drawImage(canvas, 0, sliceY, imgWidth, sliceHeight, 0, 0, imgWidth, sliceHeight);
+                
+                var sliceImgData=sliceCanvas.toDataURL('image/png');
+                var slicePdfHeight=(sliceHeight/imgWidth)*pdfWidth;
+                
+                doc.addImage(sliceImgData, 'PNG', 0, 0, pdfWidth, slicePdfHeight);
+                
+                // Add page header
+                doc.setFontSize(8);
+                doc.setTextColor(100);
+                if(i===0){
+                  doc.text('REPCO ROSTER - '+cur.label+' - 21/10 to 03/11 - Generated '+new Date().toLocaleString(), 5, 5);
+                } else {
+                  doc.text('REPCO ROSTER - '+cur.label+' - Page '+(i+1), 5, 5);
+                }
+              }
+            } else {
+              doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
+              doc.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfImgHeight);
+              doc.setFontSize(10);
+              doc.text('REPCO ROSTER - '+cur.label, 10, 6);
+            }
+          } else {
+            doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
+            doc.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfImgHeight);
+            doc.setFontSize(10);
+            doc.text('REPCO ROSTER - '+cur.label+' - '+cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date, 10, 6);
+          }
+          
+          var filename=(cur.label||'roster').replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().split('T')[0]+'.pdf';
+          doc.save(filename);
+          toast('PDF exported - '+filename);
+          
+        }catch(e){
+          console.error('PDF image error', e);
+          toast('PDF error: '+e.message+' - trying fallback');
+          exportPDF_fallback();
+        }
+      }).catch(function(err){
+        console.error('html2canvas error', err);
+        toast('Capture failed - trying fallback');
+        exportPDF_fallback();
+      });
+      
+    }catch(e){
+      console.error('exportPDF error', e);
+      toast('PDF error: '+e.message);
+      exportPDF_fallback();
+    }
+  });
 }
+
+function exportPDF_fallback(){
+  // Fallback - old text-based PDF if html2canvas fails
+  try{
+    let cur=getSelectedFortnight(); if(!cur){ toast('No roster'); return; }
+    const { jsPDF } = window.jspdf; 
+    const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'}); 
+    doc.setFontSize(14); doc.text('REPCO ROSTER - '+cur.label,10,12); 
+    doc.setFontSize(8); let y=18; 
+    let header=['STAFF',...cur.dates.map(d=>d.day+' '+d.date),'HRS']; 
+    let colW=12; let x=10; 
+    header.forEach(h=>{ doc.text(String(h).slice(0,12),x,y); x+=colW; if(x>280){ x=10; y+=6; } }); y+=6; 
+    cur.staff.forEach(st=>{ 
+      x=10; let total=0; let row=[st.lastName+', '+st.firstName]; 
+      (st.shifts||[]).forEach((s,idx)=>{ 
+        let orig=st.originalShifts && st.originalShifts[idx]?st.originalShifts[idx]:s; 
+        let isAbs=st.absentApproved && st.absentApproved[idx]; 
+        let disp=isAbs && orig ? orig+' AB' : s; 
+        row.push(disp===''||disp==='OFF'?'':disp); 
+        let isFull=st.employmentType!=='casual'; let net; 
+        if(isAbs) net=isFull?netH(orig):0; else net=netH(s); 
+        total+=net; 
+      }); 
+      row.push(total.toFixed(1)+'h'); 
+      row.forEach(cell=>{ if(y>190){ doc.addPage(); y=12; } doc.text(String(cell).slice(0,15),x,y); x+=colW; if(x>280){ x=10; y+=6; } }); y+=6; 
+    }); 
+    doc.save((cur.label||'roster').replace(/[^a-z0-9]/gi,'_')+'.pdf'); 
+    toast('PDF exported (fallback)'); 
+  }catch(e){ toast('PDF error: '+e.message); }
+}
+function showCustomConfirm(title, body, cb){
 function showCustomConfirm(title, body, cb){ const modal=document.getElementById('custom-modal'); const t=document.getElementById('custom-modal-title'); const b=document.getElementById('custom-modal-body'); const ok=document.getElementById('custom-modal-ok'); const cancel=document.getElementById('custom-modal-cancel'); t.textContent=title; b.innerHTML='<div style="font-size:13px">'+(body||'')+'</div>'; ok.textContent='CONFIRM'; cancel.style.display='block'; cancel.textContent='CANCEL'; modal.classList.add('show'); function cleanup(){ modal.classList.remove('show'); ok.onclick=null; cancel.onclick=null; } ok.onclick=()=>{ cleanup(); cb(true); }; cancel.onclick=()=>{ cleanup(); cb(false); }; }
 function showCustomPrompt(title, bodyHtml, cb){ const modal=document.getElementById('custom-modal'); const t=document.getElementById('custom-modal-title'); const b=document.getElementById('custom-modal-body'); const ok=document.getElementById('custom-modal-ok'); const cancel=document.getElementById('custom-modal-cancel'); t.textContent=title; b.innerHTML=bodyHtml; ok.textContent='SAVE'; cancel.style.display='block'; cancel.textContent='CANCEL'; modal.classList.add('show'); function cleanup(){ modal.classList.remove('show'); ok.onclick=null; cancel.onclick=null; } ok.onclick=()=>{ cleanup(); cb(true); }; cancel.onclick=()=>{ cleanup(); cb(false); }; }
 
