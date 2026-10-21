@@ -2,7 +2,7 @@
 // Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready
 // Verified, possible with HTTPS + VAPID
 
-const CACHE_NAME = 'repco-roster-alpha-v179'; // V172 - forces update for blank pill + hidden staff + hover + push fixes
+const CACHE_NAME = 'repco-roster-alpha-v180'; // V172 - forces update for blank pill + hidden staff + hover + push fixes
 const urlsToCache = [
   '/',
   '/index.html',
@@ -56,27 +56,66 @@ self.addEventListener('fetch', event => {
 // Push notifications - Web Push API with VAPID
 self.addEventListener('push', function(event) {
   console.log('[SW] Push received', event);
-  let payload = {};
-  try {
-    if (event.data) {
-      payload = event.data.json();
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch(e) {
+      data = { body: event.data.text() };
     }
-  } catch (e) {
-    payload = { title: 'REPCO Roster', body: event.data ? event.data.text() : 'Roster updated' };
   }
-
-  const title = payload.title || 'REPCO Roster Update';
+  
+  // FIXED V180: Clean title/body - NO blackbeard9.., NO REPCO... truncation, single icon
+  let title = (data.title || 'REPCO').replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim();
+  if(title.length>30) title = title.substring(0,30);
+  if(title.includes('...')) title = 'REPCO';
+  if(!title.toUpperCase().startsWith('REPCO')) title = 'REPCO - ' + title;
+  title = title.substring(0,30);
+  
+  let body = (data.body || 'Your roster has been updated').replace(/blackbeard9488\.github\.io/g,'').replace(/blackbeard9\.\.\./g,'').replace(/https?:\/\/[^\s]+/g,'').trim();
+  
+  // Format date to Monday 22/10
+  try{
+    body = body.replace(/(\d{4})-(\d{2})-(\d{2})/g, function(match, y, m, d){
+      try{
+        const date = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+        const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        return dayNames[date.getDay()] + ' ' + d + '/' + m;
+      }catch(e){ return d + '/' + m; }
+    });
+  }catch(e){}
+  
+  body = body.substring(0,120);
+  
   const options = {
-    body: payload.body || 'Your roster has been updated',
-    icon: '/icon-192.png',
-    badge: '/badge-72.png',
-    tag: 'repco-update',
-    data: { url: self.location.origin },
-    vibrate: [200, 100, 200]
+    body: body,
+    icon: './icon-192.png',
+    // No badge - fixes duplicate icons on Samsung
+    tag: data.tag || 'repco-push-'+Date.now(),
+    vibrate: [200, 100, 200],
+    renotify: true,
+    data: { url: './', timestamp: Date.now() }
   };
-
+  
   event.waitUntil(
     self.registration.showNotification(title, options)
+  );
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({type: 'window', includeUncontrolled: true}).then(function(clientList) {
+      for (let i = 0; i < clientList.length; i++) {
+        let client = clientList[i];
+        if (client.url.includes('blackbeard9488.github.io') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('./');
+      }
+    })
   );
 });
 

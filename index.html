@@ -1209,19 +1209,56 @@ function sendLocalNotification(title, body, tag) {
   }
 
   try {
+    // FIXED V180: Remove blackbeard9.. origin and REPCO... truncation and duplicate icons
+    // Android Chrome shows "REPCO... blackbeard9..." when:
+    // 1. Title too long (truncated to REPCO...)
+    // 2. Notification has origin (blackbeard9...)
+    // 3. Both icon and badge set (shows duplicate icons)
+    // Fix: Short title (max 20 chars), no domain, only icon (no badge), renotify
+    let cleanTitle = (title||'REPCO').replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').replace(/REPCO.*$/i,'REPCO').trim();
+    // Ensure title is just REPCO or REPCO - Name, not REPCO...
+    if(cleanTitle.length>30) cleanTitle = cleanTitle.substring(0,30);
+    if(cleanTitle.includes('...')) cleanTitle = 'REPCO';
+    if(cleanTitle.toUpperCase().startsWith('REPCO') && cleanTitle.length>10){
+      // Keep as REPCO - Name format
+      cleanTitle = cleanTitle;
+    } else if(!cleanTitle.toUpperCase().startsWith('REPCO')){
+      cleanTitle = 'REPCO - ' + cleanTitle;
+    }
+    cleanTitle = cleanTitle.substring(0,30);
+    
+    let cleanBody = (body||'').replace(/blackbeard9488\.github\.io/g,'').replace(/blackbeard9\.\.\./g,'').replace(/https?:\/\/[^\s]+/g,'').trim();
+    // Format date if ISO present
+    try{
+      cleanBody = cleanBody.replace(/(\d{4})-(\d{2})-(\d{2})/g, function(match, y, m, d){
+        try{
+          const date = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+          const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          return dayNames[date.getDay()] + ' ' + d + '/' + m;
+        }catch(e){ return d + '/' + m; }
+      });
+    }catch(e){}
+    cleanBody = cleanBody.substring(0,120);
+    
+    console.log('Sending clean notification:', cleanTitle, cleanBody);
+
     if (swRegistration) {
-      swRegistration.showNotification(title, {
-        body: body,
+      // FIXED: Only icon, no badge (badge causes duplicate icon on some Android), no origin display
+      swRegistration.showNotification(cleanTitle, {
+        body: cleanBody,
         icon: './icon-192.png',
-        badge: './icon-192.png',
-        tag: tag || 'repco-local',
+        // No badge - badge causes second icon on right on Samsung
+        tag: tag || 'repco-'+Date.now(),
         vibrate: [200, 100, 200],
-        data: { url: '/' }
+        renotify: true,
+        requireInteraction: false,
+        silent: false,
+        data: { url: './', timestamp: Date.now() }
       });
     } else {
-      new Notification(title, { body: body, icon: './icon-192.png' });
+      new Notification(cleanTitle, { body: cleanBody, icon: './icon-192.png', tag: tag||'repco-'+Date.now(), renotify: true });
     }
-    console.log('Local notification sent:', title);
+    console.log('Local notification sent (V180 clean):', cleanTitle);
   } catch (e) {
     console.error('Local notification error', e);
   }
@@ -3890,6 +3927,44 @@ document.addEventListener('click', function(e){
 
 
 // === PUSH NOTIFICATIONS FOR SHIFT CHANGES, APPROVALS, DENIALS - FIXED ===
+// FIXED V179: Helper to format date as Monday 22/10 for all notifications
+function formatDateForNotification(dateISO){
+  try{
+    if(!dateISO) return '';
+    // If already in DD/MM format
+    if(dateISO.includes('/') && !dateISO.includes('-')){
+      // Try to get day name from DD/MM
+      const parts = dateISO.split('/');
+      if(parts.length>=2){
+        const day = parts[0].padStart(2,'0');
+        const month = parts[1].split(' ')[0].padStart(2,'0');
+        // Try to parse as current year
+        const d = new Date(new Date().getFullYear(), parseInt(month)-1, parseInt(day));
+        if(!isNaN(d.getTime())){
+          const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          return dayNames[d.getDay()] + ' ' + day + '/' + month;
+        }
+        return day + '/' + month;
+      }
+      return dateISO;
+    }
+    // If ISO YYYY-MM-DD
+    if(dateISO.includes('-')){
+      const d = new Date(dateISO+'T00:00:00');
+      if(!isNaN(d.getTime())){
+        const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const dayName = dayNames[d.getDay()];
+        const day = String(d.getDate()).padStart(2,'0');
+        const month = String(d.getMonth()+1).padStart(2,'0');
+        return dayName + ' ' + day + '/' + month;
+      }
+    }
+    return dateISO;
+  }catch(e){
+    return dateISO||'';
+  }
+}
+
 function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
   try{
     if(!employeeName) return;
@@ -3914,137 +3989,119 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
     
     if(!targetUsername) targetUsername = uname;
     
-    // Determine if this is OFF -> shift (new shift added) or shift change
+    // Determine if OFF -> shift
     const oldClean = (oldShift||'').toString().trim().toUpperCase();
     const newClean = (newShift||'').toString().trim().toUpperCase();
     const isOffToShift = (oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0') && newClean!=='' && newClean!=='OFF' && newClean!=='-' && newClean!=='0';
     const isShiftToOff = !(oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0') && (newClean==='' || newClean==='OFF' || newClean==='-' || newClean==='0');
     
-    // FIXED: Shift added logic only applies to current fortnight (current day existing on current fortnight)
-    let isCurrentFortnight = false;
-    let isCurrentDay = false;
-    try{
-      const curFn = typeof getCurrentFortnight==='function' ? getCurrentFortnight() : null;
-      const todayISO = typeof getISO==='function' ? getISO() : new Date().toISOString().split('T')[0];
-      if(curFn && curFn.dates){
-        const dateInCurrent = curFn.dates.some(d => d.iso===dateISO || d.date===dateISO);
-        isCurrentFortnight = dateInCurrent;
-        if(dateISO === todayISO) isCurrentDay = true;
-        else if(dateInCurrent){
-          // Check if date is today or future within current fortnight
-          const todayIdx = curFn.dates.findIndex(d => d.iso===todayISO || d.date===todayISO);
-          const targetIdx = curFn.dates.findIndex(d => d.iso===dateISO || d.date===dateISO);
-          if(targetIdx >= todayIdx && todayIdx !== -1) isCurrentDay = true;
-        }
-      } else {
-        // Fallback: if we can't get current fortnight, assume current if date is today or future within 14 days
-        const today = new Date();
-        const target = new Date(dateISO+'T00:00:00');
-        const diffDays = Math.floor((target - today)/(1000*60*60*24));
-        if(diffDays >=0 && diffDays < 14) {
-          isCurrentFortnight = true;
-          if(diffDays===0) isCurrentDay = true;
-        }
-      }
-      
-      // Only allow OFF->shift notification for current fortnight - FIXED: more lenient check
-      if(isOffToShift && !isCurrentFortnight){
-        // Double-check: if date is today or future, still allow
-        try{
-          const today = new Date();
-          today.setHours(0,0,0,0);
-          const target = new Date(dateISO+'T00:00:00');
-          if(!isNaN(target.getTime())){
-            target.setHours(0,0,0,0);
-            const diffDays = Math.floor((target - today)/(1000*60*60*24));
-            // If date is today or within next 14 days, allow even if not in current fortnight array
-            if(diffDays >= -1 && diffDays <= 14){
-              console.log('Shift added - date is within 14 days, allowing notification despite not in current fortnight array', dateISO, diffDays);
-              isCurrentFortnight = true;
-            }
-          }
-        }catch(e){}
-        
-        if(!isCurrentFortnight){
-          console.log('Shift added but not in current fortnight, skipping notification for', dateISO);
-          return; // Don't notify for future fortnights beyond 14 days
-        }
-      }
-    }catch(e){ 
-      console.log('Current fortnight check error', e);
-      // If error, allow notification (fail open for safety)
-      isCurrentFortnight = true;
-      isCurrentDay = true;
-    }
+    // FIXED V180: OFF->shift ALWAYS notifies
+    let isCurrentFortnight = true;
+    let isCurrentDay = true;
     
-    // Get day name from dateISO
+    // FIXED V180: Format date as Monday 22/10 - helper inline
+    let formattedDate = '';
     let dayName = '';
-    let dateDisplay = dateISO||'';
     try{
       if(dateISO){
-        const d = new Date(dateISO+'T00:00:00');
-        if(!isNaN(d.getTime())){
-          dayName = d.toLocaleDateString('en-AU',{weekday:'long'});
-          dateDisplay = `${dayName} ${dateISO} ${newShift||''}`.trim();
+        let d;
+        if(dateISO.includes('-')){
+          d = new Date(dateISO+'T00:00:00');
+        } else if(dateISO.includes('/')){
+          const parts = dateISO.split('/');
+          if(parts.length>=2){
+            const day = parseInt(parts[0]);
+            const month = parseInt(parts[1])-1;
+            const year = new Date().getFullYear();
+            d = new Date(year, month, day);
+          }
+        }
+        if(d && !isNaN(d.getTime())){
+          const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          dayName = dayNames[d.getDay()];
+          const day = String(d.getDate()).padStart(2,'0');
+          const month = String(d.getMonth()+1).padStart(2,'0');
+          formattedDate = dayName + ' ' + day + '/' + month;
+        } else {
+          formattedDate = dateISO;
         }
       }
-    }catch(e){}
-    
-    let message = '';
-    let title = '';
-    if(isOffToShift){
-      // OFF -> shift: New shift added!
-      const dayPart = dayName || dateISO || 'New shift';
-      message = `New shift added! ${dayPart} ${newShift||''}`.trim();
-      title = `New Shift - ${cleanName}`;
-    } else if(isShiftToOff){
-      // Shift -> OFF: Shift removed
-      const dayPart = dayName || dateISO || '';
-      message = `Shift removed! ${dayPart} ${oldShift||''} → OFF`.trim();
-      title = `Shift Removed - ${cleanName}`;
-    } else {
-      // Shift change
-      message = `Shift changed: ${oldShift||'OFF'} → ${newShift||'OFF'} on ${dateISO||''}`.trim();
-      title = `Shift Update - ${cleanName}`;
+    }catch(e){
+      formattedDate = dateISO||'';
     }
     
+    // FIXED V180: Clean titles - NO blackbeard9.., NO REPCO... truncation, just REPCO
+    // Android Chrome shows "REPCO... blackbeard9..." when notification has long title or origin
+    // Solution: Short, clean title, no domain, single icon
+    let message = '';
+    let title = '';
+    const displayDate = formattedDate || dateISO || '';
+    
+    if(isOffToShift){
+      message = `${displayDate} - New shift ${newShift||''}`.trim();
+      title = `REPCO - ${cleanName}`;
+    } else if(isShiftToOff){
+      message = `${displayDate} - Shift removed ${oldShift||''} → OFF`.trim();
+      title = `REPCO - ${cleanName}`;
+    } else {
+      message = `${displayDate} - ${oldShift||'OFF'} → ${newShift||'OFF'}`.trim();
+      title = `REPCO - ${cleanName}`;
+    }
+    
+    // Ensure no blackbeard or URL in message
+    message = message.replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim().substring(0,120);
+    title = title.replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim().substring(0,30);
+    
+    // FIXED V180: Always push even if same cell edited multiple times - use unique timestamp
     const notif = {
-      id: 'shift_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+      id: 'shift_'+Date.now()+'_'+Math.random().toString(36).substr(2,8),
       type: isOffToShift ? 'new_shift' : (isShiftToOff ? 'shift_removed' : 'shift_change'),
       employee: cleanName,
       targetUsername: targetUsername,
       oldShift: oldShift||'OFF',
       newShift: newShift||'OFF',
       date: dateISO||'',
+      formattedDate: formattedDate,
       dayName: dayName||'',
       message: message,
       title: title,
       body: message,
       timestamp: Date.now(),
       read: false,
-      from: safeGet('repco_username')||'admin'
+      from: safeGet('repco_username')||'admin',
+      forcePush: true // Always push even if duplicate
     };
 
     
-    // Save to Firebase and local - FIXED V167: Actually send push notification
+    // Save to Firebase and local - ALWAYS push even if same cell edited multiple times
     try{
       const notifs = safeGetJSON('repco_notifications_v1',[]);
       notifs.push(notif);
       if(notifs.length>100) notifs.splice(0, notifs.length-100);
       safeSetJSON('repco_notifications_v1', notifs);
       
-      // Save to notifications (for in-app list)
       if(window.db){
         window.db.ref('notifications/'+targetUsername).push(notif);
         window.db.ref('notifications_global').push(notif);
-        // FIXED: Also save to push_notifications for polling fallback (employee app polls this)
-        window.db.ref('push_notifications/'+targetUsername+'/'+Date.now()).set({
+        // FIXED V180: Always push to push_notifications with unique key to ensure delivery even for same cell
+        const uniqueKey = Date.now() + '_' + Math.random().toString(36).substr(2,5);
+        window.db.ref('push_notifications/'+targetUsername+'/'+uniqueKey).set({
           title: notif.title,
           body: notif.message,
           data: notif,
           timestamp: Date.now(),
           from: notif.from,
-          type: notif.type
+          type: notif.type,
+          force: true
+        });
+        // Also push to global queue
+        window.db.ref('push_queue').push({
+          to: targetUsername,
+          title: notif.title,
+          body: notif.message,
+          data: notif,
+          ts: Date.now(),
+          force: true
         });
       } else {
         fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json', {
@@ -4052,8 +4109,8 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify(notif)
         }).catch(()=>{});
-        // Also save to push_notifications
-        fetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+Date.now()+'.json', {
+        const uniqueKey = Date.now() + '_' + Math.random().toString(36).substr(2,5);
+        fetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+uniqueKey+'.json', {
           method: 'PUT',
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({
@@ -4062,50 +4119,47 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
             data: notif,
             timestamp: Date.now(),
             from: notif.from,
-            type: notif.type
+            type: notif.type,
+            force: true
           })
         }).catch(()=>{});
       }
       
-      // Try to get FCM token and push to queue
+      // Try FCM token
       try{
         if(window.db){
           window.db.ref('fcm_tokens/'+targetUsername).once('value').then(snap=>{
             const tokenData = snap.val();
             if(tokenData && tokenData.token){
-              // Push to queue for Cloud Function (if exists)
               window.db.ref('push_queue').push({
                 to: targetUsername,
                 token: tokenData.token,
                 title: notif.title,
                 body: notif.message,
                 data: notif,
-                ts: Date.now()
+                ts: Date.now(),
+                force: true
               });
-              // FIXED V167: Also try direct FCM send via Firebase Messaging (if token valid)
-              console.log('FCM token found for', targetUsername, 'queueing push');
-            } else {
-              console.log('No FCM token for', targetUsername, '- employee may not have enabled notifications');
+              console.log('FCM token found for', targetUsername, 'queueing push - ALWAYS');
             }
           });
         }
-      }catch(e){ console.log('FCM token lookup error', e); }
+      }catch(e){ console.log('FCM token error', e); }
       
-      // FIXED V167: Try to send immediate local notification via Service Worker if employee is current user, or log for debugging
+      // FIXED V180: Also trigger local notification immediately if target is current user (for testing) - with clean title
       try{
         const currentUser = safeGet('repco_username')||'';
-        if(currentUser.toLowerCase() === targetUsername.toLowerCase()){
+        if(currentUser.toLowerCase()===targetUsername.toLowerCase()){
           if(typeof sendLocalNotification==='function'){
-            sendLocalNotification(notif.title, notif.message);
+            sendLocalNotification(notif.title, notif.message, 'shift_'+Date.now());
           }
         }
       }catch(e){}
       
-      console.log('Shift change notification sent (V167 fixed):', notif, 'to', targetUsername);
-      // Show admin that notification was sent
-      try{ if(typeof toast==='function') toast('📱 Notification sent to '+cleanName+': '+notif.message); }catch(e){}
-    }catch(e){ console.error('Notif error', e); }
-  }catch(e){ console.error(e); }
+      console.log('Shift notification ALWAYS sent (V180 fix - no dedup):', notif.title, notif.message, 'for', targetUsername);
+      try{ if(typeof toast==='function') toast('Notification sent to '+cleanName+': '+notif.message); }catch(e){}
+    }catch(e){ console.error('Shift notif save error', e); }
+  }catch(e){ console.error('sendShiftChangeNotification error', e); }
 }
 
 // TEST: Manually trigger notification for debugging - call testPushNotification('username')
@@ -4176,9 +4230,14 @@ function sendApprovalNotification(employeeName, type, details, fullRequest){
       const reqFrom = req.fromTime || req.startTime || '';
       const reqTo = req.toTime || req.endTime || '';
       
-      // Build same logic for approval and denial - show request data
+      // Build same logic for approval and denial - show request data - FIXED V179: Use Monday 22/10
       const parts = [];
-      if(reqDate) parts.push(`Date: ${reqDate}`);
+      let formattedReqDate = reqDate;
+      try{
+        if(reqDate) formattedReqDate = formatDateForNotification(reqDate);
+      }catch(e){ formattedReqDate = reqDate; }
+      if(formattedReqDate) parts.push(`Date: ${formattedReqDate}`);
+      else if(reqDate) parts.push(`Date: ${reqDate}`);
       if(reqType) parts.push(`Type: ${reqType}`);
       if(reqShift) parts.push(`Shift: ${reqShift}`);
       if(reqFrom && reqTo) parts.push(`Time: ${reqFrom} - ${reqTo}`);
@@ -4253,20 +4312,35 @@ function checkAndShowNotifications(){
         if(typeof Notification!=='undefined' && Notification.permission==='granted'){
           try{
             const swReg = window.swRegistration || window.navigator.serviceWorker.ready;
+            // FIXED V179: Clean title/body to remove blackbeard9.. and format date Monday 22/10
+            let cleanTitle = (latest.title||'REPCO Roster').replace(/blackbeard.*$/i,'').trim().substring(0,40);
+            let cleanBody = (latest.message||'').replace(/blackbeard9488\.github\.io/g,'').replace(/https?:\/\/[^\s]+/g,'').trim();
+            try{
+              cleanBody = cleanBody.replace(/(\d{4})-(\d{2})-(\d{2})/g, function(match, y, m, d){
+                try{
+                  const date = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+                  const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                  return dayNames[date.getDay()] + ' ' + d + '/' + m;
+                }catch(e){ return d + '/' + m; }
+              });
+            }catch(e){}
+            cleanBody = cleanBody.substring(0,150);
             if(swReg && swReg.then){
               swReg.then(reg=>{
-                reg.showNotification(latest.title, {
-                  body: latest.message,
+                reg.showNotification(cleanTitle, {
+                  body: cleanBody,
                   icon: './icon-192.png',
                   badge: './icon-192.png',
                   vibrate: [200,100,200],
-                  data: latest
+                  renotify: true,
+                  data: { url: './', timestamp: Date.now() }
                 });
               });
             } else if(window.swRegistration){
-              window.swRegistration.showNotification(latest.title, {
-                body: latest.message,
-                icon: './icon-192.png'
+              window.swRegistration.showNotification(cleanTitle, {
+                body: cleanBody,
+                icon: './icon-192.png',
+                renotify: true
               });
             }
           }catch(e){
@@ -4294,9 +4368,12 @@ function checkAndShowNotifications(){
                 safeSetJSON('repco_notifications_v1', allNotifs);
                 if(typeof Notification!=='undefined' && Notification.permission==='granted' && window.swRegistration){
                   try{
-                    window.swRegistration.showNotification(notif.title, {
-                      body: notif.message,
-                      icon: './icon-192.png'
+                    let cleanTitle2 = (notif.title||'REPCO Roster').replace(/blackbeard.*$/i,'').trim().substring(0,40);
+                    let cleanBody2 = (notif.message||'').replace(/blackbeard9488\.github\.io/g,'').replace(/https?:\/\/[^\s]+/g,'').trim().substring(0,150);
+                    window.swRegistration.showNotification(cleanTitle2, {
+                      body: cleanBody2,
+                      icon: './icon-192.png',
+                      renotify: true
                     });
                   }catch(e){ toast(notif.message); }
                 } else {
