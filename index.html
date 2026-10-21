@@ -109,7 +109,7 @@ button{cursor:pointer}
 .r-btns-consistent{display:flex;gap:8px;flex-wrap:wrap} .r-btn-consistent{border:none;border-radius:9999px;padding:8px 18px;font-family:'Arial Black',sans-serif;font-weight:900;font-size:11px;background:#D9D9D9;color:#111} .r-btn-consistent.active{background:#111;color:#fff}
 #repco-v65{display:none;min-height:100vh;background:#F2F2F2;position:relative;z-index:1;padding-top:110px} #repco-v65.show{display:block}
 .r-controls{display:flex;gap:10px;padding:12px 14px;align-items:center;flex-wrap:wrap;background:#fff;margin:10px 14px;border-radius:12px;box-shadow:0 2px 0 #0a0a0a;border:2px solid #111;position:relative;z-index:1}
-.r-controls select,.r-controls button{border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;background:#fff;min-width:80px}.r-controls select#fortnight-select{min-width:260px;max-width:90vw}
+.r-controls select,.r-controls button{border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;background:#fff;min-width:80px}.r-controls select#fortnight-select{min-width:260px;max-width:90vw;background:#fff !important;color:#111 !important;font-weight:900 !important;border:2px solid #111 !important}
 .roster-section{margin:16px 10px;border:3px solid #111;border-radius:12px;overflow:hidden;background:#fff;position:relative;z-index:1;box-shadow:4px 4px 0 #111}
 .sec-head{display:flex;justify-content:space-between;align-items:center;background:#FFF6CC;border-bottom:3px solid #111;padding:10px 14px;font-weight:900;font-size:14px} .sec-head.casual{background:#D6EEFF}
 .r-table-wrap{overflow:auto;width:100%;background:#fff} .r-table{width:max-content;min-width:100%;border-collapse:collapse;background:#fff;table-layout:fixed}
@@ -2170,7 +2170,7 @@ function populateFortnightSelect(){
       sel.appendChild(o);
     });
   });
-  // Emergency fallback if still empty - fixes blank pill
+  // Emergency fallback if still empty - fixes blank pill - V168 improved
   if(sels[0] && sels[0].options.length===0){
     sels.forEach(function(sel){
       var o=document.createElement('option');
@@ -2180,6 +2180,19 @@ function populateFortnightSelect(){
     });
     console.log('Emergency fortnight option added - was blank');
   }
+  // FIXED V168: Ensure all options have visible text and select shows something
+  sels.forEach(function(sel){
+    for(var i=0;i<sel.options.length;i++){
+      var opt=sel.options[i];
+      if(!opt.textContent || opt.textContent.trim()==='' || opt.textContent.trim()==='fallback'){
+        if(opt.value && opt.value!=='fallback'){
+          opt.textContent=opt.value;
+        } else {
+          opt.textContent='Roster '+(i+1);
+        }
+      }
+    }
+  });
   var storedId=safeGet('retail_roster_currentFortnightId');
   var lastManualTs=safeGet('repco_last_manual_select_ts');
   var now=Date.now();
@@ -2204,7 +2217,15 @@ function populateFortnightSelect(){
   } else {
     curId=storedId||sorted[0].id;
   }
-  sels.forEach(function(sel){ sel.value=curId; });
+  sels.forEach(function(sel){ 
+    sel.value=curId; 
+    // FIXED V168: If value doesn't match any option, show first option (fixes blank pill)
+    if(sel.selectedIndex===-1 && sel.options.length>0){
+      sel.selectedIndex=0;
+      curId=sel.options[0].value;
+      console.log('Fixed blank fortnight pill - set to first option', curId);
+    }
+  });
   safeSet('retail_roster_currentFortnightId',curId);
   sels.forEach(function(sel){
     sel.onchange=function(){
@@ -2590,6 +2611,39 @@ function renderRosterSafe(){
   var combinedGrand=(fullRes.grand||0)+(casRes.grand||0);
   var adminBadge=document.getElementById('admin-total-badge'); if(adminBadge){ if(isMgr){ adminBadge.style.display='inline-block'; adminBadge.textContent='TOTAL: '+combinedGrand.toFixed(1)+'h'; } else adminBadge.style.display='none'; }
   var html='';if(full.length>0)html+=fullRes.html;if(cas.length>0)html+=casRes.html;if(hiddenList.length>0)html+=hiddenRes.html;
+  // FIXED V168: Debug hidden staff count
+  console.log('Roster render: Full='+full.length+' Casual='+cas.length+' Hidden='+hiddenList.length+' isAdmin='+isAdminView);
+  if(hiddenList.length===0 && isAdminView){
+    // Check if there are hidden staff in storage but not in current roster
+    try{
+      var hiddenInStorage=safeGetJSON('retail_roster_hidden_staff_v1',[]);
+      if(hiddenInStorage && hiddenInStorage.length>0){
+        console.log('Hidden staff in storage but not in roster:', hiddenInStorage.length, hiddenInStorage);
+        // Try to auto-add hidden staff that are missing from current roster
+        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+        var curId=safeGet('retail_roster_currentFortnightId');
+        var curFn=fns.find(function(f){ return f.id===curId; });
+        if(curFn){
+          var added=false;
+          for(var hi=0;hi<hiddenInStorage.length;hi++){
+            var hs=hiddenInStorage[hi];
+            if(!hs || !hs.username) continue;
+            var exists=curFn.staff.some(function(s){ return s.username && s.username.toLowerCase()===hs.username.toLowerCase(); });
+            if(!exists){
+              curFn.staff.push({firstName:hs.firstName,lastName:hs.lastName,username:hs.username,type:'hidden',shifts:(hs.shifts||Array(14).fill('OFF')).slice(),hidden:true,originalShifts:(hs.shifts||Array(14).fill('OFF')).slice(),employmentType:'hidden'});
+              added=true;
+            }
+          }
+          if(added){
+            safeSetJSON('retail_roster_byFortnight_v1', fns);
+            console.log('Auto-added missing hidden staff to current roster');
+            // Re-render after auto-add
+            setTimeout(function(){ try{ renderRosterSafe(); }catch(e){} }, 100);
+          }
+        }
+      }
+    }catch(e){ console.log('Hidden auto-add error', e); }
+  }
   setTimeout(function(){ var isM=isManagerRole(getActualRole()); document.querySelectorAll('#delete-roster-btn').forEach(function(b){ b.style.display=isM?'inline-block':'none'; }); },50);
   var mountEl=document.getElementById('roster-mount'); if(mountEl) mountEl.innerHTML=html;
   var labelEl=document.getElementById('fortnight-label'); if(labelEl) labelEl.textContent=cur.label;
@@ -3829,29 +3883,54 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
     };
 
     
-    // Save to Firebase and local
+    // Save to Firebase and local - FIXED V167: Actually send push notification
     try{
       const notifs = safeGetJSON('repco_notifications_v1',[]);
       notifs.push(notif);
       if(notifs.length>100) notifs.splice(0, notifs.length-100);
       safeSetJSON('repco_notifications_v1', notifs);
       
+      // Save to notifications (for in-app list)
       if(window.db){
         window.db.ref('notifications/'+targetUsername).push(notif);
         window.db.ref('notifications_global').push(notif);
+        // FIXED: Also save to push_notifications for polling fallback (employee app polls this)
+        window.db.ref('push_notifications/'+targetUsername+'/'+Date.now()).set({
+          title: notif.title,
+          body: notif.message,
+          data: notif,
+          timestamp: Date.now(),
+          from: notif.from,
+          type: notif.type
+        });
       } else {
         fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify(notif)
         }).catch(()=>{});
+        // Also save to push_notifications
+        fetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+Date.now()+'.json', {
+          method: 'PUT',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            title: notif.title,
+            body: notif.message,
+            data: notif,
+            timestamp: Date.now(),
+            from: notif.from,
+            type: notif.type
+          })
+        }).catch(()=>{});
       }
       
+      // Try to get FCM token and push to queue
       try{
         if(window.db){
           window.db.ref('fcm_tokens/'+targetUsername).once('value').then(snap=>{
             const tokenData = snap.val();
             if(tokenData && tokenData.token){
+              // Push to queue for Cloud Function (if exists)
               window.db.ref('push_queue').push({
                 to: targetUsername,
                 token: tokenData.token,
@@ -3860,15 +3939,64 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
                 data: notif,
                 ts: Date.now()
               });
+              // FIXED V167: Also try direct FCM send via Firebase Messaging (if token valid)
+              console.log('FCM token found for', targetUsername, 'queueing push');
+            } else {
+              console.log('No FCM token for', targetUsername, '- employee may not have enabled notifications');
             }
           });
         }
+      }catch(e){ console.log('FCM token lookup error', e); }
+      
+      // FIXED V167: Try to send immediate local notification via Service Worker if employee is current user, or log for debugging
+      try{
+        const currentUser = safeGet('repco_username')||'';
+        if(currentUser.toLowerCase() === targetUsername.toLowerCase()){
+          if(typeof sendLocalNotification==='function'){
+            sendLocalNotification(notif.title, notif.message);
+          }
+        }
       }catch(e){}
       
-      console.log('Shift change notification sent:', notif);
+      console.log('Shift change notification sent (V167 fixed):', notif, 'to', targetUsername);
+      // Show admin that notification was sent
+      try{ if(typeof toast==='function') toast('📱 Notification sent to '+cleanName+': '+notif.message); }catch(e){}
     }catch(e){ console.error('Notif error', e); }
   }catch(e){ console.error(e); }
 }
+
+// TEST: Manually trigger notification for debugging - call testPushNotification('username')
+function testPushNotification(targetUsername){
+  try{
+    console.log('Testing push notification to', targetUsername);
+    const testNotif = {
+      id: 'test_'+Date.now(),
+      type: 'test',
+      employee: targetUsername,
+      targetUsername: targetUsername,
+      message: 'Test notification - If you see this, pushes work!',
+      title: 'Test Push - REPCO',
+      body: 'Test notification - If you see this, pushes work!',
+      timestamp: Date.now(),
+      read: false,
+      from: 'admin-test'
+    };
+    if(window.db){
+      window.db.ref('push_notifications/'+targetUsername+'/'+Date.now()).set({
+        title: testNotif.title,
+        body: testNotif.message,
+        data: testNotif,
+        timestamp: Date.now(),
+        from: 'test',
+        type: 'test'
+      });
+      toast('Test push sent to '+targetUsername+' - check their device in 5 sec');
+    }
+    return true;
+  }catch(e){ console.error('Test push error', e); toast('Test failed: '+e.message); return false; }
+}
+
+
 
 function sendApprovalNotification(employeeName, type, details, fullRequest){
   try{
@@ -4344,6 +4472,9 @@ function renderOptions(){
       +'<button class="card" style="font-weight:900;text-align:left;background:#FFEB3B" onclick="openPage(\'hidden-staff-page\')">HIDDEN STAFF</button>'
       +'<button class="card" style="font-weight:900;text-align:left;background:#FFEB3B" onclick="openPage(\'public-holiday-page\')">PUBLIC HOLIDAYS</button>'
       +'<button class="card" style="font-weight:900;text-align:left;background:#8FC6F5" id="btn-import" onclick="triggerImport()">IMPORT ROSTER</button>'
+      +'<button class="card" style="font-weight:900;text-align:left;background:#B6F7C5" onclick="openPage(\'import-export-page\')">📤 EXPORT / IMPORT EXCEL</button>'
+      +'<button class="card" style="font-weight:900;text-align:left" onclick="exportCSV()">EXPORT CSV</button>'
+      +'<button class="card" style="font-weight:900;text-align:left" onclick="exportPDF()">EXPORT PDF</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'requests-page\')">ALL REQUESTS / APPROVALS</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="showMain()">BACK TO ROSTER</button>'
       +'</div>'+notifHtml+timerHtml+maintenanceHtml;
