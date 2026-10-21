@@ -683,7 +683,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022700017_REMEMBER_ORIGINAL_V141";
+const BUILD_ID="20261022_V158_NOTIFICATIONS_PERSIST_AFTER_LOGOUT";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -699,12 +699,16 @@ async function checkForIndexUpdate(isInitial){
     if(isInitial){ currentHtmlHash=h; if(remoteBuild) currentBuildId=remoteBuild; return; }
     if(remoteBuild && remoteBuild!==currentBuildId){
       console.log('V136: BUILD_ID changed from', currentBuildId, 'to', remoteBuild, '- forcing logout');
-      toast("New version detected ("+remoteBuild+") - logging out and reloading - backing up"); try{ backupBeforeUpdate(); }catch(e){}
+      toast("New version detected ("+remoteBuild+") - logging out and reloading - backing up - notifications preserved"); try{ backupBeforeUpdate(); }catch(e){}
       try{
+        var curUser = safeGet('repco_username')||'';
+        if(curUser) safeSet('repco_last_username', curUser);
         safeSet('repco_username','');
         safeSet('repco_last_activity','');
         safeSet('repco_currentRole','');
         safeSetJSON('retail_roster_session_v1',{});
+        // FIXED: Preserve notification settings on update logout
+        console.log('Update logout: Preserving notifications for', curUser);
       }catch(e){}
       setTimeout(()=>{ location.reload(true); },1500);
       return;
@@ -899,7 +903,7 @@ async function registerServiceWorker() {
 }
 
 // Request Notification Permission + FCM Token (Phone notifications outside browser)
-async function enablePhoneNotifications() {
+async function enablePhoneNotifications(isSilent) {
   try {
     // Check support
     if (!('Notification' in window)) {
@@ -1046,7 +1050,12 @@ async function enablePhoneNotifications() {
         } catch (e2) {
           console.log('Web Push fallback error', e2);
         }
-        toast('FCM needs VAPID key + HTTPS - See console');
+        // FIXED V157: Don't show FCM toast on auto-enable (menu tap), only log
+        if(!isSilent){
+          toast('FCM needs VAPID key + HTTPS - See console');
+        } else {
+          console.log('FCM VAPID key issue - silent fail for auto-enable');
+        }
         return false;
       }
     } else {
@@ -1330,7 +1339,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Auto-enable notifications on user interaction (required for permission prompt)
 let notifAutoAttempted = false;
-function autoEnableNotificationsOnInteraction() {
+function autoEnableNotificationsOnInteraction(isAuto) {
   if (notifAutoAttempted) return;
   notifAutoAttempted = true;
   
@@ -1343,33 +1352,45 @@ function autoEnableNotificationsOnInteraction() {
       return;
     }
     
+    // FIXED V157: Don't auto-enable on menu tap - only on explicit user action, and don't show FCM toast on auto
     // If ON by default and permission is default, request it now (user interacted)
     if (Notification.permission === 'default') {
-      console.log('User interacted - auto-enabling notifications (ON by default)');
+      console.log('User interacted - auto-enabling notifications (ON by default) - silent, no toast on fail');
       setTimeout(async () => {
         try {
-          await enablePhoneNotifications();
+          // Call with silent flag to prevent toast
+          await enablePhoneNotifications(true);
         } catch (e) {
-          console.log('Auto-enable on interaction failed', e);
+          console.log('Auto-enable on interaction failed (silent)', e);
         }
-      }, 500);
+      }, 1000);
     }
   } catch (e) {
     console.log('autoEnable error', e);
   }
 }
 
-// Listen for first user interaction to auto-enable (required for permission prompt)
+// Listen for first user interaction to auto-enable (required for permission prompt) - FIXED V157: Don't trigger on menu button
 ['click', 'touchstart', 'keydown'].forEach(eventType => {
-  document.addEventListener(eventType, function handler() {
-    autoEnableNotificationsOnInteraction();
+  document.addEventListener(eventType, function handler(e) {
+    // Ignore menu button taps to prevent FCM toast on menu open
+    try{
+      if(e && e.target){
+        const target = e.target;
+        if(target.id==='mobile-menu-toggle' || target.closest('#mobile-menu-toggle') || target.closest('#global-header')){
+          console.log('Menu interaction - skipping auto-enable to avoid FCM toast');
+          return;
+        }
+      }
+    }catch(err){}
+    autoEnableNotificationsOnInteraction(true);
     // Remove listeners after first attempt
     if (notifAutoAttempted) {
       ['click', 'touchstart', 'keydown'].forEach(et => {
         document.removeEventListener(et, handler);
       });
     }
-  }, { once: true, passive: true });
+  }, { passive: true });
 });
 
 // Send push via Firebase (for admin to notify staff - requires Cloud Function or server)
@@ -1419,8 +1440,13 @@ async function sendRosterPushNotification(targetUsername, title, body) {
 // Poll for push notifications (fallback when FCM not available, works with SW)
 setInterval(async function() {
   try {
-    const username = safeGet('repco_username');
+    let username = safeGet('repco_username') || safeGet('repco_last_username');
     if (!username) return;
+    // FIXED V157: Poll for notifications even when logged out, using last username
+    const isLoggedOut = !safeGet('repco_username');
+    if(isLoggedOut){
+      console.log('Polling notifications for logged out user:', username);
+    }
     if (Notification.permission !== 'granted') return;
     
     const resp = await fetch(FIREBASE_DB_URL + '/push_notifications/' + username + '.json?_t=' + Date.now(), { cache: 'no-store', mode: 'cors' });
@@ -2095,13 +2121,25 @@ window.doLogin = doLogin;
 
 function doLogout(){
   try{
+    var currentUsername = safeGet('repco_username')||'';
     var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
     if(fns && fns.length>0){
-      safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'logout'});
+      safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:currentUsername, reason:'logout'});
     }
     if(activityCheckInterval){ clearInterval(activityCheckInterval); activityCheckInterval=null; }
+    // FIXED V157: Preserve last username for notifications even after logout
+    if(currentUsername){
+      safeSet('repco_last_username', currentUsername);
+      // Keep push subscription alive - don't clear FCM token or webpush subscription
+      console.log('Logout: Preserving notification capability for', currentUsername);
+    }
     safeSet('repco_username','');
     safeSet('repco_last_activity','');
+    safeSet('repco_currentRole','');
+    // DON'T clear notification settings - keep them for background notifications
+    // safeSet('repco_notifications_enabled') stays
+    // safeSet('repco_fcm_token') stays
+    // safeSet('repco_webpush_subscription') stays
   }catch(e){}
   var v65=document.getElementById('repco-v65');
   if(v65) v65.classList.remove('show');
@@ -2114,7 +2152,7 @@ function doLogout(){
   var lp=document.getElementById('login-pass');
   if(lu) lu.value='';
   if(lp) lp.value='';
-  toast('Logged out - drafts preserved');
+  toast('Logged out - drafts preserved - notifications still active');
 }
 
 function seedIfEmpty(){
@@ -4296,8 +4334,12 @@ function sendApprovalNotification(employeeName, type, details, fullRequest){
 
 function checkAndShowNotifications(){
   try{
-    const myUsername = safeGet('repco_username');
+    let myUsername = safeGet('repco_username') || safeGet('repco_last_username');
     if(!myUsername) return;
+    const wasLoggedOut = !safeGet('repco_username');
+    if(wasLoggedOut){
+      console.log('Checking notifications for logged out user:', myUsername, '- notifications still active');
+    }
     const notifs = safeGetJSON('repco_notifications_v1',[]);
     const myNotifs = notifs.filter(n => 
       n.targetUsername===myUsername || 

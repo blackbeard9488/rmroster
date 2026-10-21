@@ -1,8 +1,9 @@
 // sw.js - Main Service Worker for REPCO Roster ALPHA
 // Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready
-// Verified, possible with HTTPS + VAPID
+// FIXED V157: Clean notifications, no blackbeard, single icon, Monday 22/10
 
-const CACHE_NAME = 'repco-roster-alpha-v180'; // V172 - forces update for blank pill + hidden staff + hover + push fixes
+const CACHE_NAME = 'repco-roster-alpha-v158-notif-persist';
+
 const urlsToCache = [
   '/',
   '/index.html',
@@ -11,7 +12,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
-  console.log('[SW] Install ALPHA');
+  console.log('[SW] Install V158 NOTIF PERSIST - works even when logged out');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -22,7 +23,7 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  console.log('[SW] Activate ALPHA');
+  console.log('[SW] Activate V158 NOTIF PERSIST - works even when logged out');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -53,9 +54,8 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// Push notifications - Web Push API with VAPID
 self.addEventListener('push', function(event) {
-  console.log('[SW] Push received', event);
+  console.log('[SW] Push received - will show even if logged out (V158)', event);
   let data = {};
   if (event.data) {
     try {
@@ -65,16 +65,12 @@ self.addEventListener('push', function(event) {
     }
   }
   
-  // FIXED V180: Clean title/body - NO blackbeard9.., NO REPCO... truncation, single icon
   let title = (data.title || 'REPCO').replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim();
   if(title.length>30) title = title.substring(0,30);
   if(title.includes('...')) title = 'REPCO';
-  if(!title.toUpperCase().startsWith('REPCO')) title = 'REPCO - ' + title;
-  title = title.substring(0,30);
   
   let body = (data.body || 'Your roster has been updated').replace(/blackbeard9488\.github\.io/g,'').replace(/blackbeard9\.\.\./g,'').replace(/https?:\/\/[^\s]+/g,'').trim();
   
-  // Format date to Monday 22/10
   try{
     body = body.replace(/(\d{4})-(\d{2})-(\d{2})/g, function(match, y, m, d){
       try{
@@ -90,7 +86,6 @@ self.addEventListener('push', function(event) {
   const options = {
     body: body,
     icon: './icon-192.png',
-    // No badge - fixes duplicate icons on Samsung
     tag: data.tag || 'repco-push-'+Date.now(),
     vibrate: [200, 100, 200],
     renotify: true,
@@ -114,22 +109,6 @@ self.addEventListener('notificationclick', function(event) {
       }
       if (clients.openWindow) {
         return clients.openWindow('./');
-      }
-    })
-  );
-});
-
-self.addEventListener('notificationclick', function(event) {
-  event.notification.close();
-  event.waitUntil(
-    clients.matchAll({ type: 'window' }).then(clientList => {
-      for (let client of clientList) {
-        if (client.url === self.location.origin && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow('/');
       }
     })
   );
