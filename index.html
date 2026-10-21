@@ -122,6 +122,9 @@ button{cursor:pointer}
 .r-table tr.own td.staff-cell{background:#FFEB3B !important;border-left:6px solid #E30613}
 .r-table td.cell-work{background:#fff !important;cursor:pointer;font-weight:400 !important}
 .r-table td.cell-off{background:#9DA0A3 !important;color:transparent !important;cursor:pointer}
+.r-table td.cell-pending{background:#FFEB3B !important;color:#111 !important;font-weight:900 !important;border:3px solid #111 !important;cursor:pointer;animation:pulse-yellow 1.5s infinite}
+@keyframes pulse-yellow{0%{background:#FFEB3B !important}50%{background:#FFF176 !important}100%{background:#FFEB3B !important}}
+.r-table td.col-weekend.cell-pending{background:#FFEB3B !important;border:3px solid #111 !important}
 .r-table td.cell-na{background:#111 !important;color:#fff !important}
 .r-table td.cell-absent{background:#FFA9B6 !important}
 .r-table td.col-weekend{background:#D6EBFF !important}
@@ -2936,7 +2939,15 @@ function renderRosterSafe(){
             disp='UA';
           }
         }
+        var dispOriginal = disp;
+        // V169: If pending offer, show new shift time with pending indicator
+        if(hasPendingOffer && pendingOfferData){
+          disp = pendingOfferData.newShift || disp;
+        }
         var txt=fmt(disp);
+        if(hasPendingOffer){
+          txt = fmt(disp) + ' ⏳';
+        }
         // FIX: If manually green, keep original shift text, don't show G
         if(isGreen){
           // Keep original shift text, just green background
@@ -2964,9 +2975,35 @@ function renderRosterSafe(){
         var isG=isGShift(disp, st.firstName) || (st.cellG && st.cellG[idx]);
         var off=['OFF',''].includes((disp||'').toUpperCase().trim()) || (isG && false); var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
         var isUA=['UA','NA','UNAVAILABLE','U'].includes((disp||'').toUpperCase().trim()) || na;
+        // V169: Check if this cell has pending shift offer - should be YELLOW awaiting feedback
+        var hasPendingOffer = false;
+        var pendingOfferData = null;
+        try{
+          if(st.pendingOffers && st.pendingOffers[idx] && st.pendingOffers[idx].status==='pending'){
+            hasPendingOffer = true;
+            pendingOfferData = st.pendingOffers[idx];
+          } else {
+            // Also check global offers array
+            var allOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+            var myUsernameLower = (st.username||'').toLowerCase();
+            var curDate = cur.dates[idx] ? cur.dates[idx].iso : '';
+            for(var oi=0; oi<allOffers.length; oi++){
+              var o = allOffers[oi];
+              if(o && o.status==='pending' && o.targetUsername===myUsernameLower && o.date===curDate){
+                hasPendingOffer = true;
+                pendingOfferData = o;
+                break;
+              }
+            }
+          }
+        }catch(e){}
+        
         var cls=''; 
         // FIX: Manual green (G typed) takes priority over auto G for Luke/Chris
-        if(isGreen){
+        // V169: Pending yellow takes priority over all except green/AB
+        if(hasPendingOffer){
+          cls='cell-pending';
+        } else if(isGreen){
           cls='cell-green';
         } else if(isG){ 
           cls='cell-g'; 
@@ -3690,12 +3727,75 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           }
           safeSetJSON('retail_roster_byFortnight_v1',fns);
           
+          // V169: If admin removes new shift data while awaiting feedback - cancel pending offer and delete notification from employee phone
+          try{
+            var dateISOForCancel = cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso || cur.dates[colIdx].date || '') : '';
+            var staffUsernameForCancel = (staff.username||'').toLowerCase() || (staff.firstName||'').toLowerCase();
+            var pendingOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+            var hasPendingForThisCell = false;
+            for(var poi=0; poi<pendingOffers.length; poi++){
+              var po = pendingOffers[poi];
+              if(po && po.status==='pending' && po.targetUsername===staffUsernameForCancel && po.date===dateISOForCancel){
+                hasPendingForThisCell = true;
+                break;
+              }
+              // Also check via staff pendingOffers marker
+              if(staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
+                hasPendingForThisCell = true;
+                break;
+              }
+            }
+            
+            if(hasPendingForThisCell){
+              var oldCleanCancel = (current||'').toString().trim().toUpperCase();
+              var newCleanCancel = (actualShift||'').toString().trim().toUpperCase();
+              // If admin clears cell to OFF, or changes to different time than pending offer, cancel it
+              var isRemoving = (newCleanCancel==='' || newCleanCancel==='OFF' || newCleanCancel==='-' || newCleanCancel==='0');
+              var isChanging = (oldCleanCancel!=='' && newCleanCancel!=='' && oldCleanCancel!==newCleanCancel);
+              
+              // Get pending offer newShift to compare
+              var pendingNewShift = '';
+              try{
+                if(staff.pendingOffers && staff.pendingOffers[colIdx]) pendingNewShift = staff.pendingOffers[colIdx].newShift||'';
+                else {
+                  for(var pii=0; pii<pendingOffers.length; pii++){
+                    if(pendingOffers[pii].targetUsername===staffUsernameForCancel && pendingOffers[pii].date===dateISOForCancel && pendingOffers[pii].status==='pending'){
+                      pendingNewShift = pendingOffers[pii].newShift||'';
+                      break;
+                    }
+                  }
+                }
+              }catch(e){}
+              
+              // Cancel if removing, or if changing to something different than pending offer
+              if(isRemoving || (isChanging && newCleanCancel!==pendingNewShift.toUpperCase())){
+                console.log('V169: Admin removing/changing pending offer cell - cancelling', staff.firstName, dateISOForCancel, current, '->', actualShift);
+                if(typeof cancelPendingOffersForCell==='function'){
+                  cancelPendingOffersForCell(staffUsernameForCancel, dateISOForCancel, 'Admin removed shift '+current+' -> '+actualShift);
+                }
+              }
+            }
+          }catch(cancelErr){ console.log('V169 cancel check error', cancelErr); }
+          
           // FIXED: Send shift change notification (OFF -> shift = New shift added! for current fortnight)
           try{
             const dateISO = cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso || cur.dates[colIdx].date || '') : '';
             if(typeof sendShiftChangeNotification==='function' && current !== actualShift){
-              const staffName = (staff.firstName||'')+' '+(staff.lastName||'');
-              sendShiftChangeNotification(staffName.trim(), current, actualShift, dateISO);
+              // V169: Don't send new notification if we just cancelled a pending offer (admin removing)
+              var shouldNotify = true;
+              try{
+                var checkOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+                // If current was pending offer newShift and we're going to OFF, don't notify as new offer
+                var wasPendingOffer = checkOffers.some(function(o){ return o.targetUsername===(staff.username||'').toLowerCase() && o.date===dateISO && o.status==='cancelled'; });
+                if(wasPendingOffer && (actualShift.toUpperCase()==='OFF' || actualShift==='')){
+                  shouldNotify = false;
+                  console.log('V169: Skipping notification - just cancelled pending offer');
+                }
+              }catch(e){}
+              if(shouldNotify){
+                const staffName = (staff.firstName||'')+' '+(staff.lastName||'');
+                sendShiftChangeNotification(staffName.trim(), current, actualShift, dateISO);
+              }
             }
           }catch(notifErr){ console.log('Shift notification error', notifErr); }
           
@@ -4567,12 +4667,172 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
     }catch(e){ console.error('V167 Shift notif save error', e); }
   }catch(e){ console.error('V167 sendShiftChangeNotification error', e); }
 }
-}
+
+
+// V169 FIX: When admin removes new shift data while awaiting feedback, cancel request and delete notification from employee phone
+function cancelPendingOffersForCell(targetUsername, dateISO, reason){
+  try{
+    console.log('V169: Cancelling pending offers for', targetUsername, dateISO, reason);
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var notifs = safeGetJSON('repco_notifications_v1',[]);
+    var cancelled = [];
+    var remainingOffers = [];
+    
+    for(var i=0; i<offers.length; i++){
+      var o = offers[i];
+      if(!o) continue;
+      // Match by username and date
+      var usernameMatch = o.targetUsername && o.targetUsername.toLowerCase()===targetUsername.toLowerCase();
+      var dateMatch = o.date===dateISO;
+      // Also check if date matches via formatted
+      if(!dateMatch && dateISO){
+        try{
+          // Try matching by iso
+          if(o.date && o.date.includes && dateISO.includes){
+            if(o.date.substring(0,10)===dateISO.substring(0,10)) dateMatch=true;
+          }
+        }catch(e){}
+      }
+      
+      if(usernameMatch && dateMatch && o.status==='pending'){
+        console.log('V169: Cancelling offer', o.id, 'for', targetUsername, dateISO);
+        o.status = 'cancelled';
+        o.cancelledTs = Date.now();
+        o.cancelledBy = safeGet('repco_username')||'admin';
+        o.cancelReason = reason||'Admin removed shift';
+        cancelled.push(o);
+        // Don't keep pending, mark cancelled but keep for history then remove
+        // For instant UI, remove from pending list
+      } else {
+        remainingOffers.push(o);
+      }
+    }
+    
+    // Keep cancelled for audit but also create cleaned list without pending that was cancelled
+    // For now, we keep cancelled in array but status != pending so it won't show
+    var updatedOffers = [];
+    for(var j=0; j<offers.length; j++){
+      var oj = offers[j];
+      if(!oj) continue;
+      var isCancelled = false;
+      for(var c=0; c<cancelled.length; c++){
+        if(cancelled[c].id===oj.id) isCancelled=true;
+      }
+      if(isCancelled){
+        // Mark as cancelled and keep for history but not pending
+        oj.status='cancelled';
+        updatedOffers.push(oj);
+      } else {
+        updatedOffers.push(oj);
+      }
+    }
+    
+    safeSetJSON('retail_roster_shift_offers_v1', updatedOffers);
+    
+    // Delete notifications for this offer from employee phone
+    var remainingNotifs = [];
+    var deletedNotifIds = [];
+    for(var n=0; n<notifs.length; n++){
+      var notif = notifs[n];
+      if(!notif) { remainingNotifs.push(notif); continue; }
+      var shouldDelete = false;
+      for(var cc=0; cc<cancelled.length; cc++){
+        var co = cancelled[cc];
+        if(notif.id===co.id || notif.id===co.notifId || notif.notifId===co.id){
+          shouldDelete = true;
+          deletedNotifIds.push(notif.id);
+          break;
+        }
+        // Also match by employee and date and type new_shift_offer
+        if(notif.type==='new_shift_offer' && notif.targetUsername===targetUsername.toLowerCase() && notif.date===dateISO){
+          shouldDelete = true;
+          deletedNotifIds.push(notif.id);
+          break;
         }
       }
-    }catch(e){}
-  }catch(e){ console.error('renderShiftOffers error', e); }
+      if(!shouldDelete){
+        remainingNotifs.push(notif);
+      }
+    }
+    safeSetJSON('repco_notifications_v1', remainingNotifs);
+    
+    // Remove pendingOffers marker from roster
+    try{
+      var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+      for(var fi=0; fi<fns.length; fi++){
+        var fn = fns[fi];
+        if(!fn.dates || !fn.staff) continue;
+        var dIdx = fn.dates.findIndex(function(d){ return d.iso===dateISO; });
+        if(dIdx===-1) continue;
+        for(var si=0; si<fn.staff.length; si++){
+          var st = fn.staff[si];
+          if(st.username && st.username.toLowerCase()===targetUsername.toLowerCase()){
+            if(st.pendingOffers && st.pendingOffers[dIdx]){
+              delete st.pendingOffers[dIdx];
+            }
+          }
+        }
+      }
+      safeSetJSON('retail_roster_byFortnight_v1', fns);
+    }catch(e){ console.log('V169 cancel roster marker error', e); }
+    
+    // Push to Firebase to delete from employee phone instantly
+    try{
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updatedOffers),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(remainingNotifs),mode:'cors'}).catch(function(){});
+        // Also push cancellation to employee's notification channel
+        for(var ci=0; ci<cancelled.length; ci++){
+          var canc = cancelled[ci];
+          var cancelNotif = {
+            id: 'cancel_'+canc.id+'_'+Date.now(),
+            type: 'shift_offer_cancelled',
+            employee: canc.employee,
+            targetUsername: canc.targetUsername,
+            date: canc.date,
+            message: 'Shift offer cancelled by admin - '+canc.formattedDate+' '+canc.newShift,
+            title: 'Shift Cancelled',
+            timestamp: Date.now(),
+            read: false,
+            cancelledOfferId: canc.id
+          };
+          fetch(FIREBASE_DB_URL+'/notifications/'+canc.targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cancelNotif),mode:'cors'}).catch(function(){});
+        }
+      }
+      if(window.db){
+        try{ window.db.ref('retail_roster_shift_offers_v1').set(updatedOffers); }catch(e){}
+        try{ window.db.ref('repco_notifications_v1').set(remainingNotifs); }catch(e){}
+        for(var cii=0; cii<cancelled.length; cii++){
+          try{
+            var cc2 = cancelled[cii];
+            window.db.ref('notifications/'+cc2.targetUsername).push({
+              id: 'cancel_'+cc2.id+'_'+Date.now(),
+              type: 'shift_offer_cancelled',
+              employee: cc2.employee,
+              targetUsername: cc2.targetUsername,
+              date: cc2.date,
+              message: 'Shift offer cancelled by admin',
+              title: 'Shift Cancelled',
+              timestamp: Date.now(),
+              read: false,
+              cancelledOfferId: cc2.id
+            });
+          }catch(e){}
+        }
+      }
+    }catch(e){ console.log('V169 cancel Firebase error', e); }
+    
+    console.log('V169: Cancelled', cancelled.length, 'offers, deleted', deletedNotifIds.length, 'notifications');
+    if(cancelled.length>0){
+      try{ toast('Cancelled '+cancelled.length+' pending offer(s) - removed from employee phone'); }catch(e){}
+      try{ renderShiftOffers(); }catch(e){}
+      try{ updateShiftOffersBadge(); }catch(e){}
+      try{ renderRosterSafe(); }catch(e){}
+    }
+    return cancelled;
+  }catch(e){ console.error('cancelPendingOffersForCell error', e); return []; }
 }
+
 
 function updateShiftOffersBadge(){
   try{
@@ -4593,6 +4853,298 @@ function updateShiftOffersBadge(){
     }
   }catch(e){}
 }
+
+// V169 FIX: Accept/Deny shift offer - yellow -> normal, admin notification on Requests page
+var _offerActionInProgress = {};
+function acceptShiftOffer(offerId){
+  try{
+    if(_offerActionInProgress[offerId]){ console.log('V169: Accept already in progress for', offerId); return; }
+    _offerActionInProgress[offerId]=true;
+    console.log('V169: Accepting shift offer', offerId);
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var idx = offers.findIndex(function(o){ return o.id===offerId; });
+    if(idx===-1){ toast('Offer not found'); _offerActionInProgress[offerId]=false; return; }
+    var offer = offers[idx];
+    if(offer.status!=='pending'){ toast('Offer already '+offer.status); _offerActionInProgress[offerId]=false; return; }
+    
+    offer.status = 'accepted';
+    offer.acceptedTs = Date.now();
+    offer.read = true;
+    offer.readByStaff = true;
+    safeSetJSON('retail_roster_shift_offers_v1', offers);
+    
+    // V169: Accept - cell returns to normal showing new time (yellow -> normal)
+    try{
+      var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+      for(var fi=0; fi<fns.length; fi++){
+        var fn = fns[fi];
+        if(!fn.dates || !fn.staff) continue;
+        var dIdx = fn.dates.findIndex(function(d){ return d.iso===offer.date || d.date===offer.date; });
+        if(dIdx===-1) continue;
+        var sIdx = fn.staff.findIndex(function(s){ 
+          return (s.username && s.username.toLowerCase()===offer.targetUsername.toLowerCase());
+        });
+        if(sIdx!==-1){
+          if(fn.staff[sIdx].pendingOffers && fn.staff[sIdx].pendingOffers[dIdx]){
+            delete fn.staff[sIdx].pendingOffers[dIdx];
+          }
+          fn.staff[sIdx].shifts[dIdx] = offer.newShift;
+          if(fn.staff[sIdx].pendingOffers && Object.keys(fn.staff[sIdx].pendingOffers).length===0){
+            delete fn.staff[sIdx].pendingOffers;
+          }
+        }
+      }
+      safeSetJSON('retail_roster_byFortnight_v1', fns);
+    }catch(e){ console.error('Accept roster update error', e); }
+    
+    // Notify admin
+    try{
+      var notifs = safeGetJSON('repco_notifications_v1',[]);
+      var alreadyNotified = notifs.some(function(n){ return n.offerId===offerId && n.type==='shift_offer_accepted'; });
+      if(!alreadyNotified){
+        var adminNotif = {
+          id: 'offer_accept_'+offerId+'_'+Date.now(),
+          type: 'shift_offer_accepted',
+          employee: 'System',
+          targetUsername: 'admin',
+          message: '✅ '+offer.employee+' ACCEPTED new shift '+offer.formattedDate+' '+offer.newShift,
+          title: '✅ Shift Accepted - '+offer.employee,
+          body: offer.employee+' accepted new shift on '+offer.formattedDate+' - '+offer.newShift,
+          timestamp: Date.now(),
+          read: false,
+          from: offer.targetUsername,
+          offerId: offerId,
+          status: 'accepted',
+          isAdminOnly: true
+        };
+        notifs.push(adminNotif);
+        safeSetJSON('repco_notifications_v1', notifs);
+        if(typeof FIREBASE_DB_URL!=='undefined'){
+          fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+        }
+        if(window.db){
+          try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
+        }
+      }
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+      }
+      if(window.db){
+        try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
+      }
+    }catch(e){ console.log('Admin accept notif error', e); }
+    
+    try{
+      var state=getAllState();
+      state._ts=Date.now();
+      safeSet('repco_cloud_ts', String(state._ts));
+      if(window.db && window.db.ref){
+        window.db.ref('repco_state').set(state);
+      }
+    }catch(e){}
+    
+    toast('✅ Accepted: '+offer.formattedDate+' '+offer.newShift+' - Now normal');
+    try{ renderShiftOffers(); }catch(e){}
+    try{ renderRosterSafe(); }catch(e){}
+    try{ updateShiftOffersBadge(); }catch(e){}
+    setTimeout(function(){ _offerActionInProgress[offerId]=false; }, 2000);
+  }catch(e){ console.error('acceptShiftOffer error', e); toast('Error: '+e.message); _offerActionInProgress[offerId]=false; }
+}
+
+function denyShiftOffer(offerId){
+  try{
+    if(_offerActionInProgress[offerId]){ console.log('V169: Deny already in progress for', offerId); return; }
+    _offerActionInProgress[offerId]=true;
+    console.log('V169: Denying shift offer', offerId);
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var idx = offers.findIndex(function(o){ return o.id===offerId; });
+    if(idx===-1){ toast('Offer not found'); _offerActionInProgress[offerId]=false; return; }
+    var offer = offers[idx];
+    if(offer.status!=='pending'){ toast('Offer already '+offer.status); _offerActionInProgress[offerId]=false; return; }
+    
+    if(typeof showCustomConfirm==='function'){
+      showCustomConfirm('Deny New Shift?', '<div style="font-size:11px">Deny new shift on <b>'+offer.formattedDate+'</b><br>Shift: <b>'+offer.newShift+'</b><br><br>This will remove shift from roster (set to OFF) and notify admin.</div>', function(confirmed){
+        if(!confirmed){ _offerActionInProgress[offerId]=false; return; }
+        doDenyOffer(offer, offers, idx, offerId);
+      });
+    } else {
+      if(!confirm('Deny new shift on '+offer.formattedDate+' - '+offer.newShift+'?')){ _offerActionInProgress[offerId]=false; return; }
+      doDenyOffer(offer, offers, idx, offerId);
+    }
+  }catch(e){ console.error('denyShiftOffer error', e); toast('Error: '+e.message); _offerActionInProgress[offerId]=false; }
+}
+
+function doDenyOffer(offer, offers, idx, offerId){
+  try{
+    offer.status = 'denied';
+    offer.deniedTs = Date.now();
+    offer.read = true;
+    offer.readByStaff = true;
+    safeSetJSON('retail_roster_shift_offers_v1', offers);
+    
+    // V169: Deny - shift turns back to normal OFF, yellow cleared
+    try{
+      var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+      for(var fi=0; fi<fns.length; fi++){
+        var fn = fns[fi];
+        if(!fn.dates || !fn.staff) continue;
+        var dIdx = fn.dates.findIndex(function(d){ return d.iso===offer.date || d.date===offer.date; });
+        if(dIdx===-1) continue;
+        var sIdx = fn.staff.findIndex(function(s){ 
+          return (s.username && s.username.toLowerCase()===offer.targetUsername.toLowerCase());
+        });
+        if(sIdx!==-1){
+          if(fn.staff[sIdx].pendingOffers && fn.staff[sIdx].pendingOffers[dIdx]){
+            delete fn.staff[sIdx].pendingOffers[dIdx];
+          }
+          fn.staff[sIdx].shifts[dIdx] = offer.oldShift||'OFF';
+          if(fn.staff[sIdx].pendingOffers && Object.keys(fn.staff[sIdx].pendingOffers).length===0){
+            delete fn.staff[sIdx].pendingOffers;
+          }
+        }
+      }
+      safeSetJSON('retail_roster_byFortnight_v1', fns);
+    }catch(e){ console.error('Deny roster update error', e); }
+    
+    // V169: Admin must get notification on Requests page if shift denied
+    try{
+      var allReqs = safeGetJSON('retail_roster_requests_v2',[]);
+      var denialReq = {
+        id: 'denial_'+offer.id+'_'+Date.now(),
+        type: 'shift-offer-denied',
+        username: offer.targetUsername,
+        employee: offer.employee,
+        dates: [offer.formattedDate||offer.date],
+        shiftDate: offer.formattedDate||offer.date,
+        shiftISO: offer.date,
+        oldShift: offer.newShift,
+        newShift: offer.oldShift||'OFF',
+        reason: '❌ DENIED new shift offer '+offer.newShift+' on '+offer.formattedDate+' - Employee rejected',
+        status: 'pending',
+        readByAdmin: false,
+        readByStaff: true,
+        ts: Date.now(),
+        isDenialNotification: true,
+        offerId: offer.id,
+        formattedDate: offer.formattedDate
+      };
+      allReqs.push(denialReq);
+      safeSetJSON('retail_roster_requests_v2', allReqs);
+      try{ localStorage.setItem('retail_roster_requests_update_ts', String(Date.now())); }catch(e){}
+      console.log('V169: Created Requests page notification for denied shift');
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqs),mode:'cors'}).catch(function(){});
+      }
+      if(window.db){
+        try{ window.db.ref('retail_roster_requests_v2').set(allReqs); }catch(e){}
+      }
+      try{ if(typeof updateRequestsBadge==='function') updateRequestsBadge(); }catch(e){}
+    }catch(e){ console.log('Denial Requests error', e); }
+    
+    // Admin notification
+    try{
+      var notifs = safeGetJSON('repco_notifications_v1',[]);
+      var alreadyNotified = notifs.some(function(n){ return n.offerId===offerId && n.type==='shift_offer_denied'; });
+      if(!alreadyNotified){
+        var adminNotif = {
+          id: 'offer_deny_'+offerId+'_'+Date.now(),
+          type: 'shift_offer_denied',
+          employee: 'System',
+          targetUsername: 'admin',
+          message: '❌ '+offer.employee+' DENIED new shift '+offer.formattedDate+' '+offer.newShift+' - Removed, check Requests page',
+          title: '❌ Shift Denied - '+offer.employee,
+          body: offer.employee+' denied new shift on '+offer.formattedDate,
+          timestamp: Date.now(),
+          read: false,
+          from: offer.targetUsername,
+          offerId: offerId,
+          status: 'denied',
+          isAdminOnly: true
+        };
+        notifs.push(adminNotif);
+        safeSetJSON('repco_notifications_v1', notifs);
+        if(typeof FIREBASE_DB_URL!=='undefined'){
+          fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+        }
+        if(window.db){
+          try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
+        }
+      }
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+      }
+      if(window.db){
+        try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
+      }
+    }catch(e){ console.log('Admin denial notif error', e); }
+    
+    try{
+      var state=getAllState();
+      state._ts=Date.now();
+      safeSet('repco_cloud_ts', String(state._ts));
+      if(window.db && window.db.ref){
+        window.db.ref('repco_state').set(state);
+      }
+    }catch(e){}
+    
+    toast('❌ Denied: '+offer.formattedDate+' - Back to OFF, admin notified on Requests page');
+    try{ renderShiftOffers(); }catch(e){}
+    try{ renderRosterSafe(); }catch(e){}
+    try{ updateShiftOffersBadge(); }catch(e){}
+    try{ renderRequestsPage(); }catch(e){}
+    setTimeout(function(){ _offerActionInProgress[offerId]=false; }, 2000);
+  }catch(e){ console.error('doDenyOffer error', e); toast('Error: '+e.message); _offerActionInProgress[offerId]=false; }
+}
+
+function renderShiftOffers(){
+  try{
+    var containers = document.querySelectorAll('#shift-offers-list');
+    if(containers.length===0){ return; }
+    var myUsername = (safeGet('repco_username')||'').toLowerCase();
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var isMgr = false;
+    try{ isMgr = isManagerRole(getActualRole()); }catch(e){}
+    var myOffers = [];
+    if(isMgr){
+      myOffers = offers.filter(function(o){ return o.status==='pending'; });
+    } else {
+      myOffers = offers.filter(function(o){ return o.targetUsername===myUsername && o.status==='pending'; });
+    }
+    var html = '';
+    if(myOffers.length===0){
+      html = '<div class="card" style="padding:12px;text-align:center"><div style="font-size:12px;font-weight:900">No pending shift offers</div><div style="font-size:11px;color:#666;margin-top:6px">When admin assigns new shifts (OFF → shift), they turn YELLOW awaiting your feedback.<br><br>✅ Accept → yellow turns normal showing new time<br>❌ Deny → yellow turns OFF, admin notified on Requests page</div></div>';
+      var recent = offers.filter(function(o){ return o.targetUsername===myUsername && (o.status==='denied' || o.status==='accepted' || o.status==='cancelled'); }).slice(-5).reverse();
+      if(recent.length>0){
+        html += '<div style="margin-top:12px;font-weight:900;font-size:11px">Recent decisions:</div>';
+        recent.forEach(function(o){
+          var col = o.status==='accepted'?'#B6F7C5':o.status==='denied'?'#FFA9B6':'#E0E0E0';
+          html += '<div class="card" style="padding:8px;background:'+col+'"><div style="font-size:10px">'+o.formattedDate+' '+o.newShift+' - '+o.status.toUpperCase()+' at '+new Date(o.deniedTs||o.acceptedTs||o.cancelledTs||o.timestamp).toLocaleString()+'</div></div>';
+        });
+      }
+    } else {
+      myOffers.sort(function(a,b){ return b.timestamp - a.timestamp; });
+      for(var i=0; i<myOffers.length; i++){
+        var o = myOffers[i];
+        html += '<div class="card" style="background:#fff;border:3px solid #E30613;border-radius:12px;padding:12px;margin-bottom:10px">';
+        html += '<div style="font-weight:900;font-size:12px;margin-bottom:6px">🎉 NEW SHIFT OFFER - '+(o.employee||o.targetUsername)+'</div>';
+        html += '<div style="font-size:11px"><b>'+(o.formattedDate||o.date)+'</b> - <span style="background:#FFEB3B;padding:2px 6px;border-radius:9999px;font-weight:900">'+o.newShift+'</span> YELLOW PENDING<br>From: '+(o.from||'admin')+'<br>Old: '+(o.oldShift||'OFF')+' → New: <b>'+o.newShift+'</b><br>Status: <b style="background:#FFEB3B;padding:2px 6px;border-radius:9999px">AWAITING FEEDBACK - YELLOW</b></div>';
+        if(!isMgr || o.targetUsername===myUsername){
+          html += '<div style="display:flex;gap:8px;margin-top:10px">';
+          html += '<button onclick="acceptShiftOffer(\''+o.id+'\')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;font-size:11px">✅ ACCEPT - Turns Normal</button>';
+          html += '<button onclick="denyShiftOffer(\''+o.id+'\')" style="flex:1;background:#fff;color:#E30613;border:2px solid #E30613;border-radius:9999px;padding:12px;font-weight:900;font-size:11px">❌ DENY - Back to OFF</button>';
+          html += '</div>';
+        } else {
+          html += '<div style="font-size:10px;color:#666;margin-top:8px">Pending acceptance by '+o.targetUsername+' - YELLOW on roster</div>';
+        }
+        html += '</div>';
+      }
+    }
+    containers.forEach(function(container){ container.innerHTML = html; });
+    try{ updateShiftOffersBadge(); }catch(e){}
+  }catch(e){ console.error('renderShiftOffers error', e); }
+}
+
+
 
 
 
@@ -7223,15 +7775,24 @@ function renderRequestsPage(){
   
   // Admin should NOT be able to create requests
   if(isAdmin){
-    // Only show pending requests to approve/deny, no create form
     let all=safeGetJSON('retail_roster_requests_v2',[]);
     if(all.length===0){
       container.innerHTML='<div class="card" style="background:#fff;border:3px solid #111;border-radius:12px;padding:16px;text-align:center"><b>No pending requests</b><br><small>Staff requests will appear here</small></div>';
       return;
     }
     let html='';
+    // V169: Show denied shift offers first with red highlight - admin must get notification on Requests page if shift denied
+    let deniedOffers = all.filter(r=>r.type==='shift-offer-denied' && r.status==='pending');
+    if(deniedOffers.length>0){
+      html+='<div style="background:#E30613;color:#fff;border:3px solid #111;border-radius:12px;padding:10px;margin-bottom:12px;font-weight:900;font-size:12px">❌ SHIFT DENIED NOTIFICATIONS - '+deniedOffers.length+' employee(s) denied new shifts</div>';
+      deniedOffers.forEach((req,idx)=>{
+        let realIdx = all.indexOf(req);
+        html+='<div class="card" style="background:#FFA9B6;border:3px solid #E30613;border-radius:12px;padding:14px;margin-bottom:10px;animation:pulse-red 1s infinite"><div style="display:flex;justify-content:space-between"><b style="background:#E30613;color:#fff;border-radius:9999px;padding:4px 10px;font-size:10px">❌ SHIFT DENIED</b><small>'+(req.username||'')+'</small></div><div style="margin-top:8px;font-size:12px"><b>'+(req.employee||req.username||'')+'</b> DENIED shift<br><b>'+(req.shiftDate||'')+'</b> - Offered: '+(req.oldShift||'')+' → Wanted: OFF<br><small>'+(req.reason||'')+'</small><br><small style="background:#FFEB3B;padding:2px 6px;border-radius:9999px;font-weight:900">Roster now shows OFF (normal) - was YELLOW pending</small></div><div style="display:flex;gap:8px;margin-top:10px"><button onclick="dismissDenialReq('+realIdx+')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">✓ DISMISS - Seen</button><button onclick="reOfferShift('+realIdx+')" style="flex:1;background:#fff;color:#E30613;border:2px solid #E30613;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">RE-OFFER SHIFT</button></div></div>';
+      });
+    }
     all.forEach((req,idx)=>{
       if(req.status!=='pending') return;
+      if(req.type==='shift-offer-denied') return; // Already shown above
       let typeLabel=req.type==='unavailability'?'UNAVAILABILITY':'SHIFT CORRECTION';
       let typeColor=req.type==='unavailability'?'#FFEB3B':'#8FC6F5';
       html+='<div class="card" style="background:#fff;border:3px solid #111;border-radius:12px;padding:14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between"><b style="background:'+typeColor+';border-radius:9999px;padding:4px 10px;font-size:10px">'+typeLabel+'</b><small>'+(req.username||'')+'</small></div><div style="margin-top:8px;font-size:12px"><b>'+(req.username||'')+'</b> - '+(req.dates?req.dates.join(', '):(req.shiftDate||''))+'<br>Reason: '+(req.reason||'No reason')+'<br>'+(req.newShift?'New: '+req.newShift:'')+'</div><div style="display:flex;gap:8px;margin-top:10px"><button onclick="approveReq('+idx+')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">APPROVE</button><button onclick="denyReq('+idx+')" style="flex:1;background:#fff;color:#111;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">DENY</button></div></div>';
@@ -7518,6 +8079,92 @@ function submitShiftCorrection(){
     }catch(e){}
   },500);
 }
+
+
+function dismissDenialReq(idx){
+  try{
+    var all=safeGetJSON('retail_roster_requests_v2',[]);
+    if(all[idx]){
+      all[idx].status='dismissed';
+      all[idx].readByAdmin=true;
+      safeSetJSON('retail_roster_requests_v2', all);
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+      }
+      if(window.db){
+        try{ window.db.ref('retail_roster_requests_v2').set(all); }catch(e){}
+      }
+      toast('Dismissed denial notification');
+      try{ renderRequestsPage(); }catch(e){}
+      try{ updateRequestsBadge(); }catch(e){}
+    }
+  }catch(e){ console.error('dismiss error', e); }
+}
+
+function reOfferShift(idx){
+  try{
+    var all=safeGetJSON('retail_roster_requests_v2',[]);
+    var req = all[idx];
+    if(!req) return;
+    // Re-create the shift offer
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var newOffer = {
+      id: 'shift_'+Date.now()+'_'+Math.random().toString(36).substr(2,8),
+      type: 'new_shift_offer',
+      employee: req.employee||req.username,
+      targetUsername: req.username,
+      oldShift: 'OFF',
+      newShift: req.oldShift||'08:00-16:00',
+      date: req.shiftISO||req.shiftDate,
+      formattedDate: req.shiftDate,
+      message: req.shiftDate+' - New shift '+(req.oldShift||'')+' - Tap to Accept/Deny',
+      timestamp: Date.now(),
+      status: 'pending',
+      from: safeGet('repco_username')||'admin',
+      read: false
+    };
+    offers.push(newOffer);
+    safeSetJSON('retail_roster_shift_offers_v1', offers);
+    
+    // Update roster to yellow pending again
+    try{
+      var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+      for(var fi=0; fi<fns.length; fi++){
+        var fn = fns[fi];
+        if(!fn.dates || !fn.staff) continue;
+        var dIdx = fn.dates.findIndex(function(d){ return d.iso===newOffer.date || d.date===newOffer.date || d.date+' '+d.day===newOffer.date; });
+        if(dIdx===-1) continue;
+        var sIdx = fn.staff.findIndex(function(s){ return s.username && s.username.toLowerCase()===newOffer.targetUsername.toLowerCase(); });
+        if(sIdx!==-1){
+          if(!fn.staff[sIdx].pendingOffers) fn.staff[sIdx].pendingOffers={};
+          fn.staff[sIdx].pendingOffers[dIdx]={offerId:newOffer.id, status:'pending', newShift:newOffer.newShift};
+          fn.staff[sIdx].shifts[dIdx]=newOffer.newShift;
+        }
+      }
+      safeSetJSON('retail_roster_byFortnight_v1', fns);
+    }catch(e){ console.log('Re-offer roster error', e); }
+    
+    // Mark old denial as dismissed
+    req.status='dismissed';
+    safeSetJSON('retail_roster_requests_v2', all);
+    
+    if(typeof FIREBASE_DB_URL!=='undefined'){
+      fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+      fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+    }
+    if(window.db){
+      try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
+      try{ window.db.ref('retail_roster_requests_v2').set(all); }catch(e){}
+    }
+    
+    toast('Re-offered shift to '+newOffer.targetUsername+' - Now YELLOW pending again');
+    try{ renderRequestsPage(); }catch(e){}
+    try{ renderShiftOffers(); }catch(e){}
+    try{ renderRosterSafe(); }catch(e){}
+    try{ updateShiftOffersBadge(); }catch(e){}
+  }catch(e){ console.error('reOffer error', e); toast('Error: '+e.message); }
+}
+
 
 function renderTodayWorkers(){ const cur=getCurrentFortnight(); if(!cur) return; const iso=getISO(); let idx=cur.dates.findIndex(d=>d.iso===iso); if(idx===-1) idx=0; const listEl=document.getElementById('today-workers-list'); if(!listEl) return; let workers=[]; cur.staff.forEach(s=>{ const sh=s.shifts[idx]||'OFF'; const isAbs=s.absentApproved && s.absentApproved[idx]; if(isAbs) return; if(sh.toUpperCase()!=='OFF'&&sh!=='NA' && sh.toUpperCase()!=='AB' && !(s.unavailable&&s.unavailable[idx])) workers.push({name:s.lastName.toUpperCase()+' '+s.firstName,shift:fmt(sh)}); }); if(workers.length===0) listEl.innerHTML='<div class="card">No workers rostered today </div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; else listEl.innerHTML=workers.map(w=>'<div class="card"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 10px;font-size:11px;font-weight:900;margin-right:6px">'+(w.shift||'OFF')+'</span> '+w.name+'</div>').join('')+'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; }
 function toast(m){let t=document.getElementById('toast-v141');if(!t)return; t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3500);}
