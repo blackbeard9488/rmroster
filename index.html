@@ -1166,16 +1166,84 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       await registerServiceWorker();
       
-      // If notifications previously enabled, re-enable silently
-      const wasEnabled = safeGet('repco_notifications_enabled') === 'true';
+      // FIX: Notifications ON by default - auto-enable if not explicitly disabled
+      const notifSetting = safeGet('repco_notifications_enabled');
+      const wasExplicitlyDisabled = notifSetting === 'false';
+      const wasEnabled = notifSetting === 'true';
+      
+      if (!wasExplicitlyDisabled) {
+        // Not disabled = should be ON by default
+        if (Notification.permission === 'granted') {
+          console.log('Notifications ON by default - permission already granted, ensuring subscription...');
+          try {
+            // Ensure FCM/Web Push subscription exists
+            if (!safeGet('repco_fcm_token') && !safeGet('repco_webpush_subscription')) {
+              await enablePhoneNotifications();
+            }
+          } catch (e) {
+            console.log('Auto-enable subscription check error', e);
+          }
+        } else if (Notification.permission === 'default') {
+          console.log('Notifications ON by default - permission default, will auto-request on next user interaction');
+          // Don't auto-request here (needs user gesture), but mark as should be enabled
+          // The login flow will trigger the permission request
+          if (notifSetting !== 'true' && notifSetting !== 'false') {
+            safeSet('repco_notifications_enabled', 'true'); // Default to true
+          }
+        }
+      }
+      
       if (wasEnabled && Notification.permission === 'granted') {
         console.log('Notifications were enabled, checking subscription...');
-        // Re-subscribe if needed
       }
     } catch (e) {
       console.log('SW auto-register error', e);
     }
   }, 2000);
+});
+
+// Auto-enable notifications on user interaction (required for permission prompt)
+let notifAutoAttempted = false;
+function autoEnableNotificationsOnInteraction() {
+  if (notifAutoAttempted) return;
+  notifAutoAttempted = true;
+  
+  try {
+    const notifSetting = safeGet('repco_notifications_enabled');
+    const wasExplicitlyDisabled = notifSetting === 'false';
+    
+    if (wasExplicitlyDisabled) {
+      console.log('Notifications explicitly disabled by user, not auto-enabling');
+      return;
+    }
+    
+    // If ON by default and permission is default, request it now (user interacted)
+    if (Notification.permission === 'default') {
+      console.log('User interacted - auto-enabling notifications (ON by default)');
+      setTimeout(async () => {
+        try {
+          await enablePhoneNotifications();
+        } catch (e) {
+          console.log('Auto-enable on interaction failed', e);
+        }
+      }, 500);
+    }
+  } catch (e) {
+    console.log('autoEnable error', e);
+  }
+}
+
+// Listen for first user interaction to auto-enable (required for permission prompt)
+['click', 'touchstart', 'keydown'].forEach(eventType => {
+  document.addEventListener(eventType, function handler() {
+    autoEnableNotificationsOnInteraction();
+    // Remove listeners after first attempt
+    if (notifAutoAttempted) {
+      ['click', 'touchstart', 'keydown'].forEach(et => {
+        document.removeEventListener(et, handler);
+      });
+    }
+  }, { once: true, passive: true });
 });
 
 // Send push via Firebase (for admin to notify staff - requires Cloud Function or server)
@@ -1845,6 +1913,20 @@ async function doLogin(){
         if(typeof renderMySchedule==='function'){
           try{ renderMySchedule(); }catch(e){ console.error('renderMySchedule failed', e); }
         }
+        // FIX: Notifications ON by default - auto-enable on login if not explicitly disabled
+        setTimeout(async () => {
+          try {
+            const notifSetting = safeGet('repco_notifications_enabled');
+            if (notifSetting !== 'false') {
+              if (Notification.permission === 'default' || Notification.permission === 'granted') {
+                console.log('Auto-enabling phone notifications on login (ON by default)');
+                await enablePhoneNotifications();
+              }
+            }
+          } catch (e) {
+            console.log('Auto-enable on login failed', e);
+          }
+        }, 1500);
       } else {
         if(typeof showMain==='function'){
           showMain();
@@ -3833,7 +3915,7 @@ function findMyStaff(cur){
 
 function renderOptions(){
   const inner=document.getElementById('options-inner'); if(!inner) return; const isMgr=isManagerRole(getActualRole()); const logoutMin=safeGet('repco_logout_minutes')||'30';
-  const notifEnabled=safeGet('repco_notifications_enabled')==='true';
+  const notifSetting=safeGet('repco_notifications_enabled'); const notifEnabled=notifSetting!=='false'; // ON by default unless explicitly disabled
   const notifPerm=typeof Notification!=='undefined'?Notification.permission:'unsupported';
   const isHTTPS=location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1';
   const notifHtml='<div class="card" style="margin-top:12px;background:'+(notifEnabled?'#B6F7C5':'#FFA9B6')+'"><div style="font-weight:900;margin-bottom:8px">📱 PHONE NOTIFICATIONS OUTSIDE BROWSER</div><div style="font-size:10px;margin-bottom:8px">serviceWorker, PushManager, Notification + FCM ready — Verified, possible with HTTPS + VAPID</div><div style="font-size:9px;margin-bottom:8px">Status: <b>'+(notifEnabled?'✅ ENABLED':'❌ DISABLED')+'</b> | Permission: <b>'+notifPerm+'</b> | HTTPS: <b>'+(isHTTPS?'✅ YES':'❌ NO - Need HTTPS')+'</b></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="enablePhoneNotifications()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">ENABLE PHONE NOTIFICATIONS</button><button onclick="disablePhoneNotifications()" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">DISABLE</button><button onclick="sendLocalNotification(\'REPCO Test\', \'Phone notifications outside browser working! ✅\', \'test-\'+Date.now())" style="background:#60A5FA;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">TEST NOTIFICATION</button></div><div style="font-size:8px;margin-top:8px;color:#666">Requires HTTPS + VAPID key from Firebase Console > Project Settings > Cloud Messaging. For local testing use localhost. On phone: Add to Home Screen for best results.</div></div>';
