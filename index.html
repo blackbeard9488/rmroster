@@ -3792,7 +3792,6 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       console.log('Shift change notification sent:', notif);
     }catch(e){ console.error('Notif error', e); }
   }catch(e){ console.error(e); }
-  }catch(e){ console.error(e); }
 }
 
 function sendApprovalNotification(employeeName, type, details, fullRequest){
