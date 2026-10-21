@@ -7,6 +7,7 @@
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#E30613">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="apple-touch-icon" href="./icon-192.png">
 
@@ -3791,7 +3792,7 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       console.log('Shift change notification sent:', notif);
     }catch(e){ console.error('Notif error', e); }
   }catch(e){ console.error(e); }
-}tch(e){ console.error(e); }
+  }catch(e){ console.error(e); }
 }
 
 function sendApprovalNotification(employeeName, type, details, fullRequest){
