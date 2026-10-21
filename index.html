@@ -551,11 +551,11 @@ body:not(.is-admin) .daily-total-casual {
     <div class="login-form" style="display:flex;flex-direction:column;gap:14px;align-items:center;width:100%;max-width:360px">
       <div class="login-row" style="display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between">
         <label style="font-weight:900;font-size:13px;color:#000;letter-spacing:0.3px;white-space:nowrap">USERNAME:</label>
-        <input id="login-user" type="text" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
+        <input id="login-user" type="text" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
       </div>
       <div class="login-row" style="display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between">
         <label style="font-weight:900;font-size:13px;color:#000;letter-spacing:0.3px;white-space:nowrap">PASSWORD:</label>
-        <input id="login-pass" type="password" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
+        <input id="login-pass" type="password" onkeydown="if(event.key==='Enter'){event.preventDefault();doLogin();}" style="flex:1;max-width:220px;background:#C4C4C4;border:none;border-radius:9999px;padding:10px 18px;font-size:14px;font-weight:600;outline:none">
       </div>
       <button id="login-signin-btn" type="button" onclick="doLogin()" style="margin-top:10px;background:#C4C4C4;color:#000;border:none;border-radius:9999px;padding:12px 0;font-weight:900;font-size:16px;letter-spacing:0.5px;width:100%;max-width:280px;cursor:pointer;box-shadow:none">SIGN IN</button>
       <div id="login-err" class="login-error" style="color:#E30613;font-weight:900;font-size:12px;min-height:18px;margin-top:4px;text-align:center"></div>
@@ -6211,5 +6211,40 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
     <div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>
   </div>
 </div>
+
+<script>
+// Ensure Enter on phone (Go/Done) triggers login
+(function(){
+  function attachEnterLogin(){
+    var userEl=document.getElementById('login-user');
+    var passEl=document.getElementById('login-pass');
+    if(!userEl || !passEl) return;
+    var handler=function(e){
+      if(e.key==='Enter' || e.keyCode===13){
+        e.preventDefault();
+        e.stopPropagation();
+        doLogin();
+        return false;
+      }
+    };
+    userEl.addEventListener('keydown', handler, {capture:true});
+    passEl.addEventListener('keydown', handler, {capture:true});
+    userEl.addEventListener('keypress', handler, {capture:true});
+    passEl.addEventListener('keypress', handler, {capture:true});
+    // For mobile IME
+    userEl.addEventListener('keyup', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); }});
+    passEl.addEventListener('keyup', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); }});
+  }
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', attachEnterLogin);
+  } else {
+    attachEnterLogin();
+  }
+  // Re-attach after any re-render
+  setTimeout(attachEnterLogin, 1000);
+  setInterval(attachEnterLogin, 3000);
+})();
+</script>
+
 </body>
 </html>
