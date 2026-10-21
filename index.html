@@ -6476,7 +6476,8 @@ function renderMySchedule(){
       }
     }
 
-    el.innerHTML=htmlStr;catch(e){
+    el.innerHTML=htmlStr;
+  }catch(e){
     console.error('renderMySchedule error', e);
     var el=document.getElementById('mysched-list');
     if(el) el.innerHTML='<div class="card">Error: '+e.message+'</div>';
