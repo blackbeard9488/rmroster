@@ -1,8 +1,9 @@
 {
   "name": "REPCO Roster - ALPHA",
   "short_name": "REPCO Roster",
-  "description": "REPCO Roster with Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready \u2014 Verified, possible with HTTPS + VAPID",
+  "description": "REPCO Roster",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#111",
   "theme_color": "#E30613",
@@ -32,7 +33,5 @@
       "type": "image/png",
       "purpose": "any"
     }
-  ],
-  "gcm_sender_id": "103953800507",
-  "scope": "./"
+  ]
 }

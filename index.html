@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
+<!-- V165_FINAL_FIXED_ALL_ISSUES -->
+<!-- V165_FIXED_OFF_TO_SHIFT_NOTIFICATION_AND_WELCOME_ONCE -->
+<!-- V164_FIXED_WELCOME_ONCE_AND_HIDDEN_BELOW_CASUAL -->
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#E30613">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -395,6 +398,23 @@ button, .r-btn-consistent{
 .r-table td.cell-absent{background:#FFA9B6 !important}
 .r-table td.cell-green{background:#A5D6A7 !important}
 .r-table td.cell-g{background:#60A5FA !important}
+
+/* FIXED V166: Hover whole row highlight for admin - easier to see who shift belongs to */
+.r-table tbody tr:hover {
+  background: #FFF9C4 !important;
+  outline: 3px solid #111 !important;
+  outline-offset: -1px;
+  box-shadow: 0 0 0 3px #E30613 !important;
+}
+.r-table tbody tr:hover td {
+  background: #FFF9C4 !important;
+  font-weight: 900 !important;
+}
+.r-table tbody tr:hover td.staff-cell {
+  background: #FFEB3B !important;
+  border-right: 4px solid #E30613 !important;
+}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
 function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
@@ -1940,7 +1960,20 @@ async function doLogin(){
         }
       }
       if(typeof toast==='function'){
-        toast('Welcome '+found.username);
+        // FIXED V164: Only show Welcome once per login session, not on every menu click
+        try{
+          const lastWelcomeKey = 'repco_last_welcome_'+found.username;
+          const lastWelcome = safeGet(lastWelcomeKey);
+          const now = Date.now();
+          // Only show if never shown or >24h ago
+          if(!lastWelcome || (now - parseInt(lastWelcome,10)) > 24*60*60*1000){
+            toast('Welcome '+found.username);
+            safeSet(lastWelcomeKey, now.toString());
+          }
+        }catch(e){
+          // If check fails, don't spam welcome
+          console.log('Welcome once check', e);
+        }
       }
       console.log('Login success, page should show, role:', userRole, 'isEmployee:', isEmployee);
     }catch(e){
@@ -2452,7 +2485,15 @@ function renderRosterSafe(){
   var todayISO=getISO(); var todayDateObj=new Date(todayISO); var todayStr=String(todayDateObj.getDate()).padStart(2,'0')+'/'+String(todayDateObj.getMonth()+1).padStart(2,'0'); var todayIdx=cur.dates.findIndex(function(d){ return d.iso===todayISO; }); if(todayIdx===-1) todayIdx=cur.dates.findIndex(function(d){ return d.date===todayStr; });
   function isWeekend(day){return day==='SAT'||day==='SUN'} function isOwn(st){return st.firstName && (st.firstName.toLowerCase()===curU.toLowerCase()||(st.firstName+st.lastName).toLowerCase()===curU.toLowerCase()|| (st.lastName && st.lastName.toLowerCase()===curU.toLowerCase()))}
   cur.staff.sort(function(a,b){ var c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
-  var full=cur.staff.filter(function(s){ return s.employmentType!=='casual'; }); var cas=cur.staff.filter(function(s){ return s.employmentType==='casual'; }); var hidden=safeGetJSON('retail_roster_hidden_v1',[]);
+  var hidden=safeGetJSON('retail_roster_hidden_v1',[]);
+  var hiddenStaffV1=safeGetJSON('retail_roster_hidden_staff_v1',[]);
+  function isHiddenStaffCheck(st){ 
+    var isOldHidden=hidden.includes(st.firstName+' '+st.lastName) || hidden.includes(st.firstName);
+    var isNewHidden=st.hidden || hiddenStaffV1.some(function(h){ return h.username && st.username && h.username.toLowerCase()===st.username.toLowerCase(); });
+    return isOldHidden || isNewHidden;
+  }
+  var full=cur.staff.filter(function(s){ return s.employmentType!=='casual' && !isHiddenStaffCheck(s); }); 
+  var cas=cur.staff.filter(function(s){ return s.employmentType==='casual' && !isHiddenStaffCheck(s); });
   var hiddenStaffV1=safeGetJSON('retail_roster_hidden_staff_v1',[]);
   var isAdminView=isManagerRole(getActualRole());
   function build(title,list,cssClass){
@@ -2538,9 +2579,17 @@ function renderRosterSafe(){
     }); var totalsRow=''; if(isMgr){ totalsRow='<tr class="totals"><td class="staff-cell">DAY TOTALS (excl. hidden)</td>'; dayTotals.forEach(function(t,i){ totalsRow+='<td>'+(t>0?t.toFixed(1)+'h':'0')+'</td>';}); totalsRow+='<td class="hrs">'+grand.toFixed(1)+'h</td></tr>'; } var head='<tr><th class="staff-col">STAFF</th>';cur.dates.forEach(function(d,i){ var cl=isWeekend(d.day)?'day-blue col-weekend':'day-yellow'; if(isWeekend(d.day)){ var prevWeekend=i>0?isWeekend(cur.dates[i-1].day):false; var nextWeekend=i<cur.dates.length-1?isWeekend(cur.dates[i+1].day):false; /* Removed thick weekend border */ /* Removed thick weekend border */ } head+='<th class="'+cl+'">'+d.day+'<br>'+d.date+'</th>'; });head+='<th class="staff-col">HRS</th></tr>';
     return {html:'<div class="roster-section"><div class="sec-head '+cssClass+'"><span>'+title+' • '+list.length+'</span><span>'+cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date+'</span></div><div class="r-table-wrap"><table class="r-table"><thead>'+head+'</thead><tbody>'+rows+totalsRow+'</tbody></table></div></div>', grand:grand};
   }
-  var fullRes=build('Full Time',full,''); var casRes=build('Casual',cas,'casual'); var combinedGrand=(fullRes.grand||0)+(casRes.grand||0);
+  var fullRes=build('Full Time',full,''); var casRes=build('Casual',cas,'casual'); 
+  // FIXED V165: Hidden staff below casual table
+  var hiddenList = cur.staff.filter(function(s){ 
+    var isOldHidden=hidden.includes(s.firstName+' '+s.lastName) || hidden.includes(s.firstName);
+    var isNewHidden=s.hidden || hiddenStaffV1.some(function(h){ return h.username && s.username && h.username.toLowerCase()===s.username.toLowerCase(); });
+    return isOldHidden || isNewHidden;
+  });
+  var hiddenRes=build('Hidden Staff',hiddenList,'hidden');
+  var combinedGrand=(fullRes.grand||0)+(casRes.grand||0);
   var adminBadge=document.getElementById('admin-total-badge'); if(adminBadge){ if(isMgr){ adminBadge.style.display='inline-block'; adminBadge.textContent='TOTAL: '+combinedGrand.toFixed(1)+'h'; } else adminBadge.style.display='none'; }
-  var html='';if(full.length>0)html+=fullRes.html;if(cas.length>0)html+=casRes.html;
+  var html='';if(full.length>0)html+=fullRes.html;if(cas.length>0)html+=casRes.html;if(hiddenList.length>0)html+=hiddenRes.html;
   setTimeout(function(){ var isM=isManagerRole(getActualRole()); document.querySelectorAll('#delete-roster-btn').forEach(function(b){ b.style.display=isM?'inline-block':'none'; }); },50);
   var mountEl=document.getElementById('roster-mount'); if(mountEl) mountEl.innerHTML=html;
   var labelEl=document.getElementById('fortnight-label'); if(labelEl) labelEl.textContent=cur.label;
@@ -3126,6 +3175,15 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           }
           safeSetJSON('retail_roster_byFortnight_v1',fns);
           
+          // FIXED: Send shift change notification (OFF -> shift = New shift added! for current fortnight)
+          try{
+            const dateISO = cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso || cur.dates[colIdx].date || '') : '';
+            if(typeof sendShiftChangeNotification==='function' && current !== actualShift){
+              const staffName = (staff.firstName||'')+' '+(staff.lastName||'');
+              sendShiftChangeNotification(staffName.trim(), current, actualShift, dateISO);
+            }
+          }catch(notifErr){ console.log('Shift notification error', notifErr); }
+          
           // INSTANT LIVE SAVE - Push AB change to all users immediately
           try{
             var state=getAllState();
@@ -3692,10 +3750,28 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
         }
       }
       
-      // Only allow OFF->shift notification for current fortnight
+      // Only allow OFF->shift notification for current fortnight - FIXED: more lenient check
       if(isOffToShift && !isCurrentFortnight){
-        console.log('Shift added but not in current fortnight, skipping notification for', dateISO);
-        return; // Don't notify for future fortnights
+        // Double-check: if date is today or future, still allow
+        try{
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const target = new Date(dateISO+'T00:00:00');
+          if(!isNaN(target.getTime())){
+            target.setHours(0,0,0,0);
+            const diffDays = Math.floor((target - today)/(1000*60*60*24));
+            // If date is today or within next 14 days, allow even if not in current fortnight array
+            if(diffDays >= -1 && diffDays <= 14){
+              console.log('Shift added - date is within 14 days, allowing notification despite not in current fortnight array', dateISO, diffDays);
+              isCurrentFortnight = true;
+            }
+          }
+        }catch(e){}
+        
+        if(!isCurrentFortnight){
+          console.log('Shift added but not in current fortnight, skipping notification for', dateISO);
+          return; // Don't notify for future fortnights beyond 14 days
+        }
       }
     }catch(e){ 
       console.log('Current fortnight check error', e);
@@ -5295,7 +5371,7 @@ function editHiddenStaff(idx){
     var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]);
     var h=hidden[idx];
     if(!h){ toast('Not found'); return; }
-    var html='<div style="font-size:11px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-size:9px;font-weight:900">First</label><input id="edit-hs-first" value="'+(h.firstName||'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-size:9px;font-weight:900">Last</label><input id="edit-hs-last" value="'+(h.lastName||'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label style="font-size:9px;font-weight:900">Username</label><input id="edit-hs-user" value="'+(h.username||'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-size:9px;font-weight:900">Type</label><select id="edit-hs-type" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"><option value="casual" '+(h.type==='casual'?'selected':'')+'>Casual</option><option value="fulltime" '+(h.type==='fulltime'?'selected':'')+'>Full Time</option></select></div></div><div style="margin-top:8px"><label style="font-size:9px;font-weight:900">Shifts (comma separated or edit in main grid after)</label><input id="edit-hs-shifts" value="'+(h.shifts?h.shifts.join(','):'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div></div>';
+    var html='<div style="font-size:11px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-size:9px;font-weight:900">First</label><input id="edit-hs-first" value="'+(h.firstName||'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-size:9px;font-weight:900">Last</label><input id="edit-hs-last" value="'+(h.lastName||'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><div><label style="font-size:9px;font-weight:900">Username</label><input id="edit-hs-user" value="'+(h.username||'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-size:9px;font-weight:900">Type</label><div style="width:100%;padding:6px;border-radius:9999px;border:2px dashed #999;background:#F5F5F5;text-align:center;font-weight:900">HIDDEN</div></div></div><div style="margin-top:8px"><label style="font-size:9px;font-weight:900">Shifts (comma separated or edit in main grid after)</label><input id="edit-hs-shifts" value="'+(h.shifts?h.shifts.join(','):'')+'" style="width:100%;padding:6px;border-radius:9999px;border:2px solid #111"></div></div>';
     showCustomConfirm('Edit Hidden Staff: '+h.firstName+' '+h.lastName, html, function(confirmed){
       if(!confirmed) return;
       var first=document.getElementById('edit-hs-first')?.value.trim()||'';
@@ -5363,18 +5439,19 @@ function addHiddenStaff(){
     var lastEl=document.getElementById('hs-last');
     var userEl=document.getElementById('hs-user');
     var passEl=document.getElementById('hs-pass');
-    var typeEl=document.getElementById('hs-type');
+    // FIXED V166: No type needed for hidden
+    var typeEl=null;
     // Robust retrieval - handle null and optional chaining
     var firstElVal=firstEl ? firstEl.value : '';
     var lastElVal=lastEl ? lastEl.value : '';
     var userElVal=userEl ? userEl.value : '';
     var passElVal=passEl ? passEl.value : '';
-    var typeElVal=typeEl ? typeEl.value : 'casual';
+    var typeElVal='hidden';
     var first=(firstElVal||'').trim();
     var last=(lastElVal||'').trim();
     var user=(userElVal||'').trim();
     var pass=(passElVal||'').trim();
-    var type=(typeElVal||'casual');
+    var type=(typeElVal||'hidden');
     var constantEl=document.getElementById('hs-constant-check');
     var constant=constantEl?constantEl.checked:false;
     console.log('Values:', first, last, user, type, constant);
@@ -5404,7 +5481,7 @@ function addHiddenStaff(){
     var hidden=[];
     try{ hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]); }catch(e){ hidden=[]; }
     if(!Array.isArray(hidden)) hidden=[];
-    var newEntry={firstName:first,lastName:last,username:user,password:pass,type:type,shifts:shifts,constantAcrossRosters:constant,createdTs:Date.now()};
+    var newEntry={firstName:first,lastName:last,username:user,password:pass,type:'hidden',employmentType:'hidden',hidden:true,shifts:shifts,constantAcrossRosters:constant,createdTs:Date.now()};
     hidden.push(newEntry);
     console.log('Saving hidden:', hidden);
     safeSetJSON('retail_roster_hidden_staff_v1', hidden);
@@ -8458,7 +8535,8 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
         <input id="hs-last" placeholder="Last Name" style="padding:10px;border-radius:9999px;border:2px solid #111">
         <input id="hs-user" placeholder="Username (e.g. johndoe)" style="padding:10px;border-radius:9999px;border:2px solid #111">
         <input id="hs-pass" placeholder="Password" style="padding:10px;border-radius:9999px;border:2px solid #111">
-        <select id="hs-type" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="casual">Casual</option><option value="fulltime">Full Time</option></select>
+        <!-- FIXED V166: Hidden staff don't need casual/fulltime - irrelevant -->
+        <div style="padding:10px;border-radius:9999px;border:2px dashed #999;background:#F5F5F5;text-align:center;font-weight:900;font-size:11px;color:#666">HIDDEN STAFF - No employment type needed</div>
       </div>
       <div style="margin-top:12px;font-weight:900">ASSIGN SHIFTS FOR CURRENT FORTNIGHT (14 days, blank = OFF)</div>
       <div id="hs-shifts-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));gap:8px;margin-top:8px;max-width:100%;overflow:hidden;box-sizing:border-box"></div>
