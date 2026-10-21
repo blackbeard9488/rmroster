@@ -1499,7 +1499,25 @@ function populateFortnightSelect(){
       dates.push({iso:iso, date:d.getDate()+'/'+(d.getMonth()+1), day:['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]});
     }
     fns=[{id:'fn_07_10',label:'14 Days - 07/10 - 20/10',dates:dates},{id:'fn_21_10',label:'14 Days - 21/10 - 03/11',dates:dates}];
-    safeSetJSON('retail_roster_byFortnight_v1', fns);
+    
+          safeSetJSON('retail_roster_byFortnight_v1', fns);
+          // INSTANT LIVE SAVE - Push to Firebase immediately for all users
+          try{
+            var state=getAllState();
+            state._ts=Date.now();
+            if(typeof db!=='undefined' && db && db.ref){
+              db.ref('repco_state').set(state);
+              safeSet('repco_cloud_ts', String(state._ts));
+              console.log('LIVE SAVE: AB/G edit synced instantly');
+            } else {
+              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); });
+            }
+            // Also push roster directly for redundancy
+            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors',cache:'no-store'}).catch(function(){});
+          }catch(e){ console.error('Live save error', e); }
+          // Broadcast to other tabs
+          try{ if(typeof BroadcastChannel!=='undefined'){ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'roster_update', ts:Date.now()}); } }catch(e){}
+
   }
   try{ if(typeof applyPersistentGreens==='function') applyPersistentGreens(); }catch(e){}
   var sorted=fns.slice().sort(function(a,b){
@@ -2375,11 +2393,13 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           var isGreen=false;
           var isGreenToggleOff=false;
           var isAB=false;
+          var isABToggleOff=false;
           var isNA=false;
           var isGFlag=false;
           var actualShift=newVal;
-          // Check current green status for toggle
+          // Check current green and AB status for toggle
           var currentlyGreen = staff.cellGreen && staff.cellGreen[colIdx];
+          var currentlyAB = staff.absentApproved && staff.absentApproved[colIdx];
           
           // V139: Green handling - G, GREEN, G <shift>, GREEN <shift> - TOGGLE LOGIC
           if(up==='G' || up==='GREEN'){
@@ -2406,8 +2426,32 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               actualShift=current;
             }
           } else if(up==='AB' || up==='ABSENT' || up==='A'){
-            isAB=true;
-            actualShift='AB';
+            // FIX: Keep previous shift data, add AB next to it, turn red - with toggle
+            if(currentlyAB){
+              // Toggle OFF AB - remove AB status, restore original
+              isAB=false;
+              isABToggleOff=true;
+              if(staff.originalShifts && staff.originalShifts[colIdx]){
+                actualShift=staff.originalShifts[colIdx];
+              } else {
+                actualShift=current;
+              }
+              console.log('Toggling OFF AB for', staff.firstName, colIdx);
+            } else {
+              isAB=true;
+              // Keep current shift as actualShift, but mark as AB
+              if(current && current.toUpperCase()!=='AB' && current.toUpperCase()!=='OFF' && current!==''){
+                actualShift=current;
+              } else if(staff.originalShifts && staff.originalShifts[colIdx] && staff.originalShifts[colIdx].toUpperCase()!=='AB'){
+                actualShift=staff.originalShifts[colIdx];
+              } else {
+                actualShift=current||'';
+              }
+              if(!actualShift || actualShift.toUpperCase()==='OFF' || actualShift===''){
+                actualShift='AB';
+              }
+              console.log('Toggling ON AB for', staff.firstName, colIdx, 'keeping', actualShift);
+            }
           } else if(up==='UA' || up==='UNAVAILABLE' || up==='U' || up==='NA'){
             isNA=true;
             actualShift='UA';
@@ -2452,6 +2496,15 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             try{ if(typeof setPersistentGreenOff==='function') setPersistentGreenOff(cur.id, staff, cur.dates[colIdx].day, colIdx); }catch(e){}
             try{ if(typeof clearPersistentGreen==='function') clearPersistentGreen(staff, cur.dates[colIdx].day); }catch(e){}
             staff.shifts[colIdx]=actualShift;
+          } else if(isABToggleOff){
+            // Toggle OFF AB - restore original shift, remove AB red
+            if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+            staff.shifts[colIdx]=actualShift;
+            // Clear original if it was AB placeholder
+            if(staff.originalShifts && staff.originalShifts[colIdx]==='AB'){
+              try{ delete staff.originalShifts[colIdx]; }catch(e){}
+            }
+            console.log('AB removed, restored to', actualShift);
           } else if(isGreen){
             if(!staff.cellGreen) staff.cellGreen=[];
             staff.cellGreen[colIdx]=true;
@@ -2727,6 +2780,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           setTimeout(function(){ try{ renderMySchedule(); }catch(e){} }, 1000);
           var msg='Saved';
           if(isGreenToggleOff) msg='Green removed';
+          else if(isABToggleOff) msg='AB removed - shift restored';
+          else if(isAB) msg='Marked AB - '+actualShift+' AB';
           else if(isGreen) msg='Green marked';
           else if(isAB) msg='Marked AB';
           else if(isNA) msg='Marked unavailable';
@@ -6044,7 +6099,7 @@ function renderMySchedule(){
           var d=fn.dates[di];
           var shiftStr=myStaffInFn.shifts && myStaffInFn.shifts[di]!=null ? myStaffInFn.shifts[di] : 'OFF';
           var up=String(shiftStr).toUpperCase().trim();
-          if(['OFF','NA','AB','ABSENT',''].indexOf(up)!==-1 || up==='') continue;
+          if(['OFF','NA',''].indexOf(up)!==-1 || up==='') continue; // AB kept for Absent display
           var parsed=parseShiftRange(shiftStr);
           if(!parsed) continue;
           var iso=d.iso;
@@ -6132,6 +6187,18 @@ function renderMySchedule(){
       }
     }
     if(currentShift){
+      // FIX: If current shift is AB - show red Absent panel instantly
+      var currShiftUp=String(currentShift.shift||'').toUpperCase().trim();
+      var isCurrAB=['AB','ABSENT'].indexOf(currShiftUp)!==-1 || (myStaff && myStaff.absentApproved && myStaff.absentApproved[currentShift.idx]);
+      if(isCurrAB){
+        var origForAB='';
+        if(myStaff && myStaff.originalShifts && myStaff.originalShifts[currentShift.idx]){
+          origForAB=myStaff.originalShifts[currentShift.idx];
+        }
+        var displayAB=origForAB?fmt(origForAB)+' AB':'AB';
+        var dateLabelAB=currentShift.date.day+' '+currentShift.date.date;
+        htmlStr+='<div class="card" style="background:#FFA9B6;border:3px solid #E30613;"><div style="font-weight:900;font-size:12px;color:#111">CURRENT SHIFT - ABSENT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+dateLabelAB+' - '+displayAB+'</div><div style="font-size:11px;background:#fff;color:#111;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div><div style="margin-top:6px;font-size:10px">Original: '+(origForAB?fmt(origForAB):'N/A')+'</div></div>';
+      } else {
       var found=findRequestForShift(currentShift.date, currentShift.iso, currentShift.idx);
       var phCurr=getPublicHolidayIcon(currentShift.iso, currentShift.date.date);
       var phCurrIcon=phCurr?phCurr.icon+' ':'';
@@ -6181,10 +6248,23 @@ function renderMySchedule(){
         htmlStr+='<div class="card" style="background:#B6F7C5;border:3px solid #111;cursor:pointer" onclick="requestShiftCorrectionFromSchedule('+currentShift.idx+', \''+currentShift.date.date+' '+currentShift.date.day+'\', \''+String(currentShift.shift).replace(/'/g, '')+'\')"><div style="font-weight:900;font-size:12px">CURRENT SHIFT - TAP TO REQUEST EDIT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+phCurrIcon+currentShift.date.day+' '+currentShift.date.date+(phCurr?' 🎉':'')+' - '+fmt(currentShift.shift)+phCurrBadge+'</div><div style="font-weight:900;font-size:14px;color:#E30613">'+countdown+'</div><div style="margin-top:8px;background:#111;height:8px;border-radius:9999px;overflow:hidden"><div style="width:'+progress+'%;background:#E30613;height:100%"></div></div><div style="margin-top:6px"><span style="background:#111;color:#fff;border-radius:9999px;padding:4px 8px;font-size:9px;font-weight:900">TAP TO REQUEST CHANGE</span></div></div>';
       }
     }
+      }
     if(upcoming.length>0){
       htmlStr+='<div class="card" style="background:#111;color:#fff;font-weight:900">UPCOMING SHIFTS ('+upcoming.length+')</div>';
       for(var i=0;i<upcoming.length;i++){
         var u=upcoming[i];
+        // FIX: Check if upcoming shift is AB
+        var upCheck=String(u.shift||'').toUpperCase().trim();
+        var isUpAB=['AB','ABSENT'].indexOf(upCheck)!==-1 || (myStaff && myStaff.absentApproved && myStaff.absentApproved[u.idx]);
+        if(isUpAB){
+          var origUp='';
+          if(myStaff && myStaff.originalShifts && myStaff.originalShifts[u.idx]){
+            origUp=myStaff.originalShifts[u.idx];
+          }
+          var displayUp=origUp?fmt(origUp)+' AB':'AB';
+          htmlStr+='<div class="card" style="background:#FFA9B6;border:3px solid #E30613;"><div style="font-weight:900;font-size:12px;color:#111">UPCOMING - ABSENT</div><div style="font-weight:900;font-size:14px;margin:4px 0">'+u.date.day+' '+u.date.date+' - '+displayUp+'</div><div style="font-size:10px;background:#fff;color:#111;padding:3px 6px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div></div>';
+          continue;
+        }
         var phIconData=getPublicHolidayIcon(u.iso, u.date.date);
         var phIcon=phIconData?phIconData.icon+' ':'';
         var phBadge=phIconData?' <span style="background:#E30613;color:#fff;border-radius:9999px;padding:2px 6px;font-size:8px;font-weight:900">🎉 '+(phIconData.name||'PUBLIC HOLIDAY')+'</span>':'';
