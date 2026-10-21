@@ -113,11 +113,11 @@ button{cursor:pointer}
 .r-table td.cell-work{background:#fff !important;cursor:pointer;font-weight:400 !important}
 .r-table td.cell-off{background:#9DA0A3 !important;color:transparent !important;cursor:pointer}
 .r-table td.cell-na{background:#111 !important;color:#fff !important}
-.r-table td.cell-absent{background:#FFA9B6 !important;color:#111 !important;border:3px solid #E30613 !important;font-weight:900}
+.r-table td.cell-absent{background:#FFA9B6 !important}
 .r-table td.col-weekend{background:#D6EBFF !important}
 .r-table td.col-weekend.cell-work{background:#D6EBFF !important}
 .r-table td.col-weekend.cell-off{background:#A8C4D8 !important;color:transparent !important}
-.r-table td.col-weekend.cell-absent{background:#FFA9B6 !important;color:#111 !important;border:3px solid #E30613 !important;font-weight:900}
+.r-table td.col-weekend.cell-absent{background:#FFA9B6 !important}
 .r-table th.weekend-start{border-left:1.6px solid #222 !important} .r-table th.weekend-end{border-right:1.6px solid #222 !important} .r-table td.weekend-start{border-left:1.6px solid #222 !important} .r-table td.weekend-end{border-right:1.6px solid #222 !important}
 .r-table td.cell-green{background:#B6F7C5 !important;border:1.6px solid #222 !important}
 .r-table td.col-weekend.cell-green{background:#8FD9A8 !important;border:1.6px solid #222 !important}
@@ -1832,61 +1832,19 @@ function deleteCurrentRoster(){
 }
 
 function isGShift(shiftStr, firstName){
-  if(!shiftStr) return false;
-  var fn=(firstName||'').toLowerCase();
-  if(fn!=='luke' && fn!=='chris' && fn!=='christopher' && fn!=='culling') return false;
-  var s=String(shiftStr).trim();
-  if(!s) return false;
-  var upper=s.toUpperCase();
-  if(['OFF','NA','UA','AB',''].includes(upper)) return false;
-  // Parse times like 07:30-16:00, 7:30-16:00, 08:00-20:00, etc
-  var parts=s.split('-');
-  if(parts.length<2) return false;
-  var start=parts[0].trim();
-  var end=parts[1].trim();
-  // Check start 7:30
-  if(start==='07:30' || start==='7:30' || start==='07:30:00' || start.startsWith('07:30') || start.startsWith('7:30')) return true;
-  // Check end 20:00
-  if(end==='20:00' || end==='20:00:00' || end.startsWith('20:00')) return true;
+  // AUTO G DISABLED - User requested off for Luke/Chris as it was overwriting edits
   return false;
 }
 
 
 function applyAutoGStatus(){
+  // AUTO G DISABLED - User requested off for Luke/Chris as it was overwriting edits
+  // Previously this auto-applied G for 07:30 start or 20:00 end shifts
+  // Now disabled - G must be manually typed
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    var changed=false;
-    for(var i=0;i<fns.length;i++){
-      var fn=fns[i];
-      if(!fn.staff) continue;
-      for(var s=0;s<fn.staff.length;s++){
-        var st=fn.staff[s];
-        if(!st.shifts) continue;
-        var fnLower=(st.firstName||'').toLowerCase();
-        if(fnLower!=='luke' && fnLower!=='chris' && fnLower!=='christopher') continue;
-        if(!st.cellG) st.cellG=[];
-        if(!st.cellGreen) st.cellGreen=[];
-        for(var d=0;d<st.shifts.length;d++){
-          var sh=st.shifts[d];
-          if(!sh) continue;
-          // FIX: Don't auto-apply G if manually marked green (cellGreen) - manual green takes priority
-          if(st.cellGreen[d]){
-            continue;
-          }
-          if(isGShift(sh, st.firstName)){
-            if(!st.cellG[d]){
-              st.cellG[d]=true;
-              changed=true;
-            }
-          }
-        }
-      }
-    }
-    if(changed){
-      safeSetJSON('retail_roster_byFortnight_v1', fns);
-      console.log('Auto G applied to Luke/Chris (skipped manual green cells)');
-    }
-  }catch(e){ console.error('applyAutoGStatus', e); }
+    console.log('applyAutoGStatus disabled - auto G off for Luke/Chris');
+  }catch(e){}
+  return;
 }
 
 var _rosterEditActive=false;
@@ -2526,17 +2484,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           } else if(up==='OFF' || up===''){
             actualShift='OFF';
           }
-          // Auto G for Luke or Chris with 7:30 start or 20:00 end - sets GOLD G status, separate from green
+          // Auto G for Luke or Chris DISABLED - user requested off
           try{
-            if(!isGreen && !isAB && !isNA && actualShift && actualShift!=='OFF'){
-              var fnLower=(staff.firstName||'').toLowerCase();
-              if(fnLower==='luke' || fnLower==='chris' || fnLower==='christopher'){
-                if(isGShift(actualShift, staff.firstName)){
-                  isGFlag=true;
-                  console.log('Auto GOLD G for', staff.firstName, actualShift);
-                }
-              }
-            }
+            // Disabled - no auto G
           }catch(e){}
           // V141: Always remember previous data prior to any approval/edit - preserve first original
           if(!staff.originalShifts) staff.originalShifts={};
