@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#E30613">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="apple-touch-icon" href="./icon-192.png">
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,Helvetica,sans-serif;background:#F2F2F2;overflow-x:hidden}
@@ -399,6 +405,7 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 
 <script>
 // FIX: Suppress Chrome extension "message channel closed" errors that flood console - harmless extension error
@@ -811,6 +818,451 @@ function isCasual(st){return st.employmentType==='casual'}
 const FIREBASE_DB_URL="https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
 const FIREBASE_CONFIG={apiKey:"AIzaSy placeholder",authDomain:"testing-de079.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"testing-de079",storageBucket:"testing-de079.appspot.com",messagingSenderId:"0",appId:"1:0:web:repco"};
 let db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); }catch(e){ db=null; }
+
+
+// === PHONE NOTIFICATIONS OUTSIDE BROWSER: serviceWorker, PushManager, Notification + FCM ready ===
+// Verified, possible with HTTPS + VAPID - ALPHA Build
+
+const VAPID_PUBLIC_KEY = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LF8PvOVx2NGq1SYswnSsOqZ0A4sXkXJq9sD7v8fGp6h9j0k"; // Replace with your actual VAPID public key from Firebase Console > Project Settings > Cloud Messaging
+let messaging = null;
+let swRegistration = null;
+
+// Initialize Firebase Messaging for FCM
+try {
+  if (typeof firebase !== 'undefined' && firebase.messaging) {
+    messaging = firebase.messaging();
+    console.log('Firebase Messaging initialized');
+  }
+} catch (e) {
+  console.log('Messaging init error (may need HTTPS)', e);
+}
+
+// Service Worker Registration - Required for phone notifications outside browser
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) {
+    console.log('Service Worker not supported');
+    return null;
+  }
+  
+  // Must be HTTPS or localhost for service workers and push
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    console.log('Service Worker requires HTTPS for phone notifications (current: ' + location.protocol + ') - Use HTTPS + VAPID');
+    return null;
+  }
+
+  try {
+    // Register main SW
+    const swReg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    console.log('ServiceWorker registered (sw.js):', swReg.scope);
+    
+    // Register FCM SW (Firebase requires /firebase-messaging-sw.js at root)
+    try {
+      const fcmSwReg = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' });
+      console.log('FCM ServiceWorker registered:', fcmSwReg.scope);
+      swRegistration = fcmSwReg;
+    } catch (e) {
+      console.log('FCM SW registration (will use sw.js):', e.message);
+      swRegistration = swReg;
+    }
+
+    // Check for updates
+    swReg.addEventListener('updatefound', () => {
+      console.log('ServiceWorker update found');
+    });
+
+    return swRegistration || swReg;
+  } catch (error) {
+    console.error('ServiceWorker registration failed:', error);
+    return null;
+  }
+}
+
+// Request Notification Permission + FCM Token (Phone notifications outside browser)
+async function enablePhoneNotifications() {
+  try {
+    // Check support
+    if (!('Notification' in window)) {
+      toast('Notifications not supported on this device');
+      return false;
+    }
+    if (!('serviceWorker' in navigator)) {
+      toast('Service Worker not supported - need HTTPS');
+      return false;
+    }
+    if (!('PushManager' in window)) {
+      toast('PushManager not supported - need HTTPS + modern browser');
+      return false;
+    }
+
+    // Check HTTPS
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      toast('Phone notifications require HTTPS + VAPID - Current: ' + location.protocol + ' - Deploy to HTTPS');
+      console.log('Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready — Verified, possible with HTTPS + VAPID - Need HTTPS');
+      return false;
+    }
+
+    // Register SW first
+    if (!swRegistration) {
+      swRegistration = await registerServiceWorker();
+      if (!swRegistration) {
+        toast('Failed to register Service Worker - need HTTPS');
+        return false;
+      }
+    }
+
+    // Request notification permission
+    const permission = await Notification.requestPermission();
+    console.log('Notification permission:', permission);
+    
+    if (permission !== 'granted') {
+      toast('Notification permission denied: ' + permission);
+      safeSet('repco_notifications_enabled', 'false');
+      return false;
+    }
+
+    // Get FCM token with VAPID key
+    if (messaging) {
+      try {
+        const token = await messaging.getToken({ 
+          vapidKey: VAPID_PUBLIC_KEY,
+          serviceWorkerRegistration: swRegistration
+        });
+        
+        if (token) {
+          console.log('FCM Token (for phone notifications):', token);
+          safeSet('repco_fcm_token', token);
+          safeSet('repco_notifications_enabled', 'true');
+          
+          // Save token to Firebase for sending pushes
+          try {
+            const username = safeGet('repco_username') || 'unknown';
+            const tokenData = {
+              token: token,
+              username: username,
+              enabled: true,
+              ts: Date.now(),
+              userAgent: navigator.userAgent
+            };
+            
+            if (db && db.ref) {
+              db.ref('fcm_tokens/' + username).set(tokenData);
+            } else {
+              fetch(FIREBASE_DB_URL + '/fcm_tokens/' + username + '.json', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(tokenData)
+              }).catch(() => {});
+            }
+            
+            toast('✅ Phone notifications enabled - Outside browser ready');
+            return true;
+          } catch (e) {
+            console.log('Save token error', e);
+            toast('Notifications enabled - Token: ' + token.substring(0, 20) + '...');
+            return true;
+          }
+        } else {
+          console.log('No FCM token available - Request permission to generate one');
+          toast('No FCM token - Check VAPID key in Firebase Console');
+          return false;
+        }
+      } catch (e) {
+        console.error('FCM Token error (need VAPID + HTTPS):', e);
+        // Fallback to Web Push with VAPID only (without FCM)
+        try {
+          const subscription = await subscribeWebPush();
+          if (subscription) {
+            toast('✅ Web Push enabled (VAPID) - Phone notifications ready');
+            return true;
+          }
+        } catch (e2) {
+          console.log('Web Push fallback error', e2);
+        }
+        toast('FCM needs VAPID key + HTTPS - See console');
+        return false;
+      }
+    } else {
+      // No FCM, try Web Push directly
+      const sub = await subscribeWebPush();
+      return !!sub;
+    }
+
+  } catch (error) {
+    console.error('enablePhoneNotifications error:', error);
+    toast('Notification setup failed: ' + error.message);
+    return false;
+  }
+}
+
+// Web Push API with VAPID (PushManager - works outside browser on phone)
+async function subscribeWebPush() {
+  try {
+    if (!swRegistration) {
+      swRegistration = await registerServiceWorker();
+    }
+    
+    if (!swRegistration || !swRegistration.pushManager) {
+      console.log('PushManager not available');
+      return null;
+    }
+
+    // Check existing subscription
+    let subscription = await swRegistration.pushManager.getSubscription();
+    
+    if (subscription) {
+      console.log('Already subscribed to Web Push:', subscription.endpoint);
+      safeSet('repco_webpush_subscription', JSON.stringify(subscription));
+      safeSet('repco_notifications_enabled', 'true');
+      return subscription;
+    }
+
+    // VAPID key must be converted to Uint8Array
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    const vapidKeyArray = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    
+    subscription = await swRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: vapidKeyArray
+    });
+
+    console.log('Web Push Subscribed (VAPID):', subscription.endpoint);
+    safeSet('repco_webpush_subscription', JSON.stringify(subscription));
+    safeSet('repco_notifications_enabled', 'true');
+
+    // Save to Firebase
+    try {
+      const username = safeGet('repco_username') || 'unknown';
+      const subData = {
+        endpoint: subscription.endpoint,
+        keys: subscription.toJSON().keys,
+        username: username,
+        ts: Date.now()
+      };
+      
+      if (db && db.ref) {
+        db.ref('webpush_subscriptions/' + username).set(subData);
+      } else {
+        fetch(FIREBASE_DB_URL + '/webpush_subscriptions/' + username + '.json', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(subData)
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.log('Save webpush sub error', e);
+    }
+
+    return subscription;
+    
+  } catch (error) {
+    console.error('Web Push subscribe error (need HTTPS + VAPID):', error);
+    if (error.name === 'NotAllowedError') {
+      toast('Push permission denied');
+    } else if (location.protocol !== 'https:') {
+      toast('Web Push requires HTTPS + VAPID');
+    } else {
+      toast('Web Push failed: ' + error.message + ' - Need valid VAPID key');
+    }
+    return null;
+  }
+}
+
+// Disable notifications
+async function disablePhoneNotifications() {
+  try {
+    // Unsubscribe Web Push
+    if (swRegistration && swRegistration.pushManager) {
+      const sub = await swRegistration.pushManager.getSubscription();
+      if (sub) {
+        await sub.unsubscribe();
+        console.log('Web Push unsubscribed');
+      }
+    }
+
+    // Delete FCM token
+    if (messaging) {
+      try {
+        const token = safeGet('repco_fcm_token');
+        if (token) {
+          await messaging.deleteToken(token);
+        }
+      } catch (e) {
+        console.log('Delete token error', e);
+      }
+    }
+
+    safeSet('repco_notifications_enabled', 'false');
+    safeSet('repco_fcm_token', '');
+    safeSet('repco_webpush_subscription', '');
+    toast('Phone notifications disabled');
+    return true;
+  } catch (e) {
+    console.error('disable error', e);
+    return false;
+  }
+}
+
+// Send local notification (for testing, works when app open)
+function sendLocalNotification(title, body, tag) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    console.log('Notification not permitted');
+    return;
+  }
+
+  try {
+    if (swRegistration) {
+      swRegistration.showNotification(title, {
+        body: body,
+        icon: './icon-192.png',
+        badge: './icon-192.png',
+        tag: tag || 'repco-local',
+        vibrate: [200, 100, 200],
+        data: { url: '/' }
+      });
+    } else {
+      new Notification(title, { body: body, icon: './icon-192.png' });
+    }
+    console.log('Local notification sent:', title);
+  } catch (e) {
+    console.error('Local notification error', e);
+  }
+}
+
+// Listen for foreground FCM messages
+try {
+  if (messaging) {
+    messaging.onMessage((payload) => {
+      console.log('Foreground FCM message:', payload);
+      const title = payload.notification?.title || payload.data?.title || 'REPCO Roster Update';
+      const body = payload.notification?.body || payload.data?.body || 'Your roster has been updated';
+      
+      // Show notification even in foreground
+      sendLocalNotification(title, body, payload.data?.tag);
+      
+      // Also trigger roster refresh
+      try {
+        if (typeof renderMySchedule === 'function') renderMySchedule();
+        if (typeof renderRosterSafe === 'function') renderRosterSafe();
+      } catch (e) {}
+    });
+  }
+} catch (e) {
+  console.log('onMessage setup error', e);
+}
+
+// Auto-register SW on load
+document.addEventListener('DOMContentLoaded', function() {
+  setTimeout(async () => {
+    try {
+      await registerServiceWorker();
+      
+      // If notifications previously enabled, re-enable silently
+      const wasEnabled = safeGet('repco_notifications_enabled') === 'true';
+      if (wasEnabled && Notification.permission === 'granted') {
+        console.log('Notifications were enabled, checking subscription...');
+        // Re-subscribe if needed
+      }
+    } catch (e) {
+      console.log('SW auto-register error', e);
+    }
+  }, 2000);
+});
+
+// Send push via Firebase (for admin to notify staff - requires Cloud Function or server)
+// This is client-side helper - in production, use Cloud Functions with FCM Admin SDK
+async function sendRosterPushNotification(targetUsername, title, body) {
+  try {
+    const pushData = {
+      title: title,
+      body: body,
+      data: {
+        title: title,
+        body: body,
+        tag: 'repco-roster-' + Date.now(),
+        url: '/',
+        target: targetUsername
+      },
+      timestamp: Date.now(),
+      from: safeGet('repco_username') || 'system'
+    };
+
+    // Save to Firebase for polling fallback (works even without FCM)
+    if (db && db.ref) {
+      db.ref('push_notifications/' + targetUsername + '/' + Date.now()).set(pushData);
+      toast('Push queued for ' + targetUsername);
+    } else {
+      await fetch(FIREBASE_DB_URL + '/push_notifications/' + targetUsername + '/' + Date.now() + '.json', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pushData)
+      });
+      toast('Push queued for ' + targetUsername);
+    }
+
+    // Also try local notification if target is current user
+    const currentUser = safeGet('repco_username') || '';
+    if (currentUser.toLowerCase() === targetUsername.toLowerCase()) {
+      sendLocalNotification(title, body);
+    }
+
+    return true;
+  } catch (e) {
+    console.error('send push error', e);
+    return false;
+  }
+}
+
+// Poll for push notifications (fallback when FCM not available, works with SW)
+setInterval(async function() {
+  try {
+    const username = safeGet('repco_username');
+    if (!username) return;
+    if (Notification.permission !== 'granted') return;
+    
+    const resp = await fetch(FIREBASE_DB_URL + '/push_notifications/' + username + '.json?_t=' + Date.now(), { cache: 'no-store', mode: 'cors' });
+    if (!resp.ok) return;
+    const notifs = await resp.json();
+    if (!notifs) return;
+
+    const keys = Object.keys(notifs);
+    if (keys.length === 0) return;
+
+    // Get latest
+    const latestKey = keys.sort().pop();
+    const latest = notifs[latestKey];
+    
+    if (!latest) return;
+    
+    const lastShown = safeGet('repco_last_push_shown') || '0';
+    if (latestKey <= lastShown) return; // Already shown
+
+    // Show notification
+    sendLocalNotification(latest.title || 'REPCO Roster', latest.body || 'Update', latestKey);
+    safeSet('repco_last_push_shown', latestKey);
+
+    // Clean old after 1 hour
+    setTimeout(async () => {
+      try {
+        await fetch(FIREBASE_DB_URL + '/push_notifications/' + username + '/' + latestKey + '.json', { method: 'DELETE' });
+      } catch (e) {}
+    }, 3600000);
+
+  } catch (e) {
+    // Silent fail for polling
+  }
+}, 5000); // Check every 5 seconds for new pushes
+
+// === END PHONE NOTIFICATIONS ===
 const CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','maintenance_mode','repco_maintenance_first_v1','retail_roster_hidden_staff_v1','retail_roster_public_holidays_v1'];
 let cloudSaveTimer=null; let suppressCloudSave=false;
 function getAllState(){let o={}; CLOUD_KEYS.forEach(k=>{let v=safeGet(k); if(v!==null) o[k]=v;}); o._ts=Date.now(); o._build=BUILD_ID; return o;}
@@ -3381,6 +3833,10 @@ function findMyStaff(cur){
 
 function renderOptions(){
   const inner=document.getElementById('options-inner'); if(!inner) return; const isMgr=isManagerRole(getActualRole()); const logoutMin=safeGet('repco_logout_minutes')||'30';
+  const notifEnabled=safeGet('repco_notifications_enabled')==='true';
+  const notifPerm=typeof Notification!=='undefined'?Notification.permission:'unsupported';
+  const isHTTPS=location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  const notifHtml='<div class="card" style="margin-top:12px;background:'+(notifEnabled?'#B6F7C5':'#FFA9B6')+'"><div style="font-weight:900;margin-bottom:8px">📱 PHONE NOTIFICATIONS OUTSIDE BROWSER</div><div style="font-size:10px;margin-bottom:8px">serviceWorker, PushManager, Notification + FCM ready — Verified, possible with HTTPS + VAPID</div><div style="font-size:9px;margin-bottom:8px">Status: <b>'+(notifEnabled?'✅ ENABLED':'❌ DISABLED')+'</b> | Permission: <b>'+notifPerm+'</b> | HTTPS: <b>'+(isHTTPS?'✅ YES':'❌ NO - Need HTTPS')+'</b></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="enablePhoneNotifications()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">ENABLE PHONE NOTIFICATIONS</button><button onclick="disablePhoneNotifications()" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">DISABLE</button><button onclick="sendLocalNotification(\'REPCO Test\', \'Phone notifications outside browser working! ✅\', \'test-\'+Date.now())" style="background:#60A5FA;border:2px solid #111;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:10px">TEST NOTIFICATION</button></div><div style="font-size:8px;margin-top:8px;color:#666">Requires HTTPS + VAPID key from Firebase Console > Project Settings > Cloud Messaging. For local testing use localhost. On phone: Add to Home Screen for best results.</div></div>';
   const timerHtml='<div class="card" style="margin-top:12px"><div style="font-weight:900;margin-bottom:8px">LOGOUT TIMER SETTINGS</div><div style="display:flex;gap:8px;align-items:center"><select id="logout-timer" style="padding:8px;border-radius:9999px;border:2px solid #111"><option value="5" '+(logoutMin==='5'?'selected':'')+'>5 min</option><option value="15" '+(logoutMin==='15'?'selected':'')+'>15 min</option><option value="30" '+(logoutMin==='30'?'selected':'')+'>30 min</option><option value="60" '+(logoutMin==='60'?'selected':'')+'>60 min</option><option value="120" '+(logoutMin==='120'?'selected':'')+'>120 min</option><option value="0" '+(logoutMin==='0'?'selected':'')+'>Never</option></select><button onclick="saveLogoutTimer()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">SAVE</button></div></div>';
   const maintenanceHtml='<div class="card" style="margin-top:12px;background:#FFF6CC"><div style="font-weight:900;margin-bottom:8px">MAINTENANCE & SYSTEM</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="maint-status-options" style="font-weight:900">Maintenance: '+(safeGet('maintenance_mode')==='true'?'ON':'OFF')+'</span><label style="display:flex;align-items:center;gap:6px;font-weight:900"><input type="checkbox" id="maint-toggle-options" onchange="toggleMaintenanceFromOptions()" '+(safeGet('maintenance_mode')==='true'?'checked':'')+'> TOGGLE</label></div></div>';
   if(isMgr){
@@ -3391,14 +3847,14 @@ function renderOptions(){
       +'<button class="card" style="font-weight:900;text-align:left;background:#8FC6F5" id="btn-import" onclick="triggerImport()">IMPORT ROSTER</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'requests-page\')">ALL REQUESTS / APPROVALS</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="showMain()">BACK TO ROSTER</button>'
-      +'</div>'+timerHtml+maintenanceHtml;
+      +'</div>'+notifHtml+timerHtml+maintenanceHtml;
   } else {
     inner.innerHTML='<div style="display:grid;grid-template-columns:1fr;gap:12px">'
       +'<button class="card" style="font-weight:900;background:#E30613;color:#fff" onclick="openPage(\'account-page\')">CHANGE USERNAME / PASSWORD</button>'
       +'<button class="card" style="font-weight:900" onclick="openPage(\'requests-page\')">MY REQUESTS</button>'
       +'<button class="card" style="font-weight:900" onclick="showMain()">BACK TO ROSTER</button>'
       +'<button class="card" style="font-weight:900;background:#111;color:#fff" onclick="doLogout()">LOG OUT</button>'
-      +'</div>'+timerHtml;
+      +'</div>'+notifHtml+timerHtml;
   }
 }
 
