@@ -617,7 +617,7 @@ body:not(.is-admin) .daily-total-casual {
 
 <div id="repco-v65">
 <div id="my-schedule-card" style="display:none;background:#fff;border:3px solid #111;border-radius:12px;padding:12px 14px;margin:10px 14px;box-shadow:4px 4px 0 #111;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div class="left"><div class="label" id="my-sched-label" style="font-size:11px;background:#111;color:#fff;border-radius:9999px;padding:4px 10px;display:inline-block;margin-bottom:4px;font-weight:900">MY SCHEDULE</div><div class="shift" id="my-sched-shift" style="font-size:16px;font-weight:900">-</div><div class="meta" id="my-sched-date" style="font-size:12px;font-weight:700;color:#555">-</div></div><div class="right" style="text-align:right"><div class="remaining" id="my-sched-remaining" style="font-size:18px;font-weight:900;color:#E30613">-</div><div class="meta" id="my-sched-until" style="font-size:12px;font-weight:700;color:#555">-</div></div></div>
-  <div class="r-controls"><select id="fortnight-select"></select><button onclick="prevFortnight()">PREV</button><button onclick="nextFortnight()">NEXT</button><button onclick="toggleTimeFormat()">12H/24H</button><button id="delete-roster-btn" id="delete-roster-btn" onclick="deleteCurrentRoster()" style="background:#E30613;color:#fff">DELETE ROSTER</button><span id="user-badge" style="margin-left:auto;background:#111;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px"></span><span id="admin-total-badge" style="display:none;background:#E30613;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px;margin-left:8px"></span><span id="brisbane-time-v141" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:11px"></span></div>
+  <div class="r-controls"><select id="fortnight-select" onchange="onFortnightSelectChange()"></select><button onclick="prevFortnight()">PREV</button><button onclick="nextFortnight()">NEXT</button><button onclick="toggleTimeFormat()">12H/24H</button><button id="delete-roster-btn" id="delete-roster-btn" onclick="deleteCurrentRoster()" style="background:#E30613;color:#fff">DELETE ROSTER</button><span id="user-badge" style="margin-left:auto;background:#111;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px"></span><span id="admin-total-badge" style="display:none;background:#E30613;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px;margin-left:8px"></span><span id="brisbane-time-v141" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:11px"></span></div>
   <div id="roster-mount"></div>
 </div>
 
@@ -683,7 +683,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V160_FIX_HIDDEN_PILL_PASSWORDS_ALL_USERS";
+const BUILD_ID="20261022_V165_FIX_NEW_SHIFT_ACCEPT_DENY_FLOW";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1493,7 +1493,7 @@ setInterval(async function() {
 }, 5000); // Check every 5 seconds for new pushes
 
 // === END PHONE NOTIFICATIONS ===
-const CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','maintenance_mode','repco_maintenance_first_v1','retail_roster_hidden_staff_v1','retail_roster_public_holidays_v1'];
+const CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','maintenance_mode','repco_maintenance_first_v1','retail_roster_hidden_staff_v1','retail_roster_public_holidays_v1','retail_roster_shift_offers_v1','repco_notifications_v1'];
 let cloudSaveTimer=null; let suppressCloudSave=false;
 function getAllState(){let o={}; CLOUD_KEYS.forEach(k=>{let v=safeGet(k); if(v!==null) o[k]=v;}); o._ts=Date.now(); o._build=BUILD_ID; return o;}
 
@@ -1573,6 +1573,32 @@ function applyCloudState(state,isInitial){
             var parsed=JSON.parse(state[k]);
             if(Array.isArray(parsed)){
               filterDeletedStaffFromCloud(parsed);
+              // FIXED V163: Preserve hidden staff when applying cloud roster
+              try{
+                var localFns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+                var localHidden=safeGetJSON('retail_roster_hidden_staff_v1',[])||[];
+                if(localHidden.length>0 && localFns.length>0){
+                  for(var f=0; f<parsed.length; f++){
+                    var cfn=parsed[f];
+                    if(!cfn.staff) cfn.staff=[];
+                    for(var hi=0; hi<localHidden.length; hi++){
+                      var h=localHidden[hi];
+                      if(!h || !h.username) continue;
+                      var inCloud = cfn.staff.some(function(s){ return s.username && h.username && s.username.toLowerCase()===h.username.toLowerCase(); });
+                      if(!inCloud){
+                        var lfn=localFns.find(function(lf){ return lf.id===cfn.id; });
+                        if(lfn && lfn.staff){
+                          var localStaff=lfn.staff.find(function(s){ return s.username && h.username && s.username.toLowerCase()===h.username.toLowerCase(); });
+                          if(localStaff){
+                            console.log('V163 applyCloudState: Preserving hidden', h.username, 'in', cfn.id);
+                            cfn.staff.push(JSON.parse(JSON.stringify(localStaff)));
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }catch(e){ console.log('Preserve hidden in applyCloudState error', e); }
               var filteredStr=JSON.stringify(parsed);
               localStorage.setItem(k,filteredStr);
               if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE[k]=filteredStr;
@@ -1585,6 +1611,34 @@ function applyCloudState(state,isInitial){
             if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE[k]=state[k];
           }
         } else {
+          // FIXED V163: For hidden staff key, merge instead of overwrite if cloud is empty
+          if(k==='retail_roster_hidden_staff_v1' || k==='retail_roster_hidden_v1'){
+            try{
+              var cloudHidden = JSON.parse(state[k]);
+              var localHidden = safeGetJSON(k,[]);
+              if((!cloudHidden || cloudHidden.length===0) && localHidden.length>0){
+                console.log('V163: Cloud hidden empty but local has', localHidden.length, '- keeping local');
+                // Don't overwrite local with empty cloud
+                return;
+              }
+              // Merge: keep local hidden that cloud doesn't have
+              if(Array.isArray(cloudHidden) && Array.isArray(localHidden) && localHidden.length>0){
+                var cloudUsernames={};
+                cloudHidden.forEach(function(h){ if(h && h.username) cloudUsernames[h.username.toLowerCase()]=true; });
+                for(var hi=0; hi<localHidden.length; hi++){
+                  var lh=localHidden[hi];
+                  if(lh && lh.username && !cloudUsernames[lh.username.toLowerCase()]){
+                    console.log('V163: Merging local hidden', lh.username, 'into cloud');
+                    cloudHidden.push(lh);
+                  }
+                }
+                var mergedStr=JSON.stringify(cloudHidden);
+                localStorage.setItem(k,mergedStr);
+                if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE[k]=mergedStr;
+                return;
+              }
+            }catch(e){ console.log('Hidden merge error', e); }
+          }
           localStorage.setItem(k,state[k]);
           if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE[k]=state[k];
         }
@@ -1820,6 +1874,29 @@ async function cloudLoad(){
     }catch(e){ console.log('Firebase REST poll error', e.message); }
   },1000);
 
+  // V164: Poll for instant request approval/denial notifications - for iPhone locked screen
+  setInterval(function(){
+    try{ if(typeof checkAndShowNotifications==='function') checkAndShowNotifications(); }catch(e){}
+    try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); }catch(e){}
+  },2000);
+  
+  // V165: Poll shift offers directly for instant accept/deny UI
+  setInterval(async function(){
+    try{
+      var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      if(!rr.ok) return;
+      var cloudOffers=await rr.json();
+      if(!Array.isArray(cloudOffers)) return;
+      var localOffers=safeGetJSON('retail_roster_shift_offers_v1',[]);
+      if(JSON.stringify(localOffers)!==JSON.stringify(cloudOffers)){
+        console.log('V165: Shift offers updated via direct poll');
+        safeSetJSON('retail_roster_shift_offers_v1', cloudOffers);
+        try{ renderShiftOffers(); }catch(e){}
+        try{ checkAndShowNotifications(); }catch(e){}
+      }
+    }catch(e){}
+  },1000);
+
   // Poll requests_v2 directly for denied/approved that should overwrite pending - DANIEL FIX
   setInterval(async function(){
     try{
@@ -1848,7 +1925,7 @@ async function cloudLoad(){
     }catch(e){ console.log('requests_v2 REST poll error', e.message); }
   },1000);
 
-  // V120: Poll roster directly every 1s for instant My Schedule update
+  // V120: Poll roster directly every 1s for instant My Schedule update - FIXED V163: Preserve hidden staff
   setInterval(async function(){
     try{
       var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
@@ -1857,6 +1934,34 @@ async function cloudLoad(){
       if(!Array.isArray(cloudFns) || cloudFns.length===0) return;
       var localFns=safeGetJSON('retail_roster_byFortnight_v1',[]);
       try{ filterDeletedStaffFromCloud(cloudFns); }catch(e){}
+      
+      // FIXED V163: Preserve local hidden staff if cloud doesn't have them (prevents hidden disappearing)
+      try{
+        var localHidden = safeGetJSON('retail_roster_hidden_staff_v1',[]) || [];
+        if(localHidden.length>0){
+          for(var f=0; f<cloudFns.length; f++){
+            var cfn=cloudFns[f];
+            var lfn=localFns.find(function(lf){ return lf.id===cfn.id; });
+            if(!cfn.staff) cfn.staff=[];
+            // Check each local hidden and ensure it's in cloud version
+            for(var hi=0; hi<localHidden.length; hi++){
+              var h=localHidden[hi];
+              if(!h || !h.username) continue;
+              var inCloud = cfn.staff.some(function(s){ return s.username && h.username && s.username.toLowerCase()===h.username.toLowerCase(); });
+              var inLocal = lfn && lfn.staff ? lfn.staff.some(function(s){ return s.username && h.username && s.username.toLowerCase()===h.username.toLowerCase(); }) : false;
+              if(!inCloud && inLocal){
+                // Cloud missing hidden staff that local has - preserve it
+                console.log('V163: Preserving hidden staff', h.username, 'in roster', cfn.id, ' - cloud missing but local has it');
+                var localStaff = lfn.staff.find(function(s){ return s.username && h.username && s.username.toLowerCase()===h.username.toLowerCase(); });
+                if(localStaff){
+                  cfn.staff.push(JSON.parse(JSON.stringify(localStaff)));
+                }
+              }
+            }
+          }
+        }
+      }catch(e){ console.log('Hidden preserve error', e); }
+      
       if(JSON.stringify(localFns)!==JSON.stringify(cloudFns)){
         console.log('LIVE SYNC: Roster changed via direct poll, updating My Schedule');
         safeSetJSON('retail_roster_byFortnight_v1', cloudFns);
@@ -2319,6 +2424,13 @@ function populateFortnightSelect(){
     sels=selSingle?[selSingle]:[];
   }
   if(sels.length===0) return;
+  // FIXED V161: Preserve current selection before rebuilding
+  var currentSelectedId = null;
+  try{
+    currentSelectedId = safeGet('retail_roster_currentFortnightId') || '';
+    var selEl = document.getElementById('fortnight-select');
+    if(selEl && selEl.value) currentSelectedId = selEl.value;
+  }catch(e){}
   var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
   if(!fns || fns.length===0){
     try{ seedIfEmpty(); }catch(e){}
@@ -2365,8 +2477,23 @@ function populateFortnightSelect(){
       var o=document.createElement('option');
       o.value=fn.id;
       o.textContent=fn.label||fn.id;
+      // FIXED V161: Set selected based on currentSelectedId
+      if(fn.id===currentSelectedId) o.selected=true;
       sel.appendChild(o);
     });
+  });
+  // FIXED V161: Ensure selected value is set after rebuild
+  sels.forEach(function(sel){
+    if(currentSelectedId){
+      sel.value=currentSelectedId;
+      // If still not found (e.g., deleted), select first
+      if(sel.selectedIndex===-1 && sel.options.length>0){
+        sel.selectedIndex=0;
+        try{ safeSet('retail_roster_currentFortnightId', sel.value); }catch(e){}
+      }
+    } else if(sel.options.length>0 && sel.selectedIndex===-1){
+      sel.selectedIndex=0;
+    }
   });
   // Emergency fallback if still empty - fixes blank pill - V168 improved
   if(sels[0] && sels[0].options.length===0){
@@ -2442,6 +2569,20 @@ function populateFortnightSelect(){
   console.log('Fortnight populated:', sorted.length, 'options, selected:', curId);
 }
 
+
+
+function onFortnightSelectChange(){
+  try{
+    var sel=document.getElementById('fortnight-select');
+    if(!sel || !sel.value) return;
+    safeSet('retail_roster_currentFortnightId', sel.value);
+    safeSet('repco_last_manual_fortnight_select', sel.value);
+    safeSet('repco_last_manual_select_ts', String(Date.now()));
+    console.log('Dropdown changed to', sel.value);
+    renderRosterSafe();
+    applyRoleVisibility();
+  }catch(e){ console.error('onFortnightSelectChange error', e); }
+}
 
 
 function enforceOnly8Fulltime(){
@@ -2631,9 +2772,49 @@ function getSelectedFortnight(){
 function to12h(range){if(!range) return range; return range.split('-').map(t=>{let tt=t.trim().replace('A',''); const m=tt.match(/(\d{1,2}):(\d{2})/); if(!m) return t; let hh=parseInt(m[1]); let mm=m[2]; const am=hh<12?'AM':'PM'; let h=hh%12; if(h===0) h=12; return h+':'+mm+am;}).join('-');}
 function fmt(s){if(!s) return ''; if(s==='NA') return 'NA'; let up=s.toUpperCase().trim(); if(up==='OFF' || up==='' ) return ''; if(up==='AB'||up==='ABSENT') return 'AB'; let tf=safeGet('timeFormat')||'24h'; if(tf==='12h'){ let hasA=s.includes('A'); let base=s.replace(/A/g,'').trim(); return to12h(base)+(hasA?' A':''); } return s;}
 function deleteCurrentRoster(){
-  showCustomConfirm('Delete current roster?','This will delete '+getCurrentFortnight().label+' permanently.',(ok)=>{
-    if(!ok) return; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let curId=safeGet('retail_roster_currentFortnightId'); let idx=fns.findIndex(f=>f.id===curId); if(idx===-1){ toast('No roster'); return; } if(fns.length===1){ toast('Cannot delete last roster'); return; } let deleted=fns.splice(idx,1)[0]; safeSetJSON('retail_roster_byFortnight_v1',fns); safeSet('retail_roster_currentFortnightId',fns[0].id); toast('Deleted '+deleted.label+' - synced');  populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard();
-  });
+  try{
+    var selected = getSelectedFortnight();
+    var curLabel = selected ? selected.label : (getCurrentFortnight() ? getCurrentFortnight().label : 'this roster');
+    showCustomConfirm('Delete roster?','This will delete '+curLabel+' permanently. This cannot be undone.',(ok)=>{
+      if(!ok) return;
+      try{
+        let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+        let curId=safeGet('retail_roster_currentFortnightId') || (selected ? selected.id : '');
+        // FIXED V161: Use selected fortnight, not current containing today
+        if(!curId && selected) curId=selected.id;
+        let idx=fns.findIndex(f=>f.id===curId);
+        if(idx===-1){
+          // Try to find by selected label as fallback
+          if(selected){
+            idx=fns.findIndex(f=>f.label===selected.label || f.id===selected.id);
+          }
+        }
+        if(idx===-1){ toast('No roster found to delete'); return; }
+        if(fns.length===1){ toast('Cannot delete last roster'); return; }
+        let deleted=fns.splice(idx,1)[0];
+        safeSetJSON('retail_roster_byFortnight_v1',fns);
+        // FIXED V161: After delete, select next closest, not always first, and don't revert to current
+        var nextId = null;
+        if(fns.length>0){
+          // Select roster at same index if exists, else last
+          if(idx < fns.length) nextId = fns[idx].id;
+          else nextId = fns[fns.length-1].id;
+        }
+        if(nextId){
+          safeSet('retail_roster_currentFortnightId',nextId);
+          safeSet('repco_last_manual_fortnight_select', nextId);
+          safeSet('repco_last_manual_select_ts', String(Date.now()));
+          var sel=document.getElementById('fortnight-select');
+          if(sel) sel.value=nextId;
+        }
+        toast('Deleted '+deleted.label+' - synced');
+        populateFortnightSelect();
+        renderRosterSafe();
+        applyRoleVisibility();
+        try{ if(typeof updateMyScheduleCard==='function') updateMyScheduleCard(); }catch(e){}
+      }catch(e){ console.error('delete error', e); toast('Delete failed: '+e.message); }
+    });
+  }catch(e){ console.error('deleteCurrentRoster error', e); toast('Error: '+e.message); }
 }
 
 function isGShift(shiftStr, firstName){
@@ -3933,26 +4114,28 @@ function showMain(){
       header.style.display='flex';
       header.classList.add('show');
     }
-    // FIXED V174: Don't force current if user manually selected via PREV/NEXT within last 10 minutes
+    // FIXED V161: Don't force current if user manually selected via dropdown or PREV/NEXT - respect user's choice
     var cur=getCurrentFortnight();
     var sel=document.getElementById('fortnight-select');
     var lastManualTs=safeGet('repco_last_manual_select_ts');
     var now=Date.now();
     var storedId=safeGet('retail_roster_currentFortnightId');
     var shouldForceCurrent=false;
-    // Only force current if no manual selection in last 10 minutes
-    if(cur && (!lastManualTs || (now-parseInt(lastManualTs,10))>10*60*1000)){
-      // Check if stored is not containing today and no recent manual
-      if(sel && sel.value && sel.value!==cur.id){
-        // User has a different selection but it's old - force current
+    // FIXED: Only force current on first load or if no selection ever made, not if user selected different fortnight
+    // Increased from 10 min to 60 min, and never force if user has a stored selection that is valid
+    var hasValidStoredSelection = storedId && sel && Array.from(sel.options).some(function(o){ return o.value===storedId; });
+    if(!hasValidStoredSelection && cur){
+      // No valid stored selection - show current containing today
+      if(!storedId){
         shouldForceCurrent=true;
-      } else if(!storedId || storedId===cur.id){
-        shouldForceCurrent=false; // Already on current
-      } else {
-        // No manual recent, show current containing today
+      } else if(!lastManualTs || (now-parseInt(lastManualTs,10))>60*60*1000){
+        // No manual selection in last 60 minutes AND no valid stored - show current
         var todayISO=getISO();
-        if(todayISO >= cur.dates[0].iso && todayISO <= cur.dates[cur.dates.length-1].iso){
-          shouldForceCurrent=true;
+        if(cur.dates && cur.dates[0] && cur.dates[cur.dates.length-1] && todayISO >= cur.dates[0].iso && todayISO <= cur.dates[cur.dates.length-1].iso){
+          // Only force if current actually contains today
+          if(!sel || !sel.value || sel.value===cur.id){
+            shouldForceCurrent=false; // Already on current or no selection
+          }
         }
       }
     }
@@ -3960,15 +4143,17 @@ function showMain(){
       if(sel){
         sel.value=cur.id;
         safeSet('retail_roster_currentFortnightId', cur.id);
-        console.log('showMain: Showing current roster containing today', cur.label);
+        console.log('showMain: First load - Showing current roster containing today', cur.label);
       } else {
         safeSet('retail_roster_currentFortnightId', cur.id);
       }
     } else if(sel && storedId){
-      // Respect stored manual selection
+      // FIXED V161: Respect stored manual selection - don't revert to current
       sel.value=storedId;
       if(sel.selectedIndex===-1 && sel.options.length>0){
+        // If stored ID not found (deleted), select first
         sel.selectedIndex=0;
+        try{ safeSet('retail_roster_currentFortnightId', sel.value); }catch(e){}
       }
     }
     renderRosterSafe();
@@ -4142,8 +4327,8 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
     const displayDate = formattedDate || dateISO || '';
     
     if(isOffToShift){
-      message = `${displayDate} - New shift ${newShift||''}`.trim();
-      title = `REPCO - ${cleanName}`;
+      message = `${displayDate} - New shift ${newShift||''} - Tap to Accept/Deny`.trim();
+      title = `🎉 New Shift Offer - ${cleanName}`;
     } else if(isShiftToOff){
       message = `${displayDate} - Shift removed ${oldShift||''} → OFF`.trim();
       title = `REPCO - ${cleanName}`;
@@ -4157,9 +4342,10 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
     title = title.replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim().substring(0,30);
     
     // FIXED V180: Always push even if same cell edited multiple times - use unique timestamp
+    // V165: New shift offers require accept/deny
     const notif = {
       id: 'shift_'+Date.now()+'_'+Math.random().toString(36).substr(2,8),
-      type: isOffToShift ? 'new_shift' : (isShiftToOff ? 'shift_removed' : 'shift_change'),
+      type: isOffToShift ? 'new_shift_offer' : (isShiftToOff ? 'shift_removed' : 'shift_change'),
       employee: cleanName,
       targetUsername: targetUsername,
       oldShift: oldShift||'OFF',
@@ -4173,7 +4359,9 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       timestamp: Date.now(),
       read: false,
       from: safeGet('repco_username')||'admin',
-      forcePush: true // Always push even if duplicate
+      forcePush: true, // Always push even if duplicate
+      requiresAction: isOffToShift, // V165: New shifts require accept/deny
+      status: isOffToShift ? 'pending_offer' : 'notified'
     };
 
     
@@ -4260,11 +4448,295 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
         }
       }catch(e){}
       
+      // V165: If new shift offer, create offer record that requires accept/deny
+      try{
+        if(isOffToShift){
+          var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+          var offer = {
+            id: notif.id,
+            notifId: notif.id,
+            type: 'new_shift_offer',
+            employee: cleanName,
+            targetUsername: targetUsername.toLowerCase(),
+            oldShift: oldShift||'OFF',
+            newShift: newShift||'OFF',
+            date: dateISO||'',
+            formattedDate: formattedDate,
+            dayName: dayName||'',
+            message: message,
+            timestamp: Date.now(),
+            status: 'pending', // pending, accepted, denied
+            from: safeGet('repco_username')||'admin',
+            read: false,
+            readByStaff: false
+          };
+          offers.push(offer);
+          safeSetJSON('retail_roster_shift_offers_v1', offers);
+          console.log('V165: Created shift offer requiring accept/deny for', targetUsername, offer);
+          // Push offer to Firebase for instant sync
+          if(typeof FIREBASE_DB_URL!=='undefined'){
+            fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+          }
+          if(window.db){
+            try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
+            window.db.ref('shift_offers/'+targetUsername.toLowerCase()).push(offer);
+          }
+          // Mark roster cell as pending offer (so it shows as pending until accepted)
+          try{
+            var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+            var foundFn = null;
+            var foundStaffIdx = -1;
+            var foundDateIdx = -1;
+            for(var fi=0; fi<fns.length; fi++){
+              var fn = fns[fi];
+              if(!fn.dates || !fn.staff) continue;
+              var dIdx = fn.dates.findIndex(function(d){ return d.iso===dateISO || d.date===dateISO; });
+              if(dIdx===-1) continue;
+              var sIdx = fn.staff.findIndex(function(s){ 
+                return (s.username && s.username.toLowerCase()===targetUsername.toLowerCase()) ||
+                       (s.firstName && s.firstName.toLowerCase()===cleanName.toLowerCase().split(' ')[0].toLowerCase());
+              });
+              if(sIdx!==-1){
+                foundFn = fn;
+                foundStaffIdx = sIdx;
+                foundDateIdx = dIdx;
+                break;
+              }
+            }
+            if(foundFn && foundStaffIdx>=0 && foundDateIdx>=0){
+              if(!foundFn.staff[foundStaffIdx].pendingOffers) foundFn.staff[foundStaffIdx].pendingOffers = {};
+              foundFn.staff[foundStaffIdx].pendingOffers[foundDateIdx] = {offerId: offer.id, status: 'pending', newShift: newShift};
+              safeSetJSON('retail_roster_byFortnight_v1', fns);
+              console.log('V165: Marked roster cell as pending offer', foundFn.id, foundStaffIdx, foundDateIdx);
+            }
+          }catch(e){ console.log('V165 mark pending error', e); }
+        }
+      }catch(e){ console.error('V165 offer create error', e); }
+      
       console.log('Shift notification ALWAYS sent (V180 fix - no dedup):', notif.title, notif.message, 'for', targetUsername);
-      try{ if(typeof toast==='function') toast('Notification sent to '+cleanName+': '+notif.message); }catch(e){}
+      try{ if(typeof toast==='function') toast('Notification sent to '+cleanName+': '+notif.message + (isOffToShift ? ' - Requires Accept/Deny' : '')); }catch(e){}
     }catch(e){ console.error('Shift notif save error', e); }
   }catch(e){ console.error('sendShiftChangeNotification error', e); }
 }
+
+// V165: Accept/Deny shift offer functions
+function acceptShiftOffer(offerId){
+  try{
+    console.log('V165: Accepting shift offer', offerId);
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var idx = offers.findIndex(function(o){ return o.id===offerId; });
+    if(idx===-1){ toast('Offer not found'); return; }
+    var offer = offers[idx];
+    if(offer.status!=='pending'){ toast('Offer already '+offer.status); return; }
+    
+    offer.status = 'accepted';
+    offer.acceptedTs = Date.now();
+    offer.read = true;
+    safeSetJSON('retail_roster_shift_offers_v1', offers);
+    
+    // Roster already has new shift - just clear pending flag and mark as confirmed
+    try{
+      var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+      for(var fi=0; fi<fns.length; fi++){
+        var fn = fns[fi];
+        if(!fn.dates || !fn.staff) continue;
+        var dIdx = fn.dates.findIndex(function(d){ return d.iso===offer.date || d.date===offer.date; });
+        if(dIdx===-1) continue;
+        var sIdx = fn.staff.findIndex(function(s){ 
+          return (s.username && s.username.toLowerCase()===offer.targetUsername.toLowerCase()) ||
+                 (s.firstName && offer.employee && s.firstName.toLowerCase()===offer.employee.toLowerCase().split(' ')[0].toLowerCase());
+        });
+        if(sIdx!==-1){
+          if(fn.staff[sIdx].pendingOffers && fn.staff[sIdx].pendingOffers[dIdx]){
+            fn.staff[sIdx].pendingOffers[dIdx].status = 'accepted';
+            fn.staff[sIdx].pendingOffers[dIdx].acceptedTs = Date.now();
+            // Clear pending after accepted - shift stays
+            delete fn.staff[sIdx].pendingOffers[dIdx];
+          }
+          // Ensure shift is set to newShift
+          fn.staff[sIdx].shifts[dIdx] = offer.newShift;
+        }
+      }
+      safeSetJSON('retail_roster_byFortnight_v1', fns);
+    }catch(e){ console.error('Accept roster update error', e); }
+    
+    // Notify admin of acceptance
+    try{
+      var adminNotif = {
+        id: 'offer_response_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+        type: 'shift_offer_accepted',
+        employee: offer.employee,
+        targetUsername: 'admin',
+        message: '✅ '+offer.employee+' ACCEPTED new shift '+offer.formattedDate+' '+offer.newShift,
+        title: '✅ Shift Accepted - '+offer.employee,
+        body: offer.employee+' accepted new shift on '+offer.formattedDate+' - '+offer.newShift,
+        timestamp: Date.now(),
+        read: false,
+        from: offer.targetUsername,
+        offerId: offerId,
+        status: 'accepted'
+      };
+      var notifs = safeGetJSON('repco_notifications_v1',[]);
+      notifs.push(adminNotif);
+      safeSetJSON('repco_notifications_v1', notifs);
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+      }
+      if(window.db){
+        try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
+        try{ window.db.ref('notifications/manager').push(adminNotif); }catch(e){}
+        try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
+      }
+    }catch(e){ console.log('Admin notif error', e); }
+    
+    // Cloud sync roster
+    try{
+      var state=getAllState();
+      state._ts=Date.now();
+      state._lastOfferAcceptTs=Date.now();
+      safeSet('repco_cloud_ts', String(state._ts));
+      if(typeof db!=='undefined' && db && db.ref){
+        db.ref('repco_state').set(state);
+      } else {
+        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+      }
+      var fnsStr = JSON.stringify(safeGetJSON('retail_roster_byFortnight_v1',[]));
+      fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){});
+    }catch(e){}
+    
+    toast('✅ Accepted shift: '+offer.formattedDate+' '+offer.newShift+' - Added to roster');
+    try{ renderMySchedule(); }catch(e){}
+    try{ renderRosterSafe(); }catch(e){}
+    try{ updateMyScheduleCard(); }catch(e){}
+    try{ renderShiftOffers(); }catch(e){}
+  }catch(e){ console.error('acceptShiftOffer error', e); toast('Error: '+e.message); }
+}
+
+function denyShiftOffer(offerId){
+  try{
+    console.log('V165: Denying shift offer', offerId);
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var idx = offers.findIndex(function(o){ return o.id===offerId; });
+    if(idx===-1){ toast('Offer not found'); return; }
+    var offer = offers[idx];
+    if(offer.status!=='pending'){ toast('Offer already '+offer.status); return; }
+    
+    showCustomConfirm('Deny New Shift?', '<div style="font-size:11px">Deny new shift on <b>'+offer.formattedDate+'</b><br>Shift: <b>'+offer.newShift+'</b><br><br>This will remove the shift from roster (set to OFF) and notify admin of rejection.</div>', function(confirmed){
+      if(!confirmed) return;
+      offer.status = 'denied';
+      offer.deniedTs = Date.now();
+      offer.read = true;
+      safeSetJSON('retail_roster_shift_offers_v1', offers);
+      
+      // Remove shift from roster - set to OFF
+      try{
+        var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+        for(var fi=0; fi<fns.length; fi++){
+          var fn = fns[fi];
+          if(!fn.dates || !fn.staff) continue;
+          var dIdx = fn.dates.findIndex(function(d){ return d.iso===offer.date || d.date===offer.date; });
+          if(dIdx===-1) continue;
+          var sIdx = fn.staff.findIndex(function(s){ 
+            return (s.username && s.username.toLowerCase()===offer.targetUsername.toLowerCase()) ||
+                   (s.firstName && offer.employee && s.firstName.toLowerCase()===offer.employee.toLowerCase().split(' ')[0].toLowerCase());
+          });
+          if(sIdx!==-1){
+            if(fn.staff[sIdx].pendingOffers && fn.staff[sIdx].pendingOffers[dIdx]){
+              delete fn.staff[sIdx].pendingOffers[dIdx];
+            }
+            // Revert to old shift (OFF)
+            fn.staff[sIdx].shifts[dIdx] = offer.oldShift||'OFF';
+            if(!fn.staff[sIdx].offerDenials) fn.staff[sIdx].offerDenials = {};
+            fn.staff[sIdx].offerDenials[dIdx] = {offerId: offer.id, status: 'denied', deniedTs: Date.now(), newShift: offer.newShift};
+          }
+        }
+        safeSetJSON('retail_roster_byFortnight_v1', fns);
+      }catch(e){ console.error('Deny roster update error', e); }
+      
+      // Notify admin of rejection
+      try{
+        var adminNotif = {
+          id: 'offer_response_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+          type: 'shift_offer_denied',
+          employee: offer.employee,
+          targetUsername: 'admin',
+          message: '❌ '+offer.employee+' DENIED new shift '+offer.formattedDate+' '+offer.newShift+' - Removed from roster',
+          title: '❌ Shift Denied - '+offer.employee,
+          body: offer.employee+' denied new shift on '+offer.formattedDate+' - '+offer.newShift+' → Removed, set to OFF',
+          timestamp: Date.now(),
+          read: false,
+          from: offer.targetUsername,
+          offerId: offerId,
+          status: 'denied'
+        };
+        var notifs = safeGetJSON('repco_notifications_v1',[]);
+        notifs.push(adminNotif);
+        safeSetJSON('repco_notifications_v1', notifs);
+        if(typeof FIREBASE_DB_URL!=='undefined'){
+          fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+        }
+        if(window.db){
+          try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
+          try{ window.db.ref('notifications/manager').push(adminNotif); }catch(e){}
+          try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
+        }
+      }catch(e){ console.log('Admin denial notif error', e); }
+      
+      // Cloud sync
+      try{
+        var state=getAllState();
+        state._ts=Date.now();
+        state._lastOfferDenyTs=Date.now();
+        safeSet('repco_cloud_ts', String(state._ts));
+        if(typeof db!=='undefined' && db && db.ref){
+          db.ref('repco_state').set(state);
+        } else {
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+        }
+        var fnsStr = JSON.stringify(safeGetJSON('retail_roster_byFortnight_v1',[]));
+        fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){});
+      }catch(e){}
+      
+      toast('❌ Denied shift: '+offer.formattedDate+' - Removed from roster, admin notified');
+      try{ renderMySchedule(); }catch(e){}
+      try{ renderRosterSafe(); }catch(e){}
+      try{ updateMyScheduleCard(); }catch(e){}
+      try{ renderShiftOffers(); }catch(e){}
+    });
+  }catch(e){ console.error('denyShiftOffer error', e); toast('Error: '+e.message); }
+}
+
+function renderShiftOffers(){
+  try{
+    var container = document.getElementById('shift-offers-list');
+    if(!container) return;
+    var myUsername = (safeGet('repco_username')||'').toLowerCase();
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var myOffers = offers.filter(function(o){ return o.targetUsername===myUsername && o.status==='pending'; });
+    if(myOffers.length===0){
+      container.innerHTML = '<div style="padding:10px;text-align:center;font-size:11px;color:#666">No pending shift offers</div>';
+      return;
+    }
+    var html = '';
+    myOffers.sort(function(a,b){ return b.timestamp - a.timestamp; });
+    for(var i=0; i<myOffers.length; i++){
+      var o = myOffers[i];
+      html += '<div style="background:#fff;border:3px solid #E30613;border-radius:12px;padding:12px;margin-bottom:10px">';
+      html += '<div style="font-weight:900;font-size:12px;margin-bottom:6px">🎉 NEW SHIFT OFFER</div>';
+      html += '<div style="font-size:11px"><b>'+o.formattedDate+'</b> - '+o.newShift+'<br>From: '+(o.from||'admin')+'<br>Old: '+(o.oldShift||'OFF')+' → New: <b>'+o.newShift+'</b></div>';
+      html += '<div style="display:flex;gap:8px;margin-top:10px">';
+      html += '<button onclick="acceptShiftOffer(\''+o.id+'\')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">✅ ACCEPT - Add to Roster</button>';
+      html += '<button onclick="denyShiftOffer(\''+o.id+'\')" style="flex:1;background:#fff;color:#E30613;border:2px solid #E30613;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">❌ DENY - Remove</button>';
+      html += '</div></div>';
+    }
+    container.innerHTML = html;
+  }catch(e){ console.error('renderShiftOffers error', e); }
+}
+
 
 // TEST: Manually trigger notification for debugging - call testPushNotification('username')
 function testPushNotification(targetUsername){
@@ -4301,23 +4773,30 @@ function testPushNotification(targetUsername){
 
 function sendApprovalNotification(employeeName, type, details, fullRequest){
   try{
+    // FIXED V164: employeeName may be username (e.g., 'kate') - handle both username and full name
     const cleanName = (employeeName||'').trim();
-    let targetUsername = null;
+    let targetUsername = cleanName.toLowerCase();
     try{
       const users = safeGetJSON('retail_roster_users_v1',[]);
-      const found = users.find(u => {
-        const full = ((u.firstName||'')+' '+(u.lastName||'')).trim().toLowerCase();
-        return full === cleanName.toLowerCase();
-      });
-      if(found) targetUsername = found.username;
-      else {
-        // Try by username
-        const foundByUser = users.find(u => (u.username||'').toLowerCase() === cleanName.toLowerCase());
-        if(foundByUser) {
-          targetUsername = foundByUser.username;
+      // First try exact username match (most common for requests)
+      let foundByUser = users.find(u => (u.username||'').toLowerCase() === cleanName.toLowerCase());
+      if(foundByUser) {
+        targetUsername = foundByUser.username.toLowerCase();
+      } else {
+        // Try full name match
+        const found = users.find(u => {
+          const full = ((u.firstName||'')+' '+(u.lastName||'')).trim().toLowerCase();
+          return full === cleanName.toLowerCase();
+        });
+        if(found) targetUsername = found.username.toLowerCase();
+        else {
+          // Try first name match
+          const foundFirst = users.find(u => (u.firstName||'').toLowerCase() === cleanName.toLowerCase().split(' ')[0]);
+          if(foundFirst) targetUsername = foundFirst.username.toLowerCase();
         }
       }
-    }catch(e){}
+      console.log('V164 sendApprovalNotification: cleanName', cleanName, '-> targetUsername', targetUsername);
+    }catch(e){ console.log('V164 targetUsername lookup error', e); }
     
     if(!targetUsername) targetUsername = cleanName.toLowerCase().replace(/\s+/g,'');
     
@@ -4376,30 +4855,122 @@ function sendApprovalNotification(employeeName, type, details, fullRequest){
       notifs.push(notif);
       if(notifs.length>100) notifs.splice(0, notifs.length-100);
       safeSetJSON('repco_notifications_v1', notifs);
+      console.log('V164: Notification saved locally for', targetUsername, notif.title);
       
-      if(window.db){
-        window.db.ref('notifications/'+targetUsername).push(notif);
-        window.db.ref('notifications_global').push(notif);
-        window.db.ref('fcm_tokens/'+targetUsername).once('value').then(snap=>{
-          const tokenData = snap.val();
-          if(tokenData && tokenData.token){
-            window.db.ref('push_queue').push({
-              to: targetUsername,
-              token: tokenData.token,
-              title: notif.title,
-              body: notif.message,
-              data: notif,
-              ts: Date.now()
-            });
-          }
-        });
+      // FIXED V164: Instant Firebase sync + FCM push for iPhone locked screen
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        // Push notification directly to Firebase REST for instant sync
+        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V164: Notif pushed to Firebase for', targetUsername); }).catch(function(){});
       }
-    }catch(e){}
+      if(window.db){
+        try{
+          window.db.ref('notifications/'+targetUsername).push(notif).then(function(){ console.log('V164: Notif pushed via SDK to', targetUsername); }).catch(function(e){ console.log('Notif push SDK fail', e); });
+          window.db.ref('notifications_global').push(notif);
+          window.db.ref('repco_notifications_v1').push(notif);
+          // FCM push queue for iPhone background
+          window.db.ref('fcm_tokens/'+targetUsername).once('value').then(snap=>{
+            const tokenData = snap.val();
+            if(tokenData && tokenData.token){
+              window.db.ref('push_queue').push({
+                to: targetUsername,
+                token: tokenData.token,
+                title: notif.title,
+                body: notif.message,
+                data: notif,
+                ts: Date.now()
+              }).then(function(){ console.log('V164: FCM push queued for', targetUsername); });
+            } else {
+              console.log('V164: No FCM token for', targetUsername, '- will use polling fallback');
+            }
+          });
+          // Also push to push_notifications for iPhone service worker
+          window.db.ref('push_notifications').push({
+            to: targetUsername,
+            title: notif.title,
+            body: notif.body||notif.message,
+            type: notif.type,
+            timestamp: Date.now(),
+            targetUsername: targetUsername
+          });
+        }catch(e){ console.log('V164 Firebase notif error', e); }
+      }
+      // Try to show notification immediately if this device is the target (for testing)
+      try{
+        var currentUser = (safeGet('repco_username')||'').toLowerCase();
+        if(currentUser===targetUsername.toLowerCase()){
+          if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+            if(window.swRegistration){
+              window.swRegistration.showNotification(notif.title, {body: notif.body||notif.message, icon: './icon-192.png', vibrate: [200,100,200]});
+            } else {
+              new Notification(notif.title, {body: notif.body||notif.message, icon: './icon-192.png'});
+            }
+          }
+        }
+      }catch(e){}
+    }catch(e){ console.error('V164 notif save error', e); }
   }catch(e){}
 }
 
 function checkAndShowNotifications(){
   try{
+    // FIXED V164: Instant notifications for approved/denied requests - check even when iPhone locked (polling)
+    try{
+      var myUserForReqCheck = (safeGet('repco_username')||'').toLowerCase();
+      if(myUserForReqCheck){
+        var reqsForNotif = safeGetJSON('retail_roster_requests_v2',[]);
+        var lastSeenTs = parseInt(safeGet('repco_last_request_check_ts')||'0');
+        var nowTs = Date.now();
+        // Check for newly approved/denied requests in last 2 minutes that haven't been notified
+        for(var ri=0; ri<reqsForNotif.length; ri++){
+          var rq = reqsForNotif[ri];
+          if(!rq || !rq.username) continue;
+          if(rq.username.toLowerCase()!==myUserForReqCheck) continue;
+          if(rq.status!=='approved' && rq.status!=='denied' && rq.status!=='rejected') continue;
+          var actionTs = rq.approvedTs || rq.deniedTs || rq.ts || 0;
+          if(actionTs < lastSeenTs) continue;
+          if(nowTs - actionTs > 5*60*1000) continue; // Only within 5 min
+          var notifKey = 'notified_'+rq.id+'_'+rq.status;
+          var alreadyNotified = safeGet(notifKey);
+          if(alreadyNotified) continue;
+          // Trigger instant notification for this approved/denied
+          console.log('V164: Instant request status notification for', myUserForReqCheck, rq.status, rq.id);
+          var reqDateStr = rq.shiftDate || rq.shiftISO || (rq.dates?rq.dates.join(', '):'') || '';
+          var formattedReqDate = reqDateStr;
+          try{ formattedReqDate = formatDateForNotification(reqDateStr); }catch(e){}
+          var notifTitle = rq.status==='approved' ? '✅ Approved - '+rq.username : '❌ Denied - '+rq.username;
+          var notifBody = rq.status==='approved' ? 'Approved: '+formattedReqDate+' → '+(rq.newShift||'') : 'Denied: '+formattedReqDate+' - '+(rq.reason||'');
+          var instantNotif = {
+            id: 'req_'+rq.id+'_'+rq.status+'_'+Date.now(),
+            type: rq.status,
+            employee: rq.username,
+            targetUsername: myUserForReqCheck,
+            message: notifBody,
+            title: notifTitle,
+            body: notifBody,
+            timestamp: actionTs,
+            read: false,
+            from: rq.approvedBy || rq.deniedBy || 'admin'
+          };
+          // Show notification immediately
+          try{
+            if(typeof Notification!=='undefined' && Notification.permission==='granted'){
+              if(window.swRegistration){
+                window.swRegistration.showNotification(notifTitle, {body: notifBody, icon: './icon-192.png', badge: './icon-192.png', vibrate: [200,100,200], renotify: true, tag: 'request-'+rq.id});
+              } else {
+                new Notification(notifTitle, {body: notifBody, icon: './icon-192.png'});
+              }
+            }
+            toast(notifTitle+': '+notifBody);
+          }catch(e){ console.log('Instant notif show error', e); toast(notifTitle); }
+          safeSet(notifKey, '1');
+          // Also ensure My Schedule updates
+          try{ renderMySchedule(); }catch(e){}
+          try{ updateMyScheduleCard(); }catch(e){}
+        }
+        safeSet('repco_last_request_check_ts', String(nowTs));
+      }
+    }catch(e){ console.log('V164 instant request check error', e); }
     // FIXED V158: If logged in, ONLY show notifications for current user, not previous user on same device
     let currentUsername = safeGet('repco_username');
     let myUsername = currentUsername || safeGet('repco_last_username');
@@ -4713,7 +5284,36 @@ function mapUsernameToStaffKey(username){
     'dunn': {firstName:'Shane', lastName:'DUNN'},
     'jody': {firstName:'Jody', lastName:'SANDER'},
     'jody.sander': {firstName:'Jody', lastName:'SANDER'},
-    'sander': {firstName:'Jody', lastName:'SANDER'}
+    'sander': {firstName:'Jody', lastName:'SANDER'},
+    'lachie': {firstName:'Lachie', lastName:'TRATHEN'},
+    'trathen': {firstName:'Lachie', lastName:'TRATHEN'},
+    'trathien': {firstName:'Lachie', lastName:'TRATHEN'},
+    'jamie': {firstName:'Jamie', lastName:'QUALISCHEFSKI'},
+    'jamieq': {firstName:'Jamie', lastName:'QUALISCHEFSKI'},
+    'qualischefski': {firstName:'Jamie', lastName:'QUALISCHEFSKI'},
+    'kate': {firstName:'Kate', lastName:'PHILLIPS'},
+    'phillips': {firstName:'Kate', lastName:'PHILLIPS'},
+    'kate.phillips': {firstName:'Kate', lastName:'PHILLIPS'},
+    'noah': {firstName:'Noah', lastName:'RAFTER'},
+    'rafter': {firstName:'Noah', lastName:'RAFTER'},
+    'miekayla': {firstName:'Miekayla', lastName:'HANDO'},
+    'hando': {firstName:'Miekayla', lastName:'HANDO'},
+    'lauren': {firstName:'Lauren', lastName:'GRAY'},
+    'gray': {firstName:'Lauren', lastName:'GRAY'},
+    'savannah': {firstName:'Savannah', lastName:'KOPPEN'},
+    'koppen': {firstName:'Savannah', lastName:'KOPPEN'},
+    'ashleigh': {firstName:'Ashleigh', lastName:'NEALE'},
+    'neale': {firstName:'Ashleigh', lastName:'NEALE'},
+    'alexandra': {firstName:'Alexandra', lastName:'TENIKOFF'},
+    'tenikoff': {firstName:'Alexandra', lastName:'TENIKOFF'},
+    'lis': {firstName:'Lis', lastName:'MORRIS'},
+    'morris': {firstName:'Lis', lastName:'MORRIS'},
+    'peter': {firstName:'Peter', lastName:'GIBSON'},
+    'gibson': {firstName:'Peter', lastName:'GIBSON'},
+    'shaun': {firstName:'Shaun', lastName:'PALMER'},
+    'palmer': {firstName:'Shaun', lastName:'PALMER'},
+    'trejann': {firstName:'Trejann', lastName:'CLIST'},
+    'clist': {firstName:'Trejann', lastName:'CLIST'}
   };
   // Handle last initial pattern: michaelb -> Michael BLAIK, michaele -> Michael EVANS
   if(u.length>7 && u.startsWith('michael')){
@@ -5123,34 +5723,122 @@ function triggerImport(){
 function renderAccountMgmtPage(){ 
   const el=document.getElementById('account-mgmt-inner'); 
   if(!el) return; 
-  const users=safeGetJSON('retail_roster_users_v1',[]); 
+  let users=safeGetJSON('retail_roster_users_v1',[]); 
   const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-  const cur=getCurrentFortnight();
-  let html='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🔑 BULK PASSWORD RESET</div><div style="font-size:10px;margin-bottom:8px">Set all employee passwords to their first name (e.g., Chris -> Chris, Daniel -> Daniel). Hidden staff and both Michaels excluded. Admin/manager/master accounts excluded.</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div><div class="card" style="background:#fff;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🧹 FIX DUPLICATES</div><div style="font-size:10px;margin-bottom:8px">If you deleted a duplicate and it came back, click this to remove duplicate staff (same name) from ALL rosters. This prevents cloud from restoring them.</div><button onclick="deduplicateAllRosters(true)" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">REMOVE DUPLICATE STAFF - ALL ROSTERS</button></div><div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS - Linked to roster</div><div id="admin-user-list-all">'; 
+  const cur=getSelectedFortnight() || getCurrentFortnight();
+  // FIXED V162: Include all roster staff + hidden staff in check
+  let allRosterStaff = [];
+  let hiddenStaff = [];
+  try{ 
+    if(cur && cur.staff) allRosterStaff = cur.staff.slice();
+    hiddenStaff = safeGetJSON('retail_roster_hidden_staff_v1',[]) || [];
+    // Also check old hidden key
+    if(hiddenStaff.length===0){
+      var oldHidden = safeGetJSON('retail_roster_hidden_v1',[]) || [];
+      if(oldHidden.length>0 && typeof oldHidden[0]==='string'){
+        hiddenStaff = oldHidden.map(function(name){
+          var parts=name.split(' ');
+          return {firstName: parts[0]||name, lastName: parts.slice(1).join(' ')||'', username: (parts[0]||name).toLowerCase()};
+        });
+      }
+    }
+    // Combine for linking check
+    allRosterStaff = allRosterStaff.concat(hiddenStaff.map(function(h){
+      return {firstName: h.firstName||'', lastName: h.lastName||'', username: h.username||''};
+    }));
+  }catch(e){ console.log('Roster staff gather error', e); }
+  
+  // FIXED V162: Auto-create missing user accounts from roster if not exist (show all staff as in roster)
+  try{
+    var existingUsernames = {};
+    users.forEach(function(u){ if(u.username) existingUsernames[u.username.toLowerCase()]=true; });
+    var toCreate = [];
+    // Check roster staff
+    if(cur && cur.staff){
+      cur.staff.forEach(function(s){
+        var baseUsername = (s.firstName||'').toLowerCase();
+        if(!baseUsername) return;
+        if(existingUsernames[baseUsername]) return;
+        // Special handling for Michaels and others
+        if(s.firstName==='Michael' && s.lastName==='BLAIK') baseUsername='michaelb';
+        if(s.firstName==='Michael' && s.lastName==='EVANS') baseUsername='michaele';
+        if(existingUsernames[baseUsername]) return;
+        // Create
+        toCreate.push({username: baseUsername, firstName: s.firstName, lastName: s.lastName, role: 'staff', employmentType: s.employmentType||'casual'});
+        existingUsernames[baseUsername]=true;
+      });
+    }
+    // Check hidden staff
+    hiddenStaff.forEach(function(h){
+      var baseUsername = (h.username||h.firstName||'').toLowerCase();
+      if(!baseUsername) return;
+      if(existingUsernames[baseUsername]) return;
+      toCreate.push({username: baseUsername, firstName: h.firstName||baseUsername, lastName: h.lastName||'', role: 'staff', employmentType: 'casual', isHidden: true});
+      existingUsernames[baseUsername]=true;
+    });
+    if(toCreate.length>0){
+      console.log('V162: Auto-creating', toCreate.length, 'missing users from roster:', toCreate.map(function(u){return u.username;}));
+      toCreate.forEach(function(nu){
+        users.push({username: nu.username, password: nu.firstName||nu.username, firstName: nu.firstName, lastName: nu.lastName, role: nu.role||'staff', employmentType: nu.employmentType||'casual'});
+      });
+      safeSetJSON('retail_roster_users_v1', users);
+    }
+  }catch(e){ console.error('Auto-create users in render error', e); }
+  
+  let html='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🔑 BULK PASSWORD RESET</div><div style="font-size:10px;margin-bottom:8px">Set all employee passwords to their first name (e.g., Chris -> Chris, Daniel -> Daniel). Hidden staff and both Michaels excluded. Admin/manager/master accounts excluded.</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div><div class="card" style="background:#fff;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🧹 FIX DUPLICATES</div><div style="font-size:10px;margin-bottom:8px">If you deleted a duplicate and it came back, click this to remove duplicate staff (same name) from ALL rosters. This prevents cloud from restoring them.</div><button onclick="deduplicateAllRosters(true)" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">REMOVE DUPLICATE STAFF - ALL ROSTERS</button></div><div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS - Linked to roster ('+users.length+' users, '+(cur?cur.staff.length:0)+' roster + '+hiddenStaff.length+' hidden)</div><div id="admin-user-list-all">'; 
   html+=users.map((u,i)=>{
     var mapped=null;
     try{ mapped=mapUsernameToStaffKey(u.username); }catch(e){}
     var rosterLink='Not linked';
     var rosterFound=false;
-    if(cur && cur.staff){
-      var found=cur.staff.find(function(s){
+    var isHiddenUser=false;
+    // Check in all roster staff + hidden
+    if(allRosterStaff && allRosterStaff.length>0){
+      var found=allRosterStaff.find(function(s){
+        if(!s.firstName) return false;
         if(u.firstName && u.lastName){
           return s.firstName && s.lastName && s.firstName.toLowerCase()===u.firstName.toLowerCase() && s.lastName.toLowerCase()===u.lastName.toLowerCase();
         }
+        // Also check by username
+        if(s.username && u.username && s.username.toLowerCase()===u.username.toLowerCase()) return true;
         if(mapped){
-          return s.firstName && s.lastName && s.firstName.toLowerCase()===mapped.firstName.toLowerCase() && (mapped.lastName==='' || s.lastName.toLowerCase()===mapped.lastName.toLowerCase());
+          return s.firstName && s.lastName && s.firstName.toLowerCase()===mapped.firstName.toLowerCase() && (mapped.lastName==='' || s.lastName.toLowerCase()===mapped.lastName.toLowerCase() || s.lastName.toLowerCase().includes(mapped.lastName.toLowerCase()));
+        }
+        // Check by first name only (for cases like Kate PHILLIPS)
+        if(s.firstName && u.firstName && s.firstName.toLowerCase()===u.firstName.toLowerCase()){
+          // If last names similar or one contains the other
+          if(!s.lastName || !u.lastName) return true;
+          if(s.lastName.toLowerCase()===u.lastName.toLowerCase()) return true;
+          if(s.lastName.toLowerCase().includes(u.lastName.toLowerCase()) || u.lastName.toLowerCase().includes(s.lastName.toLowerCase())) return true;
+          // Special case: TRATHEN vs TRATHIEN typo
+          if((s.lastName.toLowerCase().includes('trath') && u.lastName.toLowerCase().includes('trath'))) return true;
         }
         return false;
       });
       if(found){
         rosterLink=found.lastName.toUpperCase()+', '+found.firstName;
         rosterFound=true;
+        // Check if hidden
+        isHiddenUser = hiddenStaff.some(function(h){
+          return h.firstName && found.firstName && h.firstName.toLowerCase()===found.firstName.toLowerCase() && 
+                 h.lastName && found.lastName && h.lastName.toLowerCase()===found.lastName.toLowerCase();
+        });
+        if(isHiddenUser) rosterLink+=' (HIDDEN)';
       } else if(mapped){
         rosterLink=mapped.firstName+' '+mapped.lastName+' (mapped)';
+        // Still try to find in hidden
+        var foundHidden = hiddenStaff.find(function(h){
+          return h.firstName && mapped.firstName && h.firstName.toLowerCase()===mapped.firstName.toLowerCase();
+        });
+        if(foundHidden){
+          rosterFound=true;
+          rosterLink=foundHidden.lastName.toUpperCase()+', '+foundHidden.firstName+' (HIDDEN)';
+          isHiddenUser=true;
+        }
       }
     }
-    var badge=rosterFound?'<span style="background:#B6F7C5;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;font-weight:900">LINKED: '+rosterLink+'</span>':'<span style="background:#FFEB3B;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px">NOT LINKED: '+rosterLink+'</span>';
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:8px"><div><b>'+u.username+'</b> ('+u.role+')<br><small>'+(u.firstName||'')+' '+(u.lastName||'')+'</small> '+badge+'</div><div style="display:flex;gap:4px"><button onclick="adminEditUser('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">EDIT</button><button onclick="adminDelUser('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">DEL</button></div></div>';
+    var badge=rosterFound?'<span style="background:'+(isHiddenUser?'#90CAF9':'#B6F7C5')+';color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;font-weight:900">LINKED: '+rosterLink+'</span>':'<span style="background:#FFEB3B;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px">NOT LINKED: '+rosterLink+'</span>';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:8px"><div><b>'+u.username+'</b> ('+u.role+(isHiddenUser?' - hidden':'')+')<br><small>'+(u.firstName||'')+' '+(u.lastName||'')+'</small> '+badge+'</div><div style="display:flex;gap:4px"><button onclick="adminEditUser('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">EDIT</button><button onclick="adminDelUser('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">DEL</button></div></div>';
   }).join(''); 
   html+='</div>'; 
   html+='<div style="margin-top:16px;font-weight:900">ADD NEW USER - Fix for Michaels: use first/last to link</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><input id="new-user-name" placeholder="Username e.g. michaelb" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-pass" placeholder="Password" type="password" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-first" placeholder="First Name e.g. Michael" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-last" placeholder="Last Name e.g. BLAIK" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><select id="new-user-role" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option><option value="master">master</option></select><button onclick="adminAddUserMgmt()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ADD USER</button></div>'; 
@@ -6065,15 +6753,29 @@ function addHiddenStaff(){
     
     toast('Added hidden staff: '+first+' '+last+' ('+user+') - Now visible on main roster for admin - Saved: '+verify.length);
     
-    // Force cloud sync for LIVE
+    // Force cloud sync for LIVE - FIXED V163: Ensure hidden staff saved permanently
     try{ debouncedCloudSave(); }catch(e){}
     try{ cloudSave(); }catch(e){}
     try{
       var state=getAllState();
       if(state && typeof db!=='undefined' && db && db.ref){
-        db.ref('repco_state').set(state).then(function(){ console.log('Hidden staff synced LIVE'); });
+        db.ref('repco_state').set(state).then(function(){ console.log('Hidden staff synced LIVE via repco_state'); });
       } else if(typeof FIREBASE_DB_URL!=='undefined'){
         fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+      }
+      // FIXED V163: Also push hidden staff directly to Firebase for redundancy (ensures live/permanent)
+      var hiddenForDirect = safeGetJSON('retail_roster_hidden_staff_v1',[]);
+      var usersForDirect = safeGetJSON('retail_roster_users_v1',[]);
+      var fnsForDirect = safeGetJSON('retail_roster_byFortnight_v1',[]);
+      if(typeof FIREBASE_DB_URL!=='undefined'){
+        fetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hiddenForDirect),mode:'cors'}).then(function(){ console.log('Hidden staff direct sync OK'); }).catch(function(e){ console.log('Hidden direct sync fail', e); });
+        fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fnsForDirect),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(usersForDirect),mode:'cors'}).catch(function(){});
+        if(typeof db!=='undefined' && db && db.ref){
+          try{ db.ref('retail_roster_hidden_staff_v1').set(hiddenForDirect); }catch(e){}
+          try{ db.ref('retail_roster_byFortnight_v1').set(fnsForDirect); }catch(e){}
+          try{ db.ref('retail_roster_users_v1').set(usersForDirect); }catch(e){}
+        }
       }
     }catch(e){ console.error('Cloud sync error', e); }
     
@@ -6521,7 +7223,35 @@ function approveReq(idx){
     applyRoleVisibility();
     try{ updateRequestsBadge(); }catch(e){}
     toast('Approved - '+matchedStaffName+' → '+req.newShift+' - forcing sync to My Schedule (employee will see APPROVED in 3 sec)');
-    try{ if(typeof sendApprovalNotification==='function' && notifEmployee) { const fullReqData = all[idx] || req; sendApprovalNotification(notifEmployee, 'approval', notifDetails, fullReqData); } }catch(e){}
+    // FIXED V164: Always send notification to requesting user - use username, not employee field
+    try{ 
+      var targetUserForNotif = req.username || req.employee || notifEmployee || '';
+      var detailsForNotif = (req.shiftDate || req.shiftISO || (req.dates?req.dates.join(', '):'')) + ' ' + (req.newShift||'') + ' ' + (req.type||'');
+      var fullReqData = all[idx] || req;
+      console.log('V164: Sending APPROVAL notification to', targetUserForNotif, 'for request', req.id);
+      if(typeof sendApprovalNotification==='function' && targetUserForNotif) { 
+        sendApprovalNotification(targetUserForNotif, 'approval', detailsForNotif, fullReqData); 
+      } else if(targetUserForNotif){
+        // Fallback direct notification if function fails
+        var directNotif = {
+          id: 'approval_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+          type: 'approval',
+          employee: targetUserForNotif,
+          targetUsername: targetUserForNotif.toLowerCase(),
+          message: '✅ APPROVED: ' + detailsForNotif + ' → ' + (req.newShift||''),
+          title: '✅ Approved - ' + targetUserForNotif,
+          body: detailsForNotif,
+          requestData: fullReqData,
+          timestamp: Date.now(),
+          read: false,
+          from: safeGet('repco_username')||'admin'
+        };
+        var notifs = safeGetJSON('repco_notifications_v1',[]);
+        notifs.push(directNotif);
+        safeSetJSON('repco_notifications_v1', notifs);
+        console.log('V164: Direct approval notif created for', targetUserForNotif);
+      }
+    }catch(e){ console.error('V164 approve notif error', e); }
   }catch(e){ console.error('approveReq error', e); toast('Error approving: '+e.message); }
 }
 
@@ -6571,7 +7301,34 @@ function denyReq(idx){
     renderRequests(); 
     try{ renderMySchedule(); }catch(e){}
     try{ updateRequestsBadge(); }catch(e){}
-    try{ if(typeof sendApprovalNotification==='function' && notifEmployeeDen) { const fullReqData = all[idx] || req; sendApprovalNotification(notifEmployeeDen, 'denial', notifDetailsDen, fullReqData); } }catch(e){}
+    // FIXED V164: Always send DENIAL notification - same logic as approval
+    try{ 
+      var targetUserForNotifDen = req.username || notifEmployee || notifEmployeeDen || '';
+      var detailsForNotifDen = (req.shiftDate || req.shiftISO || (req.dates?req.dates.join(', '):'')) + ' ' + (req.type||'') + ' - ' + (req.reason||'');
+      var fullReqDataDen = all[idx] || req;
+      console.log('V164: Sending DENIAL notification to', targetUserForNotifDen, 'for request', req.id);
+      if(typeof sendApprovalNotification==='function' && targetUserForNotifDen) { 
+        sendApprovalNotification(targetUserForNotifDen, 'denial', detailsForNotifDen, fullReqDataDen); 
+      } else if(targetUserForNotifDen){
+        var directNotifDen = {
+          id: 'denial_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+          type: 'denial',
+          employee: targetUserForNotifDen,
+          targetUsername: targetUserForNotifDen.toLowerCase(),
+          message: '❌ DENIED: ' + detailsForNotifDen,
+          title: '❌ Denied - ' + targetUserForNotifDen,
+          body: detailsForNotifDen,
+          requestData: fullReqDataDen,
+          timestamp: Date.now(),
+          read: false,
+          from: safeGet('repco_username')||'admin'
+        };
+        var notifsDen = safeGetJSON('repco_notifications_v1',[]);
+        notifsDen.push(directNotifDen);
+        safeSetJSON('repco_notifications_v1', notifsDen);
+        console.log('V164: Direct denial notif created for', targetUserForNotifDen);
+      }
+    }catch(e){ console.error('V164 deny notif error', e); }
   }catch(e){ console.error('denyReq error', e); toast('Error denying: '+e.message); }
 }
 
@@ -7371,6 +8128,28 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 
 function renderMySchedule(){
+  try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); }catch(e){}
+  // V165: Inject shift offers UI at top if exists
+  try{
+    var myschedContainer = document.getElementById('mysched-page') || document.getElementById('mysched-list') || document.getElementById('myschedule-inner');
+    // Also ensure offers container exists in My Schedule page
+    var offersDiv = document.getElementById('shift-offers-list');
+    if(!offersDiv){
+      var page = document.getElementById('mysched-page');
+      if(page){
+        var inner = page.querySelector('.page-inner') || page;
+        var existingOffers = document.getElementById('shift-offers-list');
+        if(!existingOffers){
+          var newOffersDiv = document.createElement('div');
+          newOffersDiv.id = 'shift-offers-container';
+          newOffersDiv.innerHTML = '<div class="card" style="background:#FFF3E0;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🎉 SHIFT OFFERS - Accept/Deny Required</div><div id="shift-offers-list">Loading offers...</div></div>';
+          inner.insertBefore(newOffersDiv, inner.firstChild);
+        }
+      }
+    }
+    setTimeout(function(){ try{ renderShiftOffers(); }catch(e){} }, 100);
+  }catch(e){ console.log('Shift offers inject error', e); }
+
   try{
 
     // FIXED AGGRESSIVE FIX: If employee has pending and approved/denied for same ID, remove pending - but keep approved/denied visible

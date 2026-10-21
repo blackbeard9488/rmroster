@@ -2,7 +2,7 @@
 // Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready
 // FIXED V157: Clean notifications, no blackbeard, single icon, Monday 22/10
 
-const CACHE_NAME = 'repco-roster-alpha-v160-fix-hidden-pill-passwords';
+const CACHE_NAME = 'repco-roster-alpha-v165-fix-new-shift-accept-deny';
 
 const urlsToCache = [
   '/',
@@ -12,7 +12,7 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
-  console.log('[SW] Install V160 FIX HIDDEN PILL PASSWORDS - works even when logged out');
+  console.log('[SW] Install V165 FIX NEW SHIFT ACCEPT DENY - Accept adds, Deny removes + admin notified - Instant - works even when logged out');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => {
@@ -23,7 +23,7 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  console.log('[SW] Activate V160 FIX HIDDEN PILL PASSWORDS - works even when logged out');
+  console.log('[SW] Activate V165 FIX NEW SHIFT ACCEPT DENY - Accept adds, Deny removes + admin notified - Instant - works even when logged out');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
