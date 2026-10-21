@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
-<!-- V165_FINAL_FIXED_ALL_ISSUES -->
-<!-- V165_FIXED_OFF_TO_SHIFT_NOTIFICATION_AND_WELCOME_ONCE -->
+<!-- V167_FINAL_FIXED_ALL_ISSUES -->
+<!-- V167_FIXED_OFF_TO_SHIFT_NOTIFICATION_AND_WELCOME_ONCE -->
 <!-- V164_FIXED_WELCOME_ONCE_AND_HIDDEN_BELOW_CASUAL -->
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#E30613">
@@ -399,7 +399,7 @@ button, .r-btn-consistent{
 .r-table td.cell-green{background:#A5D6A7 !important}
 .r-table td.cell-g{background:#60A5FA !important}
 
-/* FIXED V166: Hover whole row highlight for admin - easier to see who shift belongs to */
+/* FIXED V167: Hover whole row highlight for admin - easier to see who shift belongs to */
 .r-table tbody tr:hover {
   background: #FFF9C4 !important;
   outline: 3px solid #111 !important;
@@ -603,6 +603,7 @@ body:not(.is-admin) .daily-total-casual {
 <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><button id="mobile-menu-toggle" onclick="toggleMobileMenu()" style="display:none;background:#111;color:#fff;border:none;border-radius:9999px;width:44px;height:44px;font-weight:900;font-size:18px;align-items:center;justify-content:center">☰</button></div><div class="r-btns-consistent">
 <button class="r-btn-consistent active" id="btn-roster" onclick="showMain()">ROSTER</button>
 <button class="r-btn-consistent" id="btn-requests" onclick="openPage('requests-page')">REQUESTS</button>
+<button class="r-btn-consistent" id="btn-shift-offers" onclick="openPage('shift-offers-page')" style="background:#FFEB3B;color:#111;border:2px solid #111">SHIFT OFFERS <span id="shift-offers-badge" style="display:none;background:#E30613;color:#fff;border-radius:9999px;padding:2px 6px;font-size:8px;margin-left:4px"></span></button>
 <button class="r-btn-consistent" id="btn-unavail" onclick="openPage('unavail-page')">STAFF UNAVAILABLE</button>
 <button class="r-btn-consistent" id="btn-today" onclick="openPage('buddies-today-page-v141')">TODAY'S BUDDIES</button>
 <button class="r-btn-consistent" id="btn-tomorrow" onclick="openPage('buddies-tomorrow-page-v141')">TOMORROW'S BUDDIES</button>
@@ -627,6 +628,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="buddies-today-page-v141" class="full-page"><div class="page-inner"><div class="page-title" style="display:flex;justify-content:space-between;align-items:center"><span>TODAY'S BUDDIES</span><button onclick="showMain()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-weight:900;font-size:12px">← BACK</button></div><div id="buddies-today-list"></div></div></div>
 <div id="buddies-tomorrow-page-v141" class="full-page"><div class="page-inner"><div class="page-title" style="display:flex;justify-content:space-between;align-items:center"><span>TOMORROW'S BUDDIES</span><button onclick="showMain()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-weight:900;font-size:12px">← BACK</button></div><div id="buddies-tomorrow-list"></div></div></div>
 <div id="mysched-page" class="full-page"><div class="page-inner"><div class="page-title" style="display:flex;justify-content:space-between;align-items:center"><span>MY SCHEDULE</span><button onclick="showMain()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-weight:900;font-size:12px">← BACK TO ROSTER</button></div><div id="mysched-list"></div><div style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:12px 16px;font-weight:900;width:100%;font-size:14px">← BACK TO ROSTER</button></div></div></div>
+<div id="shift-offers-page" class="full-page"><div class="page-inner"><div class="page-title" style="display:flex;justify-content:space-between;align-items:center"><span>🎉 SHIFT OFFERS</span><button onclick="showMain()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-weight:900;font-size:12px">← BACK TO ROSTER</button></div><div id="shift-offers-page-inner"><div class="card" style="background:#FFF3E0;border:3px solid #111;padding:12px"><div style="font-weight:900;margin-bottom:8px">New shifts given by admin require your Accept/Deny</div><div style="font-size:11px;color:#666">When admin gives you a new shift (OFF → shift), you must accept to add it to roster, or deny to remove it and notify admin.</div></div><div id="shift-offers-list">Loading offers...</div></div><div style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:12px 16px;font-weight:900;width:100%;font-size:14px">← BACK TO ROSTER</button></div></div></div>
 <div id="today-workers-page" class="full-page"><div class="page-inner"><div class="page-title">TODAY'S WORKERS</div><div id="today-workers-list"></div></div></div>
 <div id="account-page" class="full-page"><div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="openPage('requests-page')">REQUESTS</button><button class="r-btn-consistent active">ACCOUNT</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div><div class="page-inner"><div class="page-title">EDIT USERNAME / PASSWORD</div><div id="account-inner"></div><div id="account-list"></div></div></div>
 <div id="account-mgmt-page" class="full-page"><div class="page-inner"><div class="page-title">ACCOUNT MANAGEMENT - ALL USERS</div><div id="account-mgmt-inner"></div></div></div>
@@ -683,7 +685,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V165_FIX_NEW_SHIFT_ACCEPT_DENY_FLOW";
+const BUILD_ID="20261022_V167_FIX_OFF_TO_SHIFT_NOTIFICATION_GUARANTEED";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1880,7 +1882,7 @@ async function cloudLoad(){
     try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); }catch(e){}
   },2000);
   
-  // V165: Poll shift offers directly for instant accept/deny UI
+  // V167: Poll shift offers directly for instant accept/deny UI
   setInterval(async function(){
     try{
       var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
@@ -1889,7 +1891,7 @@ async function cloudLoad(){
       if(!Array.isArray(cloudOffers)) return;
       var localOffers=safeGetJSON('retail_roster_shift_offers_v1',[]);
       if(JSON.stringify(localOffers)!==JSON.stringify(cloudOffers)){
-        console.log('V165: Shift offers updated via direct poll');
+        console.log('V167: Shift offers updated via direct poll');
         safeSetJSON('retail_roster_shift_offers_v1', cloudOffers);
         try{ renderShiftOffers(); }catch(e){}
         try{ checkAndShowNotifications(); }catch(e){}
@@ -2807,11 +2809,25 @@ function deleteCurrentRoster(){
           var sel=document.getElementById('fortnight-select');
           if(sel) sel.value=nextId;
         }
-        toast('Deleted '+deleted.label+' - synced');
+        toast('Deleted '+deleted.label+' - syncing to Firebase...');
         populateFortnightSelect();
         renderRosterSafe();
         applyRoleVisibility();
         try{ if(typeof updateMyScheduleCard==='function') updateMyScheduleCard(); }catch(e){}
+        // FIXED V167: Sync deleted roster to Firebase so it stays deleted
+        try{
+          var state=getAllState();
+          state._ts=Date.now();
+          state._lastDeleteId=deleted.id;
+          state._lastDeleteTs=Date.now();
+          safeSet('repco_cloud_ts', String(state._ts));
+          if(typeof db!=='undefined' && db && db.ref){
+            db.ref('repco_state').set(state).then(function(){ console.log('Delete synced via SDK'); toast('Deleted '+deleted.label+' - live on all devices'); });
+            db.ref('retail_roster_byFortnight_v1').set(fns);
+          }
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(){ console.log('Roster delete pushed via REST'); }).catch(function(){});
+        }catch(e){ console.error('Delete sync error', e); }
       }catch(e){ console.error('delete error', e); toast('Delete failed: '+e.message); }
     });
   }catch(e){ console.error('deleteCurrentRoster error', e); toast('Error: '+e.message); }
@@ -3007,7 +3023,7 @@ function renderRosterSafe(){
     return {html:'<div class="roster-section"'+(isHiddenTable?' style="border:2px dashed #999;background:#F9F9F9"':'')+' >'+secHeadHtml+'<div class="r-table-wrap"><table class="r-table"><thead>'+head+'</thead><tbody>'+rows+totalsRow+'</tbody></table></div></div>', grand:grand};
   }
   var fullRes=build('Full Time',full,''); var casRes=build('Casual',cas,'casual'); 
-  // FIXED V165: Hidden staff below casual table
+  // FIXED V167: Hidden staff below casual table
   // FIXED V172: Hidden staff - combine cur.staff hidden + storage hidden (so they never disappear)
   var hiddenList = cur.staff.filter(function(s){ 
     var isOldHidden=hidden.includes(s.firstName+' '+s.lastName) || hidden.includes(s.firstName);
@@ -4055,42 +4071,58 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
 function prevFortnight(){
   try{
     const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    if(fns.length===0) return;
+    if(fns.length===0){ toast('No rosters'); return; }
     var sorted=fns.slice().sort(function(a,b){
       if(!a.dates||!b.dates||!a.dates[0]||!b.dates[0]) return 0;
       return a.dates[0].iso.localeCompare(b.dates[0].iso);
     });
     var curId=safeGet('retail_roster_currentFortnightId');
+    var sel=document.getElementById('fortnight-select');
+    if(sel && sel.value) curId=sel.value;
     var idx=sorted.findIndex(function(f){return f.id===curId;});
     if(idx===-1){ var cur=getCurrentFortnight(); idx=sorted.findIndex(function(f){return f.id===(cur?cur.id:'');}); }
+    if(idx===-1) idx=0;
     if(idx<=0) idx=sorted.length-1; else idx--;
     var newId=sorted[idx].id;
     safeSet('retail_roster_currentFortnightId',newId);
     safeSet('repco_last_manual_fortnight_select', newId);
     safeSet('repco_last_manual_select_ts', String(Date.now()));
-    var sel=document.getElementById('fortnight-select'); if(sel) sel.value=newId;
-    renderRosterSafe(); applyRoleVisibility(); toast('Previous: '+sorted[idx].label);
-  }catch(e){ toast('Error: '+e.message); }
+    if(sel) sel.value=newId;
+    try{ populateFortnightSelect(); }catch(e){}
+    if(sel) sel.value=newId;
+    renderRosterSafe(); 
+    try{ applyRoleVisibility(); }catch(e){}
+    toast('Previous: '+sorted[idx].label);
+    console.log('V167 PREV: Changed to', newId, sorted[idx].label);
+  }catch(e){ console.error('prevFortnight error', e); toast('Error: '+e.message); }
 }
 function nextFortnight(){
   try{
     const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    if(fns.length===0) return;
+    if(fns.length===0){ toast('No rosters'); return; }
     var sorted=fns.slice().sort(function(a,b){
       if(!a.dates||!b.dates||!a.dates[0]||!b.dates[0]) return 0;
       return a.dates[0].iso.localeCompare(b.dates[0].iso);
     });
     var curId=safeGet('retail_roster_currentFortnightId');
+    var sel=document.getElementById('fortnight-select');
+    if(sel && sel.value) curId=sel.value;
     var idx=sorted.findIndex(function(f){return f.id===curId;});
     if(idx===-1){ var cur=getCurrentFortnight(); idx=sorted.findIndex(function(f){return f.id===(cur?cur.id:'');}); }
+    if(idx===-1) idx=0;
     if(idx<0||idx>=sorted.length-1) idx=0; else idx++;
     var newId=sorted[idx].id;
     safeSet('retail_roster_currentFortnightId',newId);
     safeSet('repco_last_manual_fortnight_select', newId);
     safeSet('repco_last_manual_select_ts', String(Date.now()));
-    var sel=document.getElementById('fortnight-select'); if(sel) sel.value=newId;
-    renderRosterSafe(); applyRoleVisibility(); toast('Next: '+sorted[idx].label);
-  }catch(e){ toast('Error: '+e.message); }
+    if(sel) sel.value=newId;
+    try{ populateFortnightSelect(); }catch(e){}
+    if(sel) sel.value=newId;
+    renderRosterSafe(); 
+    try{ applyRoleVisibility(); }catch(e){}
+    toast('Next: '+sorted[idx].label);
+    console.log('V167 NEXT: Changed to', newId, sorted[idx].label);
+  }catch(e){ console.error('nextFortnight error', e); toast('Error: '+e.message); }
 }
 
 function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur==='24h'?'12h':'24h';safeSet('timeFormat',nxt);toast('Time: '+nxt);renderRosterSafe(); applyRoleVisibility();}
@@ -4256,39 +4288,85 @@ function formatDateForNotification(dateISO){
 
 function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
   try{
-    if(!employeeName) return;
+    console.log('V167 sendShiftChangeNotification called:', employeeName, oldShift, '->', newShift, dateISO);
+    if(!employeeName) { console.log('V167: No employeeName, abort'); return; }
     const uname = employeeName.toLowerCase().replace(/\s+/g,'');
     const cleanName = employeeName.trim();
     let targetUsername = null;
+    let foundUser = null;
     try{
       const users = safeGetJSON('retail_roster_users_v1',[]);
-      const found = users.find(u => {
+      console.log('V167: Searching for user matching', cleanName, 'in', users.length, 'users');
+      // Try exact full name
+      let found = users.find(u => {
         const full = ((u.firstName||'')+' '+(u.lastName||'')).trim().toLowerCase();
-        return full === cleanName.toLowerCase() || (u.firstName||'').toLowerCase() === cleanName.split(' ')[0].toLowerCase();
+        return full === cleanName.toLowerCase();
       });
-      if(found) targetUsername = found.username;
-    }catch(e){}
+      if(found){ foundUser = found; targetUsername = found.username; console.log('V167: Found by full name', found.username); }
+      // Try username exact
+      if(!targetUsername){
+        found = users.find(u => (u.username||'').toLowerCase() === cleanName.toLowerCase());
+        if(found){ foundUser = found; targetUsername = found.username; console.log('V167: Found by username', found.username); }
+      }
+      // Try first name
+      if(!targetUsername){
+        const firstName = cleanName.split(' ')[0].toLowerCase();
+        found = users.find(u => (u.firstName||'').toLowerCase() === firstName);
+        if(found){ foundUser = found; targetUsername = found.username; console.log('V167: Found by first name', firstName, '->', found.username); }
+      }
+      // Try last name
+      if(!targetUsername){
+        const parts = cleanName.split(' ');
+        if(parts.length>1){
+          const lastName = parts[parts.length-1].toLowerCase();
+          found = users.find(u => (u.lastName||'').toLowerCase() === lastName);
+          if(found){ foundUser = found; targetUsername = found.username; console.log('V167: Found by last name', lastName, '->', found.username); }
+        }
+      }
+      // Try includes
+      if(!targetUsername){
+        found = users.find(u => {
+          const full = ((u.firstName||'')+' '+(u.lastName||'')).trim().toLowerCase();
+          return full.includes(cleanName.toLowerCase()) || cleanName.toLowerCase().includes((u.firstName||'').toLowerCase());
+        });
+        if(found){ foundUser = found; targetUsername = found.username; console.log('V167: Found by includes', found.username); }
+      }
+    }catch(e){ console.log('V167 user lookup error', e); }
     
     if(!targetUsername){
-      const users = safeGetJSON('retail_roster_users_v1',[]);
-      const firstName = cleanName.split(' ')[0].toLowerCase();
-      const found = users.find(u => (u.firstName||'').toLowerCase() === firstName);
-      if(found) targetUsername = found.username;
+      // Fallback: try to find staff in roster that matches name, get their username if stored in staff
+      try{
+        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+        for(var fi=0; fi<fns.length; fi++){
+          var fn=fns[fi];
+          if(!fn.staff) continue;
+          for(var si=0; si<fn.staff.length; si++){
+            var st=fn.staff[si];
+            var full=(st.firstName||'')+' '+(st.lastName||'');
+            if(full.toLowerCase()===cleanName.toLowerCase() || (st.firstName||'').toLowerCase()===cleanName.toLowerCase().split(' ')[0]){
+              if(st.username){ targetUsername=st.username; console.log('V167: Found username from staff roster', st.username); break; }
+            }
+          }
+          if(targetUsername) break;
+        }
+      }catch(e){}
     }
     
     if(!targetUsername) targetUsername = uname;
+    if(!targetUsername) { console.log('V167: No targetUsername resolved, abort'); return; }
+    
+    targetUsername = targetUsername.toLowerCase().trim();
+    console.log('V167: Final targetUsername', targetUsername, 'for', cleanName);
     
     // Determine if OFF -> shift
     const oldClean = (oldShift||'').toString().trim().toUpperCase();
     const newClean = (newShift||'').toString().trim().toUpperCase();
-    const isOffToShift = (oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0') && newClean!=='' && newClean!=='OFF' && newClean!=='-' && newClean!=='0';
-    const isShiftToOff = !(oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0') && (newClean==='' || newClean==='OFF' || newClean==='-' || newClean==='0');
+    const isOffToShift = (oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0' || oldClean==='UA' || oldClean==='NA') && newClean!=='' && newClean!=='OFF' && newClean!=='-' && newClean!=='0' && newClean!=='UA' && newClean!=='NA' && newClean!=='AB' && !newClean.includes('AB');
+    const isShiftToOff = !(oldClean==='' || oldClean==='OFF' || oldClean==='-' || oldClean==='0' || oldClean==='UA' || oldClean==='NA') && (newClean==='' || newClean==='OFF' || newClean==='-' || newClean==='0');
     
-    // FIXED V180: OFF->shift ALWAYS notifies
-    let isCurrentFortnight = true;
-    let isCurrentDay = true;
+    console.log('V167: isOffToShift', isOffToShift, 'oldClean', oldClean, 'newClean', newClean);
     
-    // FIXED V180: Format date as Monday 22/10 - helper inline
+    // Format date
     let formattedDate = '';
     let dayName = '';
     try{
@@ -4319,9 +4397,6 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       formattedDate = dateISO||'';
     }
     
-    // FIXED V180: Clean titles - NO blackbeard9.., NO REPCO... truncation, just REPCO
-    // Android Chrome shows "REPCO... blackbeard9..." when notification has long title or origin
-    // Solution: Short, clean title, no domain, single icon
     let message = '';
     let title = '';
     const displayDate = formattedDate || dateISO || '';
@@ -4337,14 +4412,12 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       title = `REPCO - ${cleanName}`;
     }
     
-    // Ensure no blackbeard or URL in message
     message = message.replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim().substring(0,120);
-    title = title.replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim().substring(0,30);
+    title = title.replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim().substring(0,50);
     
-    // FIXED V180: Always push even if same cell edited multiple times - use unique timestamp
-    // V165: New shift offers require accept/deny
+    const notifId = 'shift_'+Date.now()+'_'+Math.random().toString(36).substr(2,8);
     const notif = {
-      id: 'shift_'+Date.now()+'_'+Math.random().toString(36).substr(2,8),
+      id: notifId,
       type: isOffToShift ? 'new_shift_offer' : (isShiftToOff ? 'shift_removed' : 'shift_change'),
       employee: cleanName,
       targetUsername: targetUsername,
@@ -4359,86 +4432,55 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       timestamp: Date.now(),
       read: false,
       from: safeGet('repco_username')||'admin',
-      forcePush: true, // Always push even if duplicate
-      requiresAction: isOffToShift, // V165: New shifts require accept/deny
+      forcePush: true,
+      requiresAction: isOffToShift,
       status: isOffToShift ? 'pending_offer' : 'notified'
     };
 
+    console.log('V167: Creating notification', notif);
     
-    // Save to Firebase and local - ALWAYS push even if same cell edited multiple times
+    // Save to local notifications
     try{
       const notifs = safeGetJSON('repco_notifications_v1',[]);
       notifs.push(notif);
-      if(notifs.length>100) notifs.splice(0, notifs.length-100);
+      if(notifs.length>200) notifs.splice(0, notifs.length-200);
       safeSetJSON('repco_notifications_v1', notifs);
+      console.log('V167: Saved to local repco_notifications_v1, total', notifs.length);
       
-      if(window.db){
-        window.db.ref('notifications/'+targetUsername).push(notif);
-        window.db.ref('notifications_global').push(notif);
-        // FIXED V180: Always push to push_notifications with unique key to ensure delivery even for same cell
-        const uniqueKey = Date.now() + '_' + Math.random().toString(36).substr(2,5);
-        window.db.ref('push_notifications/'+targetUsername+'/'+uniqueKey).set({
-          title: notif.title,
-          body: notif.message,
-          data: notif,
-          timestamp: Date.now(),
-          from: notif.from,
-          type: notif.type,
-          force: true
-        });
-        // Also push to global queue
-        window.db.ref('push_queue').push({
-          to: targetUsername,
-          title: notif.title,
-          body: notif.message,
-          data: notif,
-          ts: Date.now(),
-          force: true
-        });
-      } else {
-        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify(notif)
-        }).catch(()=>{});
-        const uniqueKey = Date.now() + '_' + Math.random().toString(36).substr(2,5);
-        fetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+uniqueKey+'.json', {
-          method: 'PUT',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({
-            title: notif.title,
-            body: notif.message,
-            data: notif,
-            timestamp: Date.now(),
-            from: notif.from,
-            type: notif.type,
-            force: true
-          })
-        }).catch(()=>{});
+      // ALWAYS push to Firebase via multiple methods for instant delivery
+      if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
+        // 1. Direct REST to notifications
+        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V167: Pushed to Firebase notifications/'+targetUsername); }).catch(function(e){ console.log('V167 Firebase notif push fail', e); });
+        // 2. To repco_notifications_v1 global
+        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
+        // 3. To push_notifications with unique key
+        var uniqueKey = Date.now() + '_' + Math.random().toString(36).substr(2,5);
+        fetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+uniqueKey+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title: notif.title, body: notif.message, data: notif, timestamp: Date.now(), from: notif.from, type: notif.type, force: true}),mode:'cors'}).catch(function(){});
+        // 4. To push_queue for FCM
+        fetch(FIREBASE_DB_URL+'/push_queue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to: targetUsername, title: notif.title, body: notif.message, data: notif, ts: Date.now(), force: true}),mode:'cors'}).catch(function(){});
       }
-      
-      // Try FCM token
-      try{
-        if(window.db){
+      if(window.db){
+        try{
+          window.db.ref('notifications/'+targetUsername).push(notif).then(function(){ console.log('V167: SDK push to notifications/'+targetUsername); }).catch(function(e){ console.log('SDK notif push fail', e); });
+          window.db.ref('notifications_global').push(notif);
+          window.db.ref('repco_notifications_v1').push(notif);
+          var uniqueKeySDK = Date.now() + '_' + Math.random().toString(36).substr(2,5);
+          window.db.ref('push_notifications/'+targetUsername+'/'+uniqueKeySDK).set({title: notif.title, body: notif.message, data: notif, timestamp: Date.now(), from: notif.from, type: notif.type, force: true});
+          window.db.ref('push_queue').push({to: targetUsername, title: notif.title, body: notif.message, data: notif, ts: Date.now(), force: true});
+        }catch(e){ console.log('V167 Firebase SDK error', e); }
+        try{
           window.db.ref('fcm_tokens/'+targetUsername).once('value').then(snap=>{
             const tokenData = snap.val();
             if(tokenData && tokenData.token){
-              window.db.ref('push_queue').push({
-                to: targetUsername,
-                token: tokenData.token,
-                title: notif.title,
-                body: notif.message,
-                data: notif,
-                ts: Date.now(),
-                force: true
-              });
-              console.log('FCM token found for', targetUsername, 'queueing push - ALWAYS');
+              window.db.ref('push_queue').push({to: targetUsername, token: tokenData.token, title: notif.title, body: notif.message, data: notif, ts: Date.now(), force: true});
+              console.log('V167 FCM token found for', targetUsername, 'queueing push');
+            } else {
+              console.log('V167 No FCM token for', targetUsername);
             }
           });
-        }
-      }catch(e){ console.log('FCM token error', e); }
+        }catch(e){ console.log('V167 FCM token error', e); }
+      }
       
-      // FIXED V180: Also trigger local notification immediately if target is current user (for testing) - with clean title
       try{
         const currentUser = safeGet('repco_username')||'';
         if(currentUser.toLowerCase()===targetUsername.toLowerCase()){
@@ -4448,13 +4490,14 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
         }
       }catch(e){}
       
-      // V165: If new shift offer, create offer record that requires accept/deny
-      try{
-        if(isOffToShift){
+      // V167: If new shift offer, create offer record that requires accept/deny - CRITICAL
+      if(isOffToShift){
+        try{
+          console.log('V167: Creating shift offer record for OFF->shift');
           var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
           var offer = {
-            id: notif.id,
-            notifId: notif.id,
+            id: notifId,
+            notifId: notifId,
             type: 'new_shift_offer',
             employee: cleanName,
             targetUsername: targetUsername.toLowerCase(),
@@ -4465,23 +4508,27 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
             dayName: dayName||'',
             message: message,
             timestamp: Date.now(),
-            status: 'pending', // pending, accepted, denied
+            status: 'pending',
             from: safeGet('repco_username')||'admin',
             read: false,
             readByStaff: false
           };
           offers.push(offer);
           safeSetJSON('retail_roster_shift_offers_v1', offers);
-          console.log('V165: Created shift offer requiring accept/deny for', targetUsername, offer);
-          // Push offer to Firebase for instant sync
-          if(typeof FIREBASE_DB_URL!=='undefined'){
-            fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+          console.log('V167: Created shift offer requiring accept/deny for', targetUsername, offer, 'total offers', offers.length);
+          
+          // Push offer to Firebase for instant sync - MULTIPLE METHODS
+          if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
+            fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).then(function(){ console.log('V167: Offers pushed via REST'); }).catch(function(e){ console.log('V167 offers REST fail', e); });
+            fetch(FIREBASE_DB_URL+'/shift_offers/'+targetUsername.toLowerCase()+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(offer),mode:'cors'}).catch(function(){});
           }
           if(window.db){
-            try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
-            window.db.ref('shift_offers/'+targetUsername.toLowerCase()).push(offer);
+            try{ window.db.ref('retail_roster_shift_offers_v1').set(offers).then(function(){ console.log('V167: Offers set via SDK'); }); }catch(e){ console.log('V167 offers SDK set fail', e); }
+            try{ window.db.ref('shift_offers/'+targetUsername.toLowerCase()).push(offer); }catch(e){}
+            try{ window.db.ref('shift_offers_global').push(offer); }catch(e){}
           }
-          // Mark roster cell as pending offer (so it shows as pending until accepted)
+          
+          // Mark roster cell as pending offer
           try{
             var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
             var foundFn = null;
@@ -4507,235 +4554,46 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
               if(!foundFn.staff[foundStaffIdx].pendingOffers) foundFn.staff[foundStaffIdx].pendingOffers = {};
               foundFn.staff[foundStaffIdx].pendingOffers[foundDateIdx] = {offerId: offer.id, status: 'pending', newShift: newShift};
               safeSetJSON('retail_roster_byFortnight_v1', fns);
-              console.log('V165: Marked roster cell as pending offer', foundFn.id, foundStaffIdx, foundDateIdx);
+              console.log('V167: Marked roster cell as pending offer', foundFn.id, foundStaffIdx, foundDateIdx);
             }
-          }catch(e){ console.log('V165 mark pending error', e); }
-        }
-      }catch(e){ console.error('V165 offer create error', e); }
+          }catch(e){ console.log('V167 mark pending error', e); }
+        }catch(e){ console.error('V167 offer create error', e); }
+      }
       
-      console.log('Shift notification ALWAYS sent (V180 fix - no dedup):', notif.title, notif.message, 'for', targetUsername);
-      try{ if(typeof toast==='function') toast('Notification sent to '+cleanName+': '+notif.message + (isOffToShift ? ' - Requires Accept/Deny' : '')); }catch(e){}
-    }catch(e){ console.error('Shift notif save error', e); }
-  }catch(e){ console.error('sendShiftChangeNotification error', e); }
+      console.log('V167: Shift notification ALWAYS sent (no dedup):', notif.title, notif.message, 'for', targetUsername, 'isOffToShift', isOffToShift);
+      try{ if(typeof toast==='function') toast('Notification sent to '+cleanName+': '+notif.message + (isOffToShift ? ' - Requires Accept/Deny (SHIFT OFFERS page)' : '')); }catch(e){}
+      try{ if(typeof updateShiftOffersBadge==='function') updateShiftOffersBadge(); }catch(e){}
+      try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); }catch(e){}
+    }catch(e){ console.error('V167 Shift notif save error', e); }
+  }catch(e){ console.error('V167 sendShiftChangeNotification error', e); }
 }
-
-// V165: Accept/Deny shift offer functions
-function acceptShiftOffer(offerId){
-  try{
-    console.log('V165: Accepting shift offer', offerId);
-    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
-    var idx = offers.findIndex(function(o){ return o.id===offerId; });
-    if(idx===-1){ toast('Offer not found'); return; }
-    var offer = offers[idx];
-    if(offer.status!=='pending'){ toast('Offer already '+offer.status); return; }
-    
-    offer.status = 'accepted';
-    offer.acceptedTs = Date.now();
-    offer.read = true;
-    safeSetJSON('retail_roster_shift_offers_v1', offers);
-    
-    // Roster already has new shift - just clear pending flag and mark as confirmed
-    try{
-      var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
-      for(var fi=0; fi<fns.length; fi++){
-        var fn = fns[fi];
-        if(!fn.dates || !fn.staff) continue;
-        var dIdx = fn.dates.findIndex(function(d){ return d.iso===offer.date || d.date===offer.date; });
-        if(dIdx===-1) continue;
-        var sIdx = fn.staff.findIndex(function(s){ 
-          return (s.username && s.username.toLowerCase()===offer.targetUsername.toLowerCase()) ||
-                 (s.firstName && offer.employee && s.firstName.toLowerCase()===offer.employee.toLowerCase().split(' ')[0].toLowerCase());
-        });
-        if(sIdx!==-1){
-          if(fn.staff[sIdx].pendingOffers && fn.staff[sIdx].pendingOffers[dIdx]){
-            fn.staff[sIdx].pendingOffers[dIdx].status = 'accepted';
-            fn.staff[sIdx].pendingOffers[dIdx].acceptedTs = Date.now();
-            // Clear pending after accepted - shift stays
-            delete fn.staff[sIdx].pendingOffers[dIdx];
-          }
-          // Ensure shift is set to newShift
-          fn.staff[sIdx].shifts[dIdx] = offer.newShift;
+}
         }
       }
-      safeSetJSON('retail_roster_byFortnight_v1', fns);
-    }catch(e){ console.error('Accept roster update error', e); }
-    
-    // Notify admin of acceptance
-    try{
-      var adminNotif = {
-        id: 'offer_response_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
-        type: 'shift_offer_accepted',
-        employee: offer.employee,
-        targetUsername: 'admin',
-        message: '✅ '+offer.employee+' ACCEPTED new shift '+offer.formattedDate+' '+offer.newShift,
-        title: '✅ Shift Accepted - '+offer.employee,
-        body: offer.employee+' accepted new shift on '+offer.formattedDate+' - '+offer.newShift,
-        timestamp: Date.now(),
-        read: false,
-        from: offer.targetUsername,
-        offerId: offerId,
-        status: 'accepted'
-      };
-      var notifs = safeGetJSON('repco_notifications_v1',[]);
-      notifs.push(adminNotif);
-      safeSetJSON('repco_notifications_v1', notifs);
-      if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
-        fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
-        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
-      }
-      if(window.db){
-        try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
-        try{ window.db.ref('notifications/manager').push(adminNotif); }catch(e){}
-        try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
-      }
-    }catch(e){ console.log('Admin notif error', e); }
-    
-    // Cloud sync roster
-    try{
-      var state=getAllState();
-      state._ts=Date.now();
-      state._lastOfferAcceptTs=Date.now();
-      safeSet('repco_cloud_ts', String(state._ts));
-      if(typeof db!=='undefined' && db && db.ref){
-        db.ref('repco_state').set(state);
-      } else {
-        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
-      }
-      var fnsStr = JSON.stringify(safeGetJSON('retail_roster_byFortnight_v1',[]));
-      fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){});
     }catch(e){}
-    
-    toast('✅ Accepted shift: '+offer.formattedDate+' '+offer.newShift+' - Added to roster');
-    try{ renderMySchedule(); }catch(e){}
-    try{ renderRosterSafe(); }catch(e){}
-    try{ updateMyScheduleCard(); }catch(e){}
-    try{ renderShiftOffers(); }catch(e){}
-  }catch(e){ console.error('acceptShiftOffer error', e); toast('Error: '+e.message); }
-}
-
-function denyShiftOffer(offerId){
-  try{
-    console.log('V165: Denying shift offer', offerId);
-    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
-    var idx = offers.findIndex(function(o){ return o.id===offerId; });
-    if(idx===-1){ toast('Offer not found'); return; }
-    var offer = offers[idx];
-    if(offer.status!=='pending'){ toast('Offer already '+offer.status); return; }
-    
-    showCustomConfirm('Deny New Shift?', '<div style="font-size:11px">Deny new shift on <b>'+offer.formattedDate+'</b><br>Shift: <b>'+offer.newShift+'</b><br><br>This will remove the shift from roster (set to OFF) and notify admin of rejection.</div>', function(confirmed){
-      if(!confirmed) return;
-      offer.status = 'denied';
-      offer.deniedTs = Date.now();
-      offer.read = true;
-      safeSetJSON('retail_roster_shift_offers_v1', offers);
-      
-      // Remove shift from roster - set to OFF
-      try{
-        var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
-        for(var fi=0; fi<fns.length; fi++){
-          var fn = fns[fi];
-          if(!fn.dates || !fn.staff) continue;
-          var dIdx = fn.dates.findIndex(function(d){ return d.iso===offer.date || d.date===offer.date; });
-          if(dIdx===-1) continue;
-          var sIdx = fn.staff.findIndex(function(s){ 
-            return (s.username && s.username.toLowerCase()===offer.targetUsername.toLowerCase()) ||
-                   (s.firstName && offer.employee && s.firstName.toLowerCase()===offer.employee.toLowerCase().split(' ')[0].toLowerCase());
-          });
-          if(sIdx!==-1){
-            if(fn.staff[sIdx].pendingOffers && fn.staff[sIdx].pendingOffers[dIdx]){
-              delete fn.staff[sIdx].pendingOffers[dIdx];
-            }
-            // Revert to old shift (OFF)
-            fn.staff[sIdx].shifts[dIdx] = offer.oldShift||'OFF';
-            if(!fn.staff[sIdx].offerDenials) fn.staff[sIdx].offerDenials = {};
-            fn.staff[sIdx].offerDenials[dIdx] = {offerId: offer.id, status: 'denied', deniedTs: Date.now(), newShift: offer.newShift};
-          }
-        }
-        safeSetJSON('retail_roster_byFortnight_v1', fns);
-      }catch(e){ console.error('Deny roster update error', e); }
-      
-      // Notify admin of rejection
-      try{
-        var adminNotif = {
-          id: 'offer_response_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
-          type: 'shift_offer_denied',
-          employee: offer.employee,
-          targetUsername: 'admin',
-          message: '❌ '+offer.employee+' DENIED new shift '+offer.formattedDate+' '+offer.newShift+' - Removed from roster',
-          title: '❌ Shift Denied - '+offer.employee,
-          body: offer.employee+' denied new shift on '+offer.formattedDate+' - '+offer.newShift+' → Removed, set to OFF',
-          timestamp: Date.now(),
-          read: false,
-          from: offer.targetUsername,
-          offerId: offerId,
-          status: 'denied'
-        };
-        var notifs = safeGetJSON('repco_notifications_v1',[]);
-        notifs.push(adminNotif);
-        safeSetJSON('repco_notifications_v1', notifs);
-        if(typeof FIREBASE_DB_URL!=='undefined'){
-          fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
-          fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
-          fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
-        }
-        if(window.db){
-          try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
-          try{ window.db.ref('notifications/manager').push(adminNotif); }catch(e){}
-          try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
-        }
-      }catch(e){ console.log('Admin denial notif error', e); }
-      
-      // Cloud sync
-      try{
-        var state=getAllState();
-        state._ts=Date.now();
-        state._lastOfferDenyTs=Date.now();
-        safeSet('repco_cloud_ts', String(state._ts));
-        if(typeof db!=='undefined' && db && db.ref){
-          db.ref('repco_state').set(state);
-        } else {
-          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
-        }
-        var fnsStr = JSON.stringify(safeGetJSON('retail_roster_byFortnight_v1',[]));
-        fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){});
-      }catch(e){}
-      
-      toast('❌ Denied shift: '+offer.formattedDate+' - Removed from roster, admin notified');
-      try{ renderMySchedule(); }catch(e){}
-      try{ renderRosterSafe(); }catch(e){}
-      try{ updateMyScheduleCard(); }catch(e){}
-      try{ renderShiftOffers(); }catch(e){}
-    });
-  }catch(e){ console.error('denyShiftOffer error', e); toast('Error: '+e.message); }
-}
-
-function renderShiftOffers(){
-  try{
-    var container = document.getElementById('shift-offers-list');
-    if(!container) return;
-    var myUsername = (safeGet('repco_username')||'').toLowerCase();
-    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
-    var myOffers = offers.filter(function(o){ return o.targetUsername===myUsername && o.status==='pending'; });
-    if(myOffers.length===0){
-      container.innerHTML = '<div style="padding:10px;text-align:center;font-size:11px;color:#666">No pending shift offers</div>';
-      return;
-    }
-    var html = '';
-    myOffers.sort(function(a,b){ return b.timestamp - a.timestamp; });
-    for(var i=0; i<myOffers.length; i++){
-      var o = myOffers[i];
-      html += '<div style="background:#fff;border:3px solid #E30613;border-radius:12px;padding:12px;margin-bottom:10px">';
-      html += '<div style="font-weight:900;font-size:12px;margin-bottom:6px">🎉 NEW SHIFT OFFER</div>';
-      html += '<div style="font-size:11px"><b>'+o.formattedDate+'</b> - '+o.newShift+'<br>From: '+(o.from||'admin')+'<br>Old: '+(o.oldShift||'OFF')+' → New: <b>'+o.newShift+'</b></div>';
-      html += '<div style="display:flex;gap:8px;margin-top:10px">';
-      html += '<button onclick="acceptShiftOffer(\''+o.id+'\')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">✅ ACCEPT - Add to Roster</button>';
-      html += '<button onclick="denyShiftOffer(\''+o.id+'\')" style="flex:1;background:#fff;color:#E30613;border:2px solid #E30613;border-radius:9999px;padding:10px;font-weight:900;font-size:11px">❌ DENY - Remove</button>';
-      html += '</div></div>';
-    }
-    container.innerHTML = html;
   }catch(e){ console.error('renderShiftOffers error', e); }
 }
+
+function updateShiftOffersBadge(){
+  try{
+    var myUsername = (safeGet('repco_username')||'').toLowerCase();
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var badge = document.getElementById('shift-offers-badge');
+    var btn = document.getElementById('btn-shift-offers');
+    if(!badge) return;
+    var count = offers.filter(function(o){ return o.targetUsername===myUsername && o.status==='pending'; }).length;
+    if(isManagerRole(getActualRole())) count = offers.filter(function(o){ return o.status==='pending'; }).length;
+    if(count>0){
+      badge.textContent = count;
+      badge.style.display = 'inline-block';
+      if(btn){ btn.style.background = '#E30613'; btn.style.color = '#fff'; }
+    } else {
+      badge.style.display = 'none';
+      if(btn){ btn.style.background = '#FFEB3B'; btn.style.color = '#111'; }
+    }
+  }catch(e){}
+}
+
 
 
 // TEST: Manually trigger notification for debugging - call testPushNotification('username')
@@ -4986,13 +4844,18 @@ function checkAndShowNotifications(){
     const notifs = safeGetJSON('repco_notifications_v1',[]);
     const myNotifs = notifs.filter(n => 
       n.targetUsername===myUsername || 
-      (n.employee && n.employee.toLowerCase().includes(myUsername.toLowerCase())) ||
+      (n.employee && n.employee.toLowerCase()===myUsername.toLowerCase()) ||
       n.targetUsername===myUsername.toLowerCase()
     ).filter(n => !n.read).slice(-5);
     
     if(myNotifs.length>0){
-      // Show latest notification
+      // Show latest notification - V168 FIX: Prevent spam by marking shown
       const latest = myNotifs[myNotifs.length-1];
+      // Skip if already shown in this session (prevents 20+ spam)
+      if(latest._shown) {
+        console.log('V168: Skipping already shown notification', latest.id);
+        return;
+      }
       if(Date.now() - latest.timestamp < 60000){ // Only show if within last minute
         if(typeof Notification!=='undefined' && Notification.permission==='granted'){
           try{
@@ -5032,8 +4895,23 @@ function checkAndShowNotifications(){
             // Fallback to toast
             toast(latest.title + ': ' + latest.message);
           }
+          // V168: Mark as shown to prevent spam loop
+          try{
+            latest._shown = true;
+            latest.read = true;
+            var allNotifs = safeGetJSON('repco_notifications_v1',[]);
+            var idx = allNotifs.findIndex(function(n){ return n.id===latest.id; });
+            if(idx!==-1){ allNotifs[idx]._shown = true; allNotifs[idx].read = true; safeSetJSON('repco_notifications_v1', allNotifs); }
+          }catch(e){}
         } else {
           toast(latest.title + ': ' + latest.message);
+          try{
+            latest._shown = true;
+            latest.read = true;
+            var allNotifs2 = safeGetJSON('repco_notifications_v1',[]);
+            var idx2 = allNotifs2.findIndex(function(n){ return n.id===latest.id; });
+            if(idx2!==-1){ allNotifs2[idx2]._shown = true; allNotifs2[idx2].read = true; safeSetJSON('repco_notifications_v1', allNotifs2); }
+          }catch(e){}
         }
       }
     }
@@ -5164,6 +5042,7 @@ function openPage(id){
     if(id==='options-page') renderOptions();
     if(id==='today-workers-page') renderTodayWorkers();
     if(id==='requests-page') renderRequests();
+    if(id==='shift-offers-page'){ try{ renderShiftOffers(); }catch(e){} try{ updateShiftOffersBadge(); }catch(e){} }
     if(id==='buddies-today-page-v141') renderBuddies('today');
     if(id==='buddies-tomorrow-page-v141') renderBuddies('tomorrow');
     if(id==='mysched-page') renderMySchedule();
@@ -6621,7 +6500,7 @@ function addHiddenStaff(){
     var lastEl=document.getElementById('hs-last');
     var userEl=document.getElementById('hs-user');
     var passEl=document.getElementById('hs-pass');
-    // FIXED V166: No type needed for hidden
+    // FIXED V167: No type needed for hidden
     var typeEl=null;
     // Robust retrieval - handle null and optional chaining
     var firstElVal=firstEl ? firstEl.value : '';
@@ -8129,7 +8008,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 function renderMySchedule(){
   try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); }catch(e){}
-  // V165: Inject shift offers UI at top if exists
+  // V167: Inject shift offers UI at top if exists
   try{
     var myschedContainer = document.getElementById('mysched-page') || document.getElementById('mysched-list') || document.getElementById('myschedule-inner');
     // Also ensure offers container exists in My Schedule page
@@ -10011,7 +9890,7 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
         <input id="hs-last" placeholder="Last Name" style="padding:10px;border-radius:9999px;border:2px solid #111">
         <input id="hs-user" placeholder="Username (e.g. johndoe)" style="padding:10px;border-radius:9999px;border:2px solid #111">
         <input id="hs-pass" placeholder="Password" style="padding:10px;border-radius:9999px;border:2px solid #111">
-        <!-- FIXED V166: Hidden staff don't need casual/fulltime - irrelevant -->
+        <!-- FIXED V167: Hidden staff don't need casual/fulltime - irrelevant -->
         <div style="padding:10px;border-radius:9999px;border:2px dashed #999;background:#F5F5F5;text-align:center;font-weight:900;font-size:11px;color:#666">HIDDEN STAFF - No employment type needed</div>
       </div>
       <div style="margin-top:12px;font-weight:900">ASSIGN SHIFTS FOR CURRENT FORTNIGHT (14 days, blank = OFF)</div>
