@@ -2,6 +2,7 @@
 <html lang="en">
 <head><link rel="icon" href="data:image/x-icon;,">
 <meta charset="UTF-8">
+<meta name="repco-build" content="V159-FORCE-REFRESH-20261020-174357">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
 <style>
@@ -645,7 +646,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID = "V158-ENTER-FIX-20261020-173623";
+const BUILD_ID = "V159-FORCE-REFRESH-20261020-174357";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -7238,40 +7239,60 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 
 
 
-// FORCE LOGOUT & REFRESH ON NEW INDEX.HTML UPLOAD
+
+// FORCE LOGOUT & REFRESH ON NEW INDEX.HTML UPLOAD - V159 IMPROVED
 const REPCO_BUILD_KEY = 'repco_build_id';
+const REPCO_FORCE_KEY = 'repco_force_logout_ts';
 function forceLogoutAndReload(reason){
-  try{ console.log('FORCE LOGOUT:', reason); }catch(e){}
-  try{ toast('New version detected - logging out & refreshing...'); }catch(e){}
+  try{ console.log('FORCE LOGOUT:', reason, BUILD_ID); }catch(e){}
+  try{ toast('New version detected ('+BUILD_ID+') - logging out & refreshing...'); }catch(e){}
   try{
-    safeSet('repco_username',''); safeSet('repco_currentRole','');
+    safeSet('repco_username',''); safeSet('repco_currentRole',''); safeSet('repco_last_activity','');
     try{ localStorage.removeItem('repco_username'); localStorage.removeItem('repco_currentRole'); }catch(e){}
     safeSetJSON('retail_roster_session_v1',{});
+    localStorage.setItem('repco_last_force_logout', String(Date.now()));
+    localStorage.setItem('repco_build_local', BUILD_ID);
   }catch(e){}
-  setTimeout(function(){ try{ if('caches' in window){ caches.keys().then(function(names){ names.forEach(function(n){ caches.delete(n); }); }); } }catch(e){} location.reload(true); }, 1200);
+  setTimeout(function(){
+    try{ if('caches' in window){ caches.keys().then(function(names){ names.forEach(function(n){ caches.delete(n); }); }); } }catch(e){}
+    try{ if('serviceWorker' in navigator){ navigator.serviceWorker.getRegistrations().then(function(regs){ regs.forEach(function(r){ r.unregister(); }); }); } }catch(e){}
+    var url = window.location.href.split('?')[0] + '?v=' + Date.now() + '&build=' + BUILD_ID;
+    window.location.href = url;
+  }, 800);
+}
+function pushCurrentBuildToFirebase(){
+  try{ if(typeof db !== 'undefined' && db && db.ref){ db.ref(REPCO_BUILD_KEY).set(BUILD_ID); db.ref(REPCO_FORCE_KEY).set(Date.now()); } }catch(e){}
+  try{ fetch(FIREBASE_DB_URL+'/'+REPCO_BUILD_KEY+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(BUILD_ID),cache:'no-store'}).catch(function(){}); fetch(FIREBASE_DB_URL+'/'+REPCO_FORCE_KEY+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(Date.now()),cache:'no-store'}).catch(function(){}); }catch(e){}
 }
 function setupBuildVersionWatcher(){
   try{
+    pushCurrentBuildToFirebase();
     if(!db) return;
-    var curRole = (safeGet('repco_currentRole')||'').toLowerCase();
-    var curUser = (safeGet('repco_username')||'').toLowerCase();
-    if(curRole==='admin' || curUser==='admin'){
-      try{ db.ref(REPCO_BUILD_KEY).set(BUILD_ID); }catch(e){}
-      try{ fetch(FIREBASE_DB_URL+'/'+REPCO_BUILD_KEY+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(BUILD_ID)}).catch(function(){}); }catch(e){}
-    }
     db.ref(REPCO_BUILD_KEY).on('value', function(snap){
-      if(!snap.exists()) return;
-      var remoteBuild = snap.val();
-      if(!remoteBuild) return;
-      if(remoteBuild!==BUILD_ID){
-        var hasSession = safeGet('repco_username') || safeGet('repco_currentRole');
-        if(hasSession){ forceLogoutAndReload('build mismatch'); } else { setTimeout(function(){ location.reload(true); }, 800); }
-      }
+      if(!snap.exists()) return; var remoteBuild = snap.val(); if(!remoteBuild) return;
+      if(remoteBuild!==BUILD_ID){ forceLogoutAndReload('build mismatch remote='+remoteBuild); }
+    });
+    db.ref(REPCO_FORCE_KEY).on('value', function(snap){
+      if(!snap.exists()) return; var remoteTs = snap.val(); var lastLocal = parseInt(localStorage.getItem('repco_last_force_logout')||'0');
+      if(remoteTs && remoteTs > lastLocal + 5000){ var localBuild = localStorage.getItem('repco_build_local'); if(localBuild && localBuild===BUILD_ID){ localStorage.setItem('repco_last_force_logout', String(remoteTs)); return; } forceLogoutAndReload('force ts'); }
     });
   }catch(e){ console.error('setupBuildVersionWatcher', e); }
 }
-setInterval(function(){ try{ if(typeof setupBuildVersionWatcher==='function'){ /* periodic check via fetch */ var xhr=new XMLHttpRequest(); xhr.open('GET', window.location.href+'?cb='+Date.now(), true); xhr.onreadystatechange=function(){ if(xhr.readyState===4 && xhr.status===200){ var m=xhr.responseText.match(/BUILD_ID\s*=\s*["']([^"']+)["']/); if(m && m[1] && m[1]!==BUILD_ID){ forceLogoutAndReload('fetch mismatch'); } } }; xhr.send(); } }catch(e){} }, 30000);
-setTimeout(function(){ try{ setupBuildVersionWatcher(); }catch(e){} }, 1500);
+function checkForIndexUpdateViaFetchImmediate(){
+  try{
+    var xhr=new XMLHttpRequest(); xhr.open('GET', window.location.href.split('?')[0]+'?cb='+Date.now(), true); xhr.setRequestHeader('Cache-Control','no-cache');
+    xhr.onreadystatechange=function(){ if(xhr.readyState===4 && xhr.status===200){ var m=xhr.responseText.match(/BUILD_ID\s*=\s*[\'"]([^\'"]+)[\'"]/); if(m && m[1] && m[1]!==BUILD_ID){ forceLogoutAndReload('fetch mismatch fetched='+m[1]); } } }; xhr.send();
+  }catch(e){}
+}
+(function(){
+  try{ var lastBuild = localStorage.getItem('repco_build_local'); if(lastBuild && lastBuild!==BUILD_ID){ var lastForce = parseInt(localStorage.getItem('repco_last_force_logout')||'0'); if(Date.now() - lastForce > 10000){ forceLogoutAndReload('local build mismatch last='+lastBuild); return; } } localStorage.setItem('repco_build_local', BUILD_ID); }catch(e){}
+  setTimeout(function(){ try{ pushCurrentBuildToFirebase(); }catch(e){} }, 500);
+  setTimeout(function(){ try{ setupBuildVersionWatcher(); }catch(e){} }, 800);
+  setTimeout(function(){ try{ checkForIndexUpdateViaFetchImmediate(); }catch(e){} }, 1500);
+  setInterval(function(){ try{ checkForIndexUpdateViaFetchImmediate(); }catch(e){} }, 20000);
+  setInterval(function(){ try{ pushCurrentBuildToFirebase(); }catch(e){} }, 60000);
+})();
+
 
 // ENTER KEY FIX - WORKS ON MOBILE AND DESKTOP
 (function(){
