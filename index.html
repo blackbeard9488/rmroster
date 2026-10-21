@@ -1754,7 +1754,7 @@ function isManagerRole(r,u){
   // If role is explicitly staff, never manager regardless of username
   if(r==='staff') return false;
   // If role is admin/master/manager, is manager
-  if(['admin','master','manager'].includes(r)) return true;
+  if(['admin','master','manager','chris','owner'].includes(r)) return true;
   // For backward compat, legacy admin usernames without role set still count as manager
   // BUT only if their role isn't staff
   if(['admin','master','manager'].includes(u) && r!=='staff') return true;
@@ -3926,6 +3926,8 @@ function renderOptions(){
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'today-workers-page\')">VIEW TODAY\'S WORKERS</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'account-mgmt-page\')">ACCOUNT MANAGEMENT - ALL USERS</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'archive-page\')">ARCHIVE - ROSTERS</button>'
+      +'<button class="card" style="font-weight:900;text-align:left;background:#FFEB3B" onclick="openPage(\'hidden-staff-page\')">HIDDEN STAFF</button>'
+      +'<button class="card" style="font-weight:900;text-align:left;background:#FFEB3B" onclick="openPage(\'public-holiday-page\')">PUBLIC HOLIDAYS</button>'
       +'<button class="card" style="font-weight:900;text-align:left;background:#8FC6F5" id="btn-import" onclick="triggerImport()">IMPORT ROSTER</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'requests-page\')">ALL REQUESTS / APPROVALS</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="showMain()">BACK TO ROSTER</button>'

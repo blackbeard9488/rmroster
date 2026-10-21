@@ -1,10 +1,10 @@
 {
-  "name": "REPCO Roster - ALPHA",
+  "name": "Repco Roster Management",
   "short_name": "REPCO Roster",
-  "description": "REPCO Roster with Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready \u2014 Verified, possible with HTTPS + VAPID",
+  "description": "Repco Roster Management - Official Roster System",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#111",
+  "background_color": "#ffffff",
   "theme_color": "#E30613",
   "orientation": "portrait",
   "scope": "./",
@@ -20,6 +20,18 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./Logo.png",
+      "sizes": "2000x2000",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "gcm_sender_id": "103953800507"
