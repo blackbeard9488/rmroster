@@ -1490,7 +1490,16 @@ function populateFortnightSelect(){
     fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
   }
   if(!fns || fns.length===0){
-    fns=[{id:'fn_07_10',label:'14 Days - 07/10 - 20/10'},{id:'fn_21_10',label:'14 Days - 21/10 - 03/11'}];
+    var today=new Date();
+    var dates=[];
+    for(var i=0;i<14;i++){
+      var d=new Date(today);
+      d.setDate(today.getDate()+i);
+      var iso=d.toISOString().split('T')[0];
+      dates.push({iso:iso, date:d.getDate()+'/'+(d.getMonth()+1), day:['SUN','MON','TUE','WED','THU','FRI','SAT'][d.getDay()]});
+    }
+    fns=[{id:'fn_07_10',label:'14 Days - 07/10 - 20/10',dates:dates},{id:'fn_21_10',label:'14 Days - 21/10 - 03/11',dates:dates}];
+    safeSetJSON('retail_roster_byFortnight_v1', fns);
   }
   try{ if(typeof applyPersistentGreens==='function') applyPersistentGreens(); }catch(e){}
   var sorted=fns.slice().sort(function(a,b){
@@ -1502,10 +1511,20 @@ function populateFortnightSelect(){
     sels.forEach(function(sel){
       var o=document.createElement('option');
       o.value=fn.id;
-      o.textContent=fn.label;
+      o.textContent=fn.label||fn.id;
       sel.appendChild(o);
     });
   });
+  // Emergency fallback if still empty - fixes blank pill
+  if(sels[0] && sels[0].options.length===0){
+    sels.forEach(function(sel){
+      var o=document.createElement('option');
+      o.value='fallback';
+      o.textContent='14 Days Roster';
+      sel.appendChild(o);
+    });
+    console.log('Emergency fortnight option added - was blank');
+  }
   var storedId=safeGet('retail_roster_currentFortnightId');
   var lastManualTs=safeGet('repco_last_manual_select_ts');
   var now=Date.now();
@@ -1542,9 +1561,10 @@ function populateFortnightSelect(){
       if(typeof updateActivity==='function') updateActivity();
       renderRosterSafe();
       var fn=sorted.find(function(f){return f.id===val;});
-      toast('Switched to '+ (fn?fn.label:val));
+      if(fn) toast('Switched to '+fn.label);
     };
   });
+  console.log('Fortnight populated:', sorted.length, 'options, selected:', curId);
 }
 
 
@@ -1655,51 +1675,56 @@ function filterDeletedStaffFromCloud(fns){
 
 
 function getCurrentFortnight(){
-  var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-  if(!fns || fns.length===0) return null;
-  var iso=getISO();
-  var targetDate;
-  try{ var p=iso.split('-').map(function(v){return parseInt(v,10);}); targetDate=new Date(p[0],p[1]-1,p[2]); }catch(e){ targetDate=new Date(); }
-  var isoTarget=targetDate.getFullYear()+'-'+String(targetDate.getMonth()+1).padStart(2,'0')+'-'+String(targetDate.getDate()).padStart(2,'0');
-  var dd=String(targetDate.getDate()).padStart(2,'0'); var mm=String(targetDate.getMonth()+1).padStart(2,'0'); var todayStr=dd+'/'+mm;
-  var sorted=fns.slice().sort(function(a,b){
-    if(!a.dates||!b.dates||!a.dates[0]||!b.dates[0]) return 0;
-    return a.dates[0].iso.localeCompare(b.dates[0].iso);
-  });
-  // Primary: find by iso inclusive (Tue 20/10 in 07/10-20/10)
-  for(var i=0;i<sorted.length;i++){
-    var fn=sorted[i];
-    if(!fn.dates) continue;
-    var start=fn.dates[0].iso;
-    var end=fn.dates[fn.dates.length-1].iso;
-    if(isoTarget>=start && isoTarget<=end){
-      return fn;
+  try{
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    if(!fns || fns.length===0){
+      try{ seedIfEmpty(); }catch(e){}
+      fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
     }
-  }
-  // Secondary: find by iso exact match
-  for(var i=0;i<sorted.length;i++){
-    var fn=sorted[i];
-    if(!fn.dates) continue;
-    if(fn.dates.find(function(d){ return d.iso===isoTarget; })) return fn;
-  }
-  // Tertiary: find by DD/MM (20/10)
-  for(var i=0;i<sorted.length;i++){
-    var fn=sorted[i];
-    if(!fn.dates) continue;
-    if(fn.dates.find(function(d){ return d.date===todayStr; })) return fn;
-  }
-  // If still not found, find best previous that ended <= today
-  var best=null;
-  for(var i=0;i<sorted.length;i++){
-    var fn=sorted[i];
-    if(!fn.dates||fn.dates.length===0) continue;
-    var end=fn.dates[fn.dates.length-1].iso;
-    if(end <= isoTarget){
-      if(!best || end > best.dates[best.dates.length-1].iso) best=fn;
+    if(!fns || fns.length===0){
+      return null;
     }
+    var todayISO=getISO();
+    var sorted=fns.slice().sort(function(a,b){
+      if(!a.dates||!b.dates||!a.dates[0]||!b.dates[0]) return 0;
+      return a.dates[0].iso.localeCompare(b.dates[0].iso);
+    });
+    for(var i=0;i<sorted.length;i++){
+      var fn=sorted[i];
+      if(!fn.dates || fn.dates.length===0) continue;
+      var start=fn.dates[0].iso;
+      var end=fn.dates[fn.dates.length-1].iso;
+      if(todayISO>=start && todayISO<=end){
+        return fn;
+      }
+    }
+    for(var i=0;i<sorted.length;i++){
+      var fn=sorted[i];
+      if(!fn.dates) continue;
+      for(var j=0;j<fn.dates.length;j++){
+        if(fn.dates[j].iso===todayISO) return fn;
+      }
+    }
+    for(var i=0;i<sorted.length;i++){
+      var fn=sorted[i];
+      if(!fn.dates || fn.dates.length===0) continue;
+      if(fn.dates[0].iso>=todayISO) return fn;
+    }
+    var best=null;
+    for(var i=0;i<sorted.length;i++){
+      var fn=sorted[i];
+      if(!fn.dates||fn.dates.length===0) continue;
+      var end=fn.dates[fn.dates.length-1].iso;
+      if(end < todayISO){
+        if(!best || end > best.dates[best.dates.length-1].iso) best=fn;
+      }
+    }
+    if(best) return best;
+    return sorted[0]||fns[0];
+  }catch(e){
+    console.error('getCurrentFortnight error', e);
+    return null;
   }
-  if(best) return best;
-  return sorted[0]||fns[0];
 }
 
 
@@ -2348,15 +2373,30 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           }
           var up=newVal.toUpperCase().trim();
           var isGreen=false;
+          var isGreenToggleOff=false;
           var isAB=false;
           var isNA=false;
           var isGFlag=false;
           var actualShift=newVal;
-          // V139: Green handling - G, GREEN, G <shift>, GREEN <shift> - fixed
+          // Check current green status for toggle
+          var currentlyGreen = staff.cellGreen && staff.cellGreen[colIdx];
+          
+          // V139: Green handling - G, GREEN, G <shift>, GREEN <shift> - TOGGLE LOGIC
           if(up==='G' || up==='GREEN'){
-            isGreen=true;
-            actualShift=current;
+            if(currentlyGreen){
+              // Toggle OFF - remove green status
+              isGreen=false;
+              isGreenToggleOff=true;
+              actualShift=current;
+              console.log('Toggling OFF green for', staff.firstName, colIdx);
+            } else {
+              // Toggle ON - add green status
+              isGreen=true;
+              actualShift=current;
+              console.log('Toggling ON green for', staff.firstName, colIdx);
+            }
           } else if(up.startsWith('G ') || up.startsWith('GREEN ')){
+            // G with shift - always set green
             isGreen=true;
             var prefix = up.startsWith('GREEN ') ? 6 : 2;
             var afterG = newVal.substring(prefix).trim();
@@ -2405,6 +2445,13 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             if(staff.cellGreen) staff.cellGreen[colIdx]=false;
             if(staff.absentApproved) staff.absentApproved[colIdx]=false;
             if(staff.unavailable) staff.unavailable[colIdx]=false;
+          } else if(isGreenToggleOff){
+            // Toggle OFF - remove green
+            if(staff.cellGreen) staff.cellGreen[colIdx]=false;
+            if(staff.cellG) staff.cellG[colIdx]=false;
+            try{ if(typeof setPersistentGreenOff==='function') setPersistentGreenOff(cur.id, staff, cur.dates[colIdx].day, colIdx); }catch(e){}
+            try{ if(typeof clearPersistentGreen==='function') clearPersistentGreen(staff, cur.dates[colIdx].day); }catch(e){}
+            staff.shifts[colIdx]=actualShift;
           } else if(isGreen){
             if(!staff.cellGreen) staff.cellGreen=[];
             staff.cellGreen[colIdx]=true;
@@ -2679,7 +2726,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           setTimeout(function(){ try{ renderMySchedule(); }catch(e){} }, 500);
           setTimeout(function(){ try{ renderMySchedule(); }catch(e){} }, 1000);
           var msg='Saved';
-          if(isGreen) msg='Green marked';
+          if(isGreenToggleOff) msg='Green removed';
+          else if(isGreen) msg='Green marked';
           else if(isAB) msg='Marked AB';
           else if(isNA) msg='Marked unavailable';
           else if(newVal===staff.originalShifts[colIdx]) msg='Restored original';
@@ -2848,6 +2896,8 @@ function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur
 
 
 function showMain(){
+  try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){}
+
   try{
     if(typeof updateActivity==='function') updateActivity();
     var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
