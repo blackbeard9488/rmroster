@@ -773,7 +773,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V196_FIX_APPLYROLEVISIBILITY";
+const BUILD_ID="20261022_V197_FIX_PENDING_AND_OFFERS";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -5675,6 +5675,58 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
 
 
 // V169 FIX: When admin removes new shift data while awaiting feedback, cancel request and delete notification from employee phone
+function renderShiftOffers(){
+  try{
+    var containers = document.querySelectorAll('#shift-offers-list');
+    if(containers.length===0){ return; }
+    var myUsername = (safeGet('repco_username')||'').toLowerCase();
+    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var isMgr = false;
+    try{ isMgr = isManagerRole(getActualRole()); }catch(e){}
+    var myOffers = [];
+    if(isMgr){
+      myOffers = offers.filter(function(o){ return o.status==='pending'; });
+    } else {
+      myOffers = offers.filter(function(o){ return o.targetUsername===myUsername && o.status==='pending'; });
+    }
+    var html = '';
+    if(myOffers.length===0){
+      html = '<div class="card" style="padding:12px;text-align:center"><div style="font-size:12px;font-weight:900">No pending shift offers</div><div style="font-size:11px;color:#666;margin-top:6px">When admin assigns new shifts (OFF → shift), they turn YELLOW awaiting your feedback.<br><br>✅ Accept → yellow turns normal showing new time<br>❌ Deny → yellow turns OFF, admin notified on Requests page</div></div>';
+      var recent = offers.filter(function(o){ return o.targetUsername===myUsername && (o.status==='denied' || o.status==='accepted' || o.status==='cancelled'); }).slice(-5).reverse();
+      if(recent.length>0){
+        html += '<div style="margin-top:12px;font-weight:900;font-size:11px">Recent decisions:</div>';
+        recent.forEach(function(o){
+          var col = o.status==='accepted'?'#B6F7C5':o.status==='denied'?'#FFA9B6':'#E0E0E0';
+          html += '<div class="card" style="padding:8px;background:'+col+'"><div style="font-size:10px">'+o.formattedDate+' '+o.newShift+' - '+o.status.toUpperCase()+' at '+new Date(o.deniedTs||o.acceptedTs||o.cancelledTs||o.timestamp).toLocaleString()+'</div></div>';
+        });
+      }
+    } else {
+      myOffers.sort(function(a,b){ return b.timestamp - a.timestamp; });
+      for(var i=0; i<myOffers.length; i++){
+        var o = myOffers[i];
+        html += '<div class="card" style="background:#fff;border:3px solid #E30613;border-radius:12px;padding:12px;margin-bottom:10px">';
+        html += '<div style="font-weight:900;font-size:12px;margin-bottom:6px">🎉 NEW SHIFT OFFER - '+(o.employee||o.targetUsername)+'</div>';
+        html += '<div style="font-size:11px"><b>'+(o.formattedDate||o.date)+'</b> - <span style="background:#FFEB3B;padding:2px 6px;border-radius:9999px;font-weight:900">'+o.newShift+'</span> YELLOW PENDING<br>From: '+(o.from||'admin')+'<br>Old: '+(o.oldShift||'OFF')+' → New: <b>'+o.newShift+'</b><br>Status: <b style="background:#FFEB3B;padding:2px 6px;border-radius:9999px">AWAITING FEEDBACK - YELLOW</b></div>';
+        if(!isMgr || o.targetUsername===myUsername){
+          html += '<div style="display:flex;gap:8px;margin-top:10px">';
+          html += '<button onclick="acceptShiftOffer(\''+o.id+'\')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;font-size:11px">✅ ACCEPT - Turns Normal</button>';
+          html += '<button onclick="denyShiftOffer(\''+o.id+'\')" style="flex:1;background:#fff;color:#E30613;border:2px solid #E30613;border-radius:9999px;padding:12px;font-weight:900;font-size:11px">❌ DENY - Back to OFF</button>';
+          html += '</div>';
+        } else {
+          html += '<div style="font-size:10px;color:#666;margin-top:8px">Pending acceptance by '+o.targetUsername+' - YELLOW on roster</div>';
+          html += '<div style="display:flex;gap:6px;margin-top:8px">'
+          html += '<button onclick="adminCancelPendingOffer(\''+o.id+'\')" style="flex:1;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;font-size:10px">🗑️ CANCEL & REMOVE YELLOW</button>';
+          html += '<button onclick="adminEditPendingOffer(\''+o.id+'\')" style="flex:1;background:#111;color:#fff;border:none;border-radius:9999px;padding:8px;font-weight:900;font-size:10px">✏️ EDIT</button>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+    }
+    containers.forEach(function(container){ container.innerHTML = html; });
+    try{ updateShiftOffersBadge(); }catch(e){}
+  }catch(e){ console.error('renderShiftOffers error', e); }
+}
+
 function cancelPendingOffersForCell(targetUsername, dateISO, reason){
   try{
     console.log('V169: Cancelling pending offers for', targetUsername, dateISO, reason);
@@ -5761,7 +5813,7 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     }
     safeSetJSON('repco_notifications_v1', remainingNotifs);
     
-    // V174: Remove pendingOffers marker from roster - ALL fortnights, and clear shifts to OFF
+    // V197: Remove pendingOffers marker from roster - ALL fortnights, and clear shifts to OFF - ROBUST DATE MATCHING
     try{
       var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
       for(var fi=0; fi<fns.length; fi++){
@@ -5769,9 +5821,18 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
         if(!fn.dates || !fn.staff) continue;
         var dIdx = fn.dates.findIndex(function(d){ return d.iso===dateISO || d.date===dateISO; });
         if(dIdx===-1){
-          // Try substring match
+          // Try substring match - dateISO might be DD/MM/YYYY or YYYY-MM-DD
           for(var di=0; di<fn.dates.length; di++){
-            if(fn.dates[di].iso && dateISO && fn.dates[di].iso.substring(0,10)===dateISO.substring(0,10)){
+            var fDate=fn.dates[di];
+            if(!fDate) continue;
+            if(fDate.iso && dateISO && fDate.iso.substring(0,10)===dateISO.substring(0,10)){
+              dIdx=di; break;
+            }
+            if(fDate.date && dateISO && (fDate.date===dateISO || fDate.date.replace('/','-')===dateISO || fDate.iso && fDate.iso.includes(dateISO) || dateISO.includes(fDate.date))){
+              dIdx=di; break;
+            }
+            // Also match by formatted date
+            if(fn.dates[di].date && dateISO && fn.dates[di].date.replace(/\//g,'-')===dateISO.replace(/\//g,'-')){
               dIdx=di; break;
             }
           }
@@ -5876,11 +5937,55 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     }catch(e){ console.log('V169 cancel Firebase error', e); }
     
     console.log('V169: Cancelled', cancelled.length, 'offers, deleted', deletedNotifIds.length, 'notifications');
+    // V197: Force clear any remaining yellow markers - aggressive cleanup
+    try{
+      var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var cleaned2=0;
+      for(var fi2=0; fi2<fns2.length; fi2++){
+        var fn2=fns2[fi2];
+        if(!fn2.dates || !fn2.staff) continue;
+        // If dIdx not found, clear for all dates matching username
+        if(cancelled.length>0){
+          for(var si2=0; si2<fn2.staff.length; si2++){
+            if(fn2.staff[si2].username && fn2.staff[si2].username.toLowerCase()===targetUsername.toLowerCase()){
+              if(fn2.staff[si2].pendingOffers){
+                // If specific date found, clear only that, else clear all pending for this user if cancelled
+                if(typeof dIdx!=='undefined' && dIdx!==-1 && fn2.staff[si2].pendingOffers[dIdx]){
+                  delete fn2.staff[si2].pendingOffers[dIdx];
+                  fn2.staff[si2].shifts[dIdx]='OFF';
+                  cleaned2++;
+                } else if(cancelled.length>0){
+                  // Clear all pending for this user that match cancelled offers
+                  for(var pd in fn2.staff[si2].pendingOffers){
+                    var po2=fn2.staff[si2].pendingOffers[pd];
+                    if(po2 && cancelled.some(function(c){ return c.id===po2.id || po2.newShift===c.newShift; })){
+                      delete fn2.staff[si2].pendingOffers[pd];
+                      fn2.staff[si2].shifts[pd]='OFF';
+                      cleaned2++;
+                    }
+                  }
+                }
+                if(fn2.staff[si2].pendingOffers && Object.keys(fn2.staff[si2].pendingOffers).length===0) delete fn2.staff[si2].pendingOffers;
+              }
+            }
+          }
+        }
+      }
+      if(cleaned2>0){
+        safeSetJSON('retail_roster_byFortnight_v1', fns2);
+        console.log('V197: Aggressive cleanup cleared '+cleaned2+' yellow cells');
+      }
+    }catch(e){ console.log('V197 aggressive cleanup error', e); }
     if(cancelled.length>0){
       try{ console.log('V180: Cancelled '+cancelled.length+' pending - no popup'); }catch(e){}
       try{ renderShiftOffers(); }catch(e){}
       try{ updateShiftOffersBadge(); }catch(e){}
       try{ renderRosterSafe(); }catch(e){}
+      // Force reload from storage after short delay
+      setTimeout(function(){
+        try{ renderRosterSafe(); }catch(e){}
+        try{ renderShiftOffers(); }catch(e){}
+      }, 500);
     }
     return cancelled;
   }catch(e){ console.error('cancelPendingOffersForCell error', e); return []; }
