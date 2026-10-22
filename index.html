@@ -125,6 +125,8 @@ button{cursor:pointer}
 .r-table td.cell-pending{background:#FFEB3B !important;color:#111 !important;font-weight:900 !important;border:3px solid #111 !important;cursor:pointer;animation:pulse-yellow 1.5s infinite}
 @keyframes pulse-yellow{0%{background:#FFEB3B !important}50%{background:#FFF176 !important}100%{background:#FFEB3B !important}}
 .r-table td.col-weekend.cell-pending{background:#FFEB3B !important;border:3px solid #111 !important}
+.r-table td.cell-closed{background:#000 !important;color:#fff !important;font-weight:900 !important;border:2px solid #fff !important;cursor:pointer}
+.r-table td.col-weekend.cell-closed{background:#000 !important;color:#fff !important;border:2px solid #fff !important}
 .r-table td.cell-na{background:#111 !important;color:#fff !important}
 .r-table td.cell-absent{background:#FFA9B6 !important}
 .r-table td.col-weekend{background:#D6EBFF !important}
@@ -688,7 +690,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V189_YELLOW_CANCEL_FIX";
+const BUILD_ID="20261022_V194_CLOSED_SIREN_EXCEL";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -861,7 +863,7 @@ function safeGetJSON(k,def){const r=safeGet(k);if(!r)return def;try{return JSON.
 function safeSetJSON(k,obj){safeSet(k, JSON.stringify(obj));}
 function getNow(){return new Date();}
 
-function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let a=parseInt(m[1])*60+parseInt(m[2]);let b=parseInt(m[3])*60+parseInt(m[4]);if(b<a)b+=1440;return (b-a)/60}
+function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let a=parseInt(m[1])*60+parseInt(m[2]);let b=parseInt(m[3])*60+parseInt(m[4]);if(b<a)b+=1440;return (b-a)/60}
 function netH(sh){let r=rawH(sh);if(r===0)return 0;return r>=5?r-0.5:r}
 function isCasual(st){return st.employmentType==='casual'}
 const FIREBASE_DB_URL="https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
@@ -3116,7 +3118,7 @@ function getSelectedFortnight(){
 
 
 function to12h(range){if(!range) return range; return range.split('-').map(t=>{let tt=t.trim().replace('A',''); const m=tt.match(/(\d{1,2}):(\d{2})/); if(!m) return t; let hh=parseInt(m[1]); let mm=m[2]; const am=hh<12?'AM':'PM'; let h=hh%12; if(h===0) h=12; return h+':'+mm+am;}).join('-');}
-function fmt(s){if(!s) return ''; if(s==='NA') return 'NA'; let up=s.toUpperCase().trim(); if(up==='OFF' || up==='' ) return ''; if(up==='AB'||up==='ABSENT') return 'AB'; let tf=safeGet('timeFormat')||'24h'; if(tf==='12h'){ let hasA=s.includes('A'); let base=s.replace(/A/g,'').trim(); return to12h(base)+(hasA?' A':''); } return s;}
+function fmt(s){if(!s) return ''; if(s==='NA') return 'NA'; let up=s.toUpperCase().trim(); if(up==='OFF' || up==='' ) return ''; if(up==='AB'||up==='ABSENT') return 'AB'; if(up==='CLOSED'||up==='CLOSE'||up==='SHOP CLOSED') return 'CLOSED'; let tf=safeGet('timeFormat')||'24h'; if(tf==='12h'){ let hasA=s.includes('A'); let base=s.replace(/A/g,'').trim(); return to12h(base)+(hasA?' A':''); } return s;}
 function deleteCurrentRoster(){
   try{
     var selected = getSelectedFortnight();
@@ -3332,7 +3334,7 @@ function renderRosterSafe(){
           cls='cell-na'; 
           if(orig) txt=fmt(disp)+' ('+fmt(orig)+')'; 
           if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA') txt='UA';
-        } else if(absent) {
+                } else if(absent) {
           cls='cell-absent'; 
           var shiftVal=disp||sh||'';
           var cleanShift=shiftVal.replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim();
@@ -3346,6 +3348,12 @@ function renderRosterSafe(){
           } else {
             txt=fmtTime+' AB';
           }
+        } else if(st.shopClosed && st.shopClosed[idx]) {
+          cls='cell-closed';
+          txt='CLOSED';
+        } else if((disp||'').toUpperCase().trim()==='CLOSED' || (disp||'').toUpperCase().trim()==='CLOSE' || (disp||'').toUpperCase().trim()==='SHOP CLOSED') {
+          cls='cell-closed';
+          txt='CLOSED';
         } else if(off) {
           cls='cell-off'; 
           txt='';
@@ -3358,7 +3366,7 @@ function renderRosterSafe(){
         if(hasPendingOffer){
           net = 0;
           console.log('V171: Pending cell - 0 hours counted until accepted', st.firstName, idx);
-        } else if(isAbsentApproved){ net = isFull ? netH(orig||sh) : 0; } else if(isFull){ if(na){ net=netH(orig||sh); } else { net=netH(sh); } } else { if(na||off||absent){ net=0; } else { net=netH(sh); } }
+        } else if(isAbsentApproved){ net = isFull ? netH(orig||sh) : 0; } else if(st.shopClosed && st.shopClosed[idx]){ net = isFull ? netH(orig||sh) : 0; } else if((sh||'').toUpperCase().trim()==='CLOSED' || (sh||'').toUpperCase().trim()==='CLOSE'){ net = isFull ? netH(orig||sh) : 0; } else if(isFull){ if(na){ net=netH(orig||sh); } else { net=netH(sh); } } else { if(na||off||absent){ net=0; } else { net=netH(sh); } }
         // V132: Hidden employees shifts do not count towards any totals
         if(isHiddenStaff){
           net=0;
@@ -3939,12 +3947,17 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                     var fn = fns[fi];
                     if(!fn.dates || !fn.staff) continue;
                     var dIdx = -1;
-                    for(var di=0; di<fn.dates.length; di++){ if(fn.dates[di].iso===pendingCheckDateISO){ dIdx=di; break; } }
+                    for(var di=0; di<fn.dates.length; di++){ if(fn.dates[di].iso===pendingCheckDateISO || fn.dates[di].iso.substring(0,10)===pendingCheckDateISO.substring(0,10)){ dIdx=di; break; } }
                     if(dIdx===-1) continue;
                     for(var si=0;si<fn.staff.length;si++){
-                      if(fn.staff[si].username && fn.staff[si].username.toLowerCase()===pendingCheckUsername){
-                        if(fn.staff[si].pendingOffers && fn.staff[si].pendingOffers[dIdx]) delete fn.staff[si].pendingOffers[dIdx];
-                        fn.staff[si].shifts[dIdx]='OFF';
+                      var st=fn.staff[si];
+                      if(st.username && st.username.toLowerCase()===pendingCheckUsername){
+                        if(st.pendingOffers && st.pendingOffers[dIdx]) delete st.pendingOffers[dIdx];
+                        if(st.pendingOffers && Object.keys(st.pendingOffers).length===0) delete st.pendingOffers;
+                        st.shifts[dIdx]='OFF';
+                        if(st.originalShifts) try{ delete st.originalShifts[dIdx]; delete st.originalShifts[String(dIdx)]; }catch(e){}
+                        if(st.cellGreen) st.cellGreen[dIdx]=false;
+                        if(st.cellG) st.cellG[dIdx]=false;
                       }
                     }
                   }
@@ -4264,7 +4277,11 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           var isABToggleOff=false;
           var isNA=false;
           var isGFlag=false;
+          var isClosed=false;
+          var isClosedToggleOff=false;
           var actualShift=newVal;
+          window._isClosed=false;
+          window._isClosedToggleOff=false;
           // Check current green and AB status for toggle
           var currentlyGreen = staff.cellGreen && staff.cellGreen[colIdx];
           var currentlyAB = staff.absentApproved && staff.absentApproved[colIdx];
@@ -4324,6 +4341,41 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 actualShift=keepTime+' AB';
               }
               console.log('Toggling ON AB for', staff.firstName, colIdx, 'keeping', keepTime, '->', actualShift);
+            }
+          } else if(up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED' || up==='C'){
+            // V192: CLOSED handling - black cell, no countdown, totals logic: full-time counts original, casual not
+            var currentlyClosed = staff.shopClosed && staff.shopClosed[colIdx];
+            if(currentlyClosed){
+              // Toggle OFF CLOSED - restore original
+              window._isClosedToggleOff=true;
+              window._isClosed=false;
+              isClosedToggleOff=true;
+              isClosed=false;
+              if(staff.originalShifts && staff.originalShifts[colIdx]){
+                actualShift=staff.originalShifts[colIdx];
+              } else {
+                actualShift=current;
+                if(actualShift.toUpperCase()==='CLOSED' || actualShift.toUpperCase()==='CLOSE') actualShift='OFF';
+              }
+              console.log('Toggling OFF CLOSED for', staff.firstName, colIdx);
+            } else {
+              window._isClosed=true;
+              window._isClosedToggleOff=false;
+              isClosed=true;
+              isClosedToggleOff=false;
+              // Keep original shift for totals if full-time
+              var keepTimeClosed=current;
+              if(keepTimeClosed){
+                keepTimeClosed=keepTimeClosed.replace(/\s*CLOSED$/i,'').replace(/\s*CLOSE$/i,'').replace(/\s*AB$/i,'').trim();
+              }
+              if(keepTimeClosed && keepTimeClosed.toUpperCase()!=='OFF' && keepTimeClosed!=='' && keepTimeClosed.toUpperCase()!=='CLOSED'){
+                if(!staff.originalShifts) staff.originalShifts={};
+                if(!staff.originalShifts[colIdx] || staff.originalShifts[colIdx].toUpperCase()==='OFF' || staff.originalShifts[colIdx].toUpperCase()==='CLOSED'){
+                  staff.originalShifts[colIdx]=keepTimeClosed;
+                }
+              }
+              actualShift='CLOSED';
+              console.log('Toggling ON CLOSED for', staff.firstName, colIdx, 'keeping original', keepTimeClosed);
             }
           } else if(up==='UA' || up==='UNAVAILABLE' || up==='U' || up==='NA'){
             isNA=true;
@@ -4388,6 +4440,63 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               try{ delete staff.originalShifts[colIdx]; }catch(e){}
             }
             console.log('AB removed, restored to', actualShift);
+          } else if(isClosedToggleOff || window._isClosedToggleOff){
+            // V192 CLOSED OFF - restore
+            if(staff.shopClosed) staff.shopClosed[colIdx]=false;
+            staff.shifts[colIdx]=actualShift;
+            if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+            console.log('V192 CLOSED removed, restored to', actualShift);
+          } else if(isClosed || window._isClosed){
+            // V192 CLOSED ON - black cell, preserves original for full-time totals
+            if(!staff.shopClosed) staff.shopClosed={};
+            staff.shopClosed[colIdx]=true;
+            if(!staff.originalShifts) staff.originalShifts={};
+            if(!staff.originalShifts[colIdx] || staff.originalShifts[colIdx].toUpperCase()==='OFF' || staff.originalShifts[colIdx].toUpperCase()==='CLOSED'){
+              var origToKeep=current;
+              if(origToKeep) origToKeep=origToKeep.replace(/\s*CLOSED$/i,'').trim();
+              if(origToKeep && origToKeep.toUpperCase()!=='OFF' && origToKeep.toUpperCase()!=='CLOSED' && origToKeep!==''){
+                staff.originalShifts[colIdx]=origToKeep;
+              }
+            }
+            staff.shifts[colIdx]='CLOSED';
+            if(staff.cellGreen) staff.cellGreen[colIdx]=false;
+            if(staff.cellG) staff.cellG[colIdx]=false;
+            if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+            if(staff.unavailable) staff.unavailable[colIdx]=false;
+            console.log('V192: Set CLOSED for', staff.firstName, colIdx, 'original preserved', staff.originalShifts[colIdx]);
+            // V192: Create notification with siren icon for shop closed
+            try{
+              var dateObjClosed = cur && cur.dates && cur.dates[colIdx] ? cur.dates[colIdx] : {day:'', date:'', iso:''};
+              var dayLabelClosed = (dateObjClosed.day||'')+' '+(dateObjClosed.date||'');
+              var notifsClosed = safeGetJSON('repco_notifications_v1',[]);
+              var closedNotif = {
+                id: 'closed_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
+                type: 'shop_closed',
+                employee: staff.firstName+' '+staff.lastName,
+                targetUsername: (staff.username||staff.firstName||'').toLowerCase(),
+                date: dateObjClosed.iso||dateObjClosed.date||'',
+                formattedDate: dayLabelClosed,
+                message: '🚨 Shift '+dayLabelClosed+' - SHOP CLOSED',
+                title: '🚨 Shop Closed',
+                shiftDate: dayLabelClosed,
+                shiftIdx: colIdx,
+                timestamp: Date.now(),
+                read: false,
+                originalShift: staff.originalShifts[colIdx]||current,
+                employmentType: staff.employmentType||'casual'
+              };
+              notifsClosed.push(closedNotif);
+              safeSetJSON('repco_notifications_v1', notifsClosed);
+              try{
+                if(typeof FIREBASE_DB_URL!=='undefined'){
+                  fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(notifsClosed),mode:'cors'}).catch(function(){});
+                }
+                if(window.db){
+                  try{ window.db.ref('repco_notifications_v1').set(notifsClosed); }catch(e){}
+                }
+              }catch(e){ console.log('Closed notif push error', e); }
+              toast('🚨 Notified '+staff.firstName+': Shift '+dayLabelClosed+' - SHOP CLOSED');
+            }catch(e){ console.log('Closed notification error', e); }
           } else if(isGreen){
             if(!staff.cellGreen) staff.cellGreen=[];
             staff.cellGreen[colIdx]=true;
@@ -4432,6 +4541,10 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               targetStaff.absentApproved[colIdx]=staff.absentApproved?staff.absentApproved[colIdx]:false;
               if(!targetStaff.unavailable) targetStaff.unavailable=[];
               targetStaff.unavailable[colIdx]=staff.unavailable?staff.unavailable[colIdx]:false;
+              if(!targetStaff.shopClosed) targetStaff.shopClosed={};
+              targetStaff.shopClosed[colIdx]=staff.shopClosed?staff.shopClosed[colIdx]:false;
+              if(!targetStaff.originalShifts) targetStaff.originalShifts={};
+              if(staff.originalShifts && staff.originalShifts[colIdx]) targetStaff.originalShifts[colIdx]=staff.originalShifts[colIdx];
             }
           }
           // V171: If OFF->shift pending, revert roster cell back to OFF - pending should NEVER show posted until accepted
@@ -5583,31 +5696,36 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
         for(var si=0; si<fn.staff.length; si++){
           var st = fn.staff[si];
           if(st.username && st.username.toLowerCase()===targetUsername.toLowerCase()){
+            // V190 FIX: Check if pending BEFORE deleting marker - was bug causing yellow to remain
+            var hadPendingMarker = !!(st.pendingOffers && st.pendingOffers[dIdx]);
+            var curShift = (st.shifts && st.shifts[dIdx]) ? (st.shifts[dIdx]||'') : '';
+            var isPendingShift = false;
+            if(hadPendingMarker) isPendingShift=true;
+            if(curShift.indexOf('⏳')!==-1) isPendingShift=true;
+            if(curShift.indexOf('01:00')!==-1 || curShift.indexOf('02:00')!==-1) isPendingShift=true;
+            for(var cc=0; cc<cancelled.length; cc++){
+              if(curShift===cancelled[cc].newShift || curShift.indexOf(cancelled[cc].newShift)!==-1){
+                isPendingShift=true; break;
+              }
+            }
+            // Also if there's any pending offer for this user/date, treat as pending
+            if(cancelled.length>0) isPendingShift=true;
             if(st.pendingOffers && st.pendingOffers[dIdx]){
-              console.log('V174: Clearing pending marker from roster', st.username, dIdx);
+              console.log('V190: Clearing pending marker from roster', st.username, dIdx, 'hadPending', hadPendingMarker, 'isPending', isPendingShift, 'curShift', curShift);
               delete st.pendingOffers[dIdx];
               if(st.pendingOffers && Object.keys(st.pendingOffers).length===0) delete st.pendingOffers;
             }
-            // V189 FIX: Always set to OFF when cancelling yellow pending - even if curShift has ⏳ or doesn't match exactly
-            if(st.shifts && st.shifts[dIdx]){
-              var curShift = st.shifts[dIdx]||'';
-              var isPendingShift = false;
-              // Check if this shift is yellow pending
-              if(st.pendingOffers && st.pendingOffers[dIdx]) isPendingShift=true;
-              if(curShift.indexOf('⏳')!==-1) isPendingShift=true;
-              if(curShift.indexOf('01:00')!==-1 || curShift.indexOf('02:00')!==-1) isPendingShift=true; // The specific pending time you mentioned
-              for(var cc=0; cc<cancelled.length; cc++){
-                if(curShift===cancelled[cc].newShift || curShift.indexOf(cancelled[cc].newShift)!==-1){
-                  isPendingShift=true; break;
-                }
+            if(isPendingShift){
+              console.log('V190: Resetting yellow pending shift from', curShift, 'to OFF after cancel - user clicked YES');
+              if(!st.shifts) st.shifts=[];
+              st.shifts[dIdx]='OFF';
+              if(st.originalShifts){
+                try{ delete st.originalShifts[dIdx]; delete st.originalShifts[String(dIdx)]; }catch(e){}
               }
-              if(isPendingShift){
-                console.log('V189: Resetting yellow pending shift from', curShift, 'to OFF after cancel - user clicked YES');
-                st.shifts[dIdx]='OFF';
-                if(st.originalShifts && st.originalShifts[dIdx]) delete st.originalShifts[dIdx];
-                if(st.cellGreen) st.cellGreen[dIdx]=false;
-                if(st.cellG) st.cellG[dIdx]=false;
-              }
+              if(st.cellGreen) st.cellGreen[dIdx]=false;
+              if(st.cellG) st.cellG[dIdx]=false;
+              if(st.absentApproved) st.absentApproved[dIdx]=false;
+              if(st.unavailable) st.unavailable[dIdx]=false;
             }
           }
         }
@@ -6488,7 +6606,7 @@ function showMain(){
 function parseDM(str){str=str.trim(); if(!str) return null; let m=str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1])); m=str.match(/^(\d{1,2})\/(\d{1,2})$/); if(m){ let y=new Date().getFullYear(); return new Date(y, parseInt(m[2])-1, parseInt(m[1])); } m=str.match(/^(\d{4})-(\d{2})-(\d{2})$/); if(m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])); return null;}
 function formatDDMM(date){const dd=String(date.getDate()).padStart(2,'0'); const mm=String(date.getMonth()+1).padStart(2,'0'); return dd+'/'+mm;}
 function expandDateRange(startStr, endStr){let s=parseDM(startStr); let e=parseDM(endStr); if(!s||!e) return []; if(e < s){let tmp=s; s=e; e=tmp;} let min=new Date(2026,0,1); let max=new Date(2040,0,1); if(s < min) s=min; if(e > max) e=max; let out=[]; let cur=new Date(s); while(cur <= e){ out.push(formatDDMM(cur)); cur.setDate(cur.getDate()+1); if(out.length>500) break; } return out;}
-function parseShiftRange(s){if(!s) return null; let up=s.toUpperCase().trim(); if(['OFF','NA','ABSENT','AB',''].includes(up)) return null; let m=s.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/); if(!m) return null; let start=parseInt(m[1])*60+parseInt(m[2]); let end=parseInt(m[3])*60+parseInt(m[4]); if(end<start) end+=1440; return {start,end,raw:s};}
+function parseShiftRange(s){if(!s) return null; let up=s.toUpperCase().trim(); if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED',''].includes(up)) return null; let m=s.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/); if(!m) return null; let start=parseInt(m[1])*60+parseInt(m[2]); let end=parseInt(m[3])*60+parseInt(m[4]); if(end<start) end+=1440; return {start,end,raw:s};}
 
 
 function mapUsernameToStaffKey(username){
@@ -6711,14 +6829,52 @@ function downloadUploadedExcel(idx){ const list=safeGetJSON('retail_roster_uploa
 function deleteUploadedExcel(idx){ let list=safeGetJSON('retail_roster_uploaded_excels_v1',[]); list.splice(idx,1); safeSetJSON('retail_roster_uploaded_excels_v1',list); viewUploadedExcels(); toast('Deleted'); }
 function renderImportExportPage(){
   const el=document.getElementById('import-export-inner'); if(!el) return;
-  el.innerHTML='<div class="card"><div style="font-weight:900;margin-bottom:8px">IMPORT ROSTER / EXCEL (only first column staff, ignores other names, preserves types)</div><div style="font-size:11px;opacity:.7;margin-bottom:8px">Reads only names in first column that match existing staff list. Ignores stray names outside roster. Auto-title from dates, duplicate check, saves file for cross-device download.</div><input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" style="width:100%;padding:10px;border:2px dashed #111;border-radius:12px"><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="importExcelFile()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">IMPORT EXCEL</button></div><div id="import-status" style="margin-top:10px;font-size:11px"></div></div>'
-  +'<div class="card"><div style="font-weight:900;margin-bottom:8px">EXPORTS</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="btn-export-csv" onclick="exportCSV()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT CSV</button><button id="btn-export-pdf" onclick="exportPDF()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900">EXPORT PDF</button></div></div>'
+  el.innerHTML='<div class="card"><div style="font-weight:900;margin-bottom:8px">IMPORT ROSTER / EXCEL - NEVER OVERWRITES ADMIN CHANGES</div><div style="font-size:11px;opacity:.8;margin-bottom:8px;line-height:1.4">✅ Reads dates from Row 1 Column B every 2 cols (ignores AD col 29 & Row 18)<br>✅ Staff from Column A Row 3 onwards<br>✅ If date exists: only updates where admin has NOT edited (originalShifts undefined)<br>✅ If new dates: adds as new roster, preserves all previous admin edits<br>✅ Employment type preserved if admin changed it</div><input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" style="width:100%;padding:12px;border:3px dashed #111;border-radius:12px;background:#fff"><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button id="btn-do-import" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:12px 18px;font-weight:900">📥 IMPORT EXCEL</button><button onclick="document.getElementById(\'excel-file-input\').value=\'\'; document.getElementById(\'import-status\').innerHTML=\'\';" style="background:#fff;color:#111;border:2px solid #111;border-radius:9999px;padding:10px 14px;font-weight:900">CLEAR</button></div><div id="import-status" style="margin-top:12px;font-size:12px;font-weight:700;min-height:20px"></div></div>'
+  +'<div class="card"><div style="font-weight:900;margin-bottom:8px">EXPORTS - Identical to roster page</div><div style="font-size:11px;opacity:.7;margin-bottom:8px">PDF will capture roster exactly as you see it - tables, colours, columns, staff names, green, yellow pending, weekend shading</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button id="btn-export-csv" onclick="exportCSV()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 16px;font-weight:900">EXPORT CSV</button><button id="btn-export-pdf" onclick="exportPDF()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 16px;font-weight:900">EXPORT PDF (IDENTICAL)</button></div></div>'
   +'<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>';
+  // V191 FIX: Wire up file input and button - previous version called importExcelFile() with no file, doing nothing
+  setTimeout(function(){
+    var fileInput=document.getElementById('excel-file-input');
+    var btn=document.getElementById('btn-do-import');
+    var statusEl=document.getElementById('import-status');
+    if(fileInput){
+      fileInput.onchange=function(){
+        if(fileInput.files && fileInput.files[0]){
+          if(statusEl) statusEl.innerHTML='<span style="color:#111">📄 Selected: '+fileInput.files[0].name+' - click IMPORT EXCEL</span>';
+        }
+      };
+    }
+    if(btn){
+      btn.onclick=function(){
+        var f=fileInput && fileInput.files && fileInput.files[0];
+        if(!f){
+          if(statusEl) statusEl.innerHTML='<span style="color:#E30613">❌ No file selected - choose Excel file first</span>';
+          toast('No file selected');
+          return;
+        }
+        if(statusEl) statusEl.innerHTML='<span style="color:#111">⏳ Reading '+f.name+'...</span>';
+        importExcelFile(f);
+      };
+    }
+  },100);
 }
 
 function importExcelFile(file){
-  if(!file) return;
-  toast('Reading Excel...');
+  // V191 FIX: File input was not wired - now fixed in renderImportExportPage
+  if(!file){
+    var fileInput=document.getElementById('excel-file-input');
+    if(fileInput && fileInput.files && fileInput.files[0]) file=fileInput.files[0];
+  }
+  if(!file){
+    toast('No file selected - choose Excel file');
+    var statusEl=document.getElementById('import-status');
+    if(statusEl) statusEl.innerHTML='<span style="color:#E30613">❌ No file selected</span>';
+    return;
+  }
+  toast('Reading Excel: '+file.name+'...');
+  var statusEl=document.getElementById('import-status');
+  if(statusEl) statusEl.innerHTML='<span style="color:#111">⏳ Reading '+file.name+'...</span>';
+
   var reader=new FileReader();
   reader.onload=function(e){
     try{
@@ -6870,50 +7026,75 @@ function importExcelFile(file){
       var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
       var curFn=getCurrentFortnight();
       var matchingFn=null;
-      // Find matching fortnight by dates
+      // V191: Find matching fortnight by dates - if date doesn't exist, will add new roster (never overwrite)
       for(var fi=0; fi<fns.length; fi++){
         var fn=fns[fi];
         if(!fn.dates) continue;
-        // Check if dates overlap significantly
         var matchCount=0;
         for(var di=0; di<dates.length && di<fn.dates.length; di++){
-          if(fn.dates[di] && fn.dates[di].date===dates[di].date) matchCount++;
+          if(fn.dates[di] && fn.dates[di].iso && dates[di].iso && fn.dates[di].iso===dates[di].iso) matchCount++;
+          else if(fn.dates[di] && fn.dates[di].date===dates[di].date) matchCount++;
         }
-        if(matchCount>=7){ // At least half match
+        if(matchCount>=7){
           matchingFn=fn;
           break;
         }
       }
+      console.log('V191 Import: matchingFn found?', !!matchingFn, 'dates', dates.map(function(d){return d.date;}).join(', '));
       
-      if(matchingFn){
-        // Update current if differences found that admin hasn't adjusted
+            if(matchingFn){
+        // V191: Update ONLY where admin has NOT adjusted - NEVER overwrite admin changes on website
         var updated=0;
-        var skipped=0;
+        var skippedAdmin=0;
+        var skippedSame=0;
         for(var si=0; si<staff.length; si++){
           var imported=staff[si];
-          var existing=matchingFn.staff.find(s=>s.lastName.toUpperCase()===imported.lastName.toUpperCase() && s.firstName.toLowerCase()===imported.firstName.toLowerCase());
+          var existing=null;
+          for(var es=0; es<matchingFn.staff.length; es++){
+            var s=matchingFn.staff[es];
+            if(s.lastName.toUpperCase()===imported.lastName.toUpperCase() && s.firstName.toLowerCase()===imported.firstName.toLowerCase()){
+              existing=s; break;
+            }
+          }
           if(existing){
             for(var di=0; di<imported.shifts.length && di<existing.shifts.length; di++){
-              var impShift=imported.shifts[di];
-              var curShift=existing.shifts[di];
-              var orig=existing.originalShifts && existing.originalShifts[di] ? existing.originalShifts[di] : null;
-              // If different and admin hasn't adjusted (original undefined), update
-              if(impShift!==curShift && (orig===undefined || orig===null)){
-                if(!existing.originalShifts) existing.originalShifts={};
-                // Keep track if admin edited? Actually if orig undefined, admin hasn't edited, safe to update
-                existing.shifts[di]=impShift;
-                updated++;
-              } else if(impShift!==curShift && orig!==undefined){
-                skipped++;
+              var impShift=imported.shifts[di]||'OFF';
+              var curShift=existing.shifts[di]||'OFF';
+              // Admin changed if originalShifts has entry, or cellGreen, or absentApproved, or pendingOffers
+              var adminEdited = false;
+              if(existing.originalShifts && (existing.originalShifts[di]!==undefined || existing.originalShifts[String(di)]!==undefined)) adminEdited=true;
+              if(existing.cellGreen && existing.cellGreen[di]) adminEdited=true;
+              if(existing.absentApproved && existing.absentApproved[di]) adminEdited=true;
+              if(existing.pendingOffers && existing.pendingOffers[di]) adminEdited=true;
+              if(existing.unavailable && existing.unavailable[di]) adminEdited=true;
+              if(impShift!==curShift){
+                if(!adminEdited){
+                  if(!existing.originalShifts) existing.originalShifts={};
+                  existing.shifts[di]=impShift;
+                  updated++;
+                  console.log('V191: Updating', existing.firstName, existing.lastName, 'day', di, curShift, '->', impShift, 'adminEdited', adminEdited);
+                } else {
+                  skippedAdmin++;
+                  console.log('V191: SKIPPED admin-edited', existing.firstName, existing.lastName, 'day', di, curShift, 'would be', impShift);
+                }
+              } else {
+                skippedSame++;
               }
             }
           }
         }
         safeSetJSON('retail_roster_byFortnight_v1',fns);
-        toast('Updated '+updated+' shifts where admin had not adjusted. Skipped '+skipped+' admin-edited shifts. ('+staff.length+' staff)');
+        var msg='V191: Import complete - Updated '+updated+' shifts (where admin had NOT edited). Preserved '+skippedAdmin+' admin changes. '+staff.length+' staff.';
+        toast(msg);
+        var statusEl=document.getElementById('import-status');
+        if(statusEl) statusEl.innerHTML='<span style="color:green">✅ '+msg+'</span>';
         populateFortnightSelect();
         renderRosterSafe();
-        try{ debouncedCloudSave(); }catch(e){}
+        try{ debouncedCloudSave(); }catch(e){ console.log('V191 cloud save error', e); }
+        try{
+          var state=getAllState(); state._ts=Date.now();
+          if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state);
+        }catch(e){}
       } else {
         // Create next/new roster option
         showCustomConfirm('Create New Roster?', 'Found '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.<br><br>Create as new roster or update current?<br><br>Click OK to create NEW roster, Cancel to update CURRENT roster.', function(ok){
@@ -6931,25 +7112,47 @@ function importExcelFile(file){
             safeSet('retail_roster_currentFortnightId',newFn.id);
             toast('Created new roster: '+newFn.label);
           } else {
-            // Update current
+            // V191: Update current but NEVER overwrite admin changes - preserves website edits
             var cur=getCurrentFortnight();
             if(cur){
-              cur.dates=dates;
-              // Merge staff
+              // Only update dates if current has no admin edits, otherwise keep existing dates and just merge new staff
+              var hasAdminEdits=false;
+              for(var si=0; si<cur.staff.length; si++){
+                var s=cur.staff[si];
+                if(s.originalShifts && Object.keys(s.originalShifts).length>0){ hasAdminEdits=true; break; }
+                if(s.cellGreen && Object.keys(s.cellGreen).length>0){ hasAdminEdits=true; break; }
+                if(s.pendingOffers && Object.keys(s.pendingOffers).length>0){ hasAdminEdits=true; break; }
+              }
+              if(!hasAdminEdits){
+                cur.dates=dates;
+              }
               for(var si=0; si<staff.length; si++){
                 var imp=staff[si];
-                var exist=cur.staff.find(s=>s.lastName.toUpperCase()===imp.lastName.toUpperCase() && s.firstName.toLowerCase()===imp.firstName.toLowerCase());
+                var exist=null;
+                for(var es=0; es<cur.staff.length; es++){
+                  if(cur.staff[es].lastName.toUpperCase()===imp.lastName.toUpperCase() && cur.staff[es].firstName.toLowerCase()===imp.firstName.toLowerCase()){
+                    exist=cur.staff[es]; break;
+                  }
+                }
                 if(exist){
-                  for(var di=0; di<imp.shifts.length; di++){
-                    var orig=exist.originalShifts && exist.originalShifts[di];
-                    if(orig===undefined) exist.shifts[di]=imp.shifts[di];
+                  for(var di=0; di<imp.shifts.length && di<exist.shifts.length; di++){
+                    var adminEdited=false;
+                    if(exist.originalShifts && (exist.originalShifts[di]!==undefined || exist.originalShifts[String(di)]!==undefined)) adminEdited=true;
+                    if(exist.cellGreen && exist.cellGreen[di]) adminEdited=true;
+                    if(exist.absentApproved && exist.absentApproved[di]) adminEdited=true;
+                    if(exist.pendingOffers && exist.pendingOffers[di]) adminEdited=true;
+                    if(!adminEdited){
+                      exist.shifts[di]=imp.shifts[di];
+                    }
                   }
                 } else {
                   cur.staff.push(imp);
                 }
               }
               safeSetJSON('retail_roster_byFortnight_v1',fns2);
-              toast('Updated current roster with '+staff.length+' staff');
+              toast('Updated current roster with '+staff.length+' staff - admin changes preserved');
+              var statusEl=document.getElementById('import-status');
+              if(statusEl) statusEl.innerHTML='<span style="color:green">✅ Updated current roster, preserved admin edits</span>';
             }
           }
           populateFortnightSelect();
@@ -9044,159 +9247,376 @@ function checkMaintenance(){
 }
 
 function exportCSV(){
-  let cur=getCurrentFortnight(); let csv='NAME,'+cur.dates.map(d=>d.day+' '+d.date).join(',')+',Total\n';
-  cur.staff.forEach(st=>{ let total=0; (st.shifts||[]).forEach((s,idx)=>{ let orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : s; let isAbsent=st.absentApproved && st.absentApproved[idx]; let isFull=st.employmentType!=='casual'; let net; if(isAbsent){ net = isFull ? netH(orig) : 0; } else { let up=(s||'').toUpperCase().trim(); if(['OFF','NA','AB','ABSENT',''].includes(up)) net=0; else net=netH(s); } total+=net; }); csv+='"'+st.lastName+' '+st.firstName+'",'+(st.shifts||[]).map((s,i)=>{ let orig=st.originalShifts && st.originalShifts[i] ? st.originalShifts[i] : ''; let isAbs=st.absentApproved && st.absentApproved[i]; if(isAbs && orig) return '"'+orig+' AB"'; if(s==='OFF' || s==='' ) return '""'; return '"'+s+'"'; }).join(',')+',"'+total.toFixed(1)+'h"\n'; });
-  let blob=new Blob([csv],{type:'text/csv'});let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=cur.label+'.csv';a.click();toast('CSV exported');
-}
-function exportPDF(){ 
-  let cur=getSelectedFortnight(); 
-  if(!cur){ toast('No roster'); return; } 
-  toast('Generating PDF - capturing roster tables...');
-  
-  // Load html2canvas if not present
-  function loadHtml2Canvas(cb){
-    if(typeof html2canvas !== 'undefined'){
-      cb();
-      return;
+  // V193: Export Excel matching original template exactly with colours - Row1 dates from Col B every 2 cols, Row2 days, Col A names, 2 cols per day for start/end
+  let cur=getCurrentFortnight() || getSelectedFortnight();
+  if(!cur){ toast('No roster'); return; }
+  toast('Generating Excel export matching template with colours...');
+  try{
+    var wb=XLSX.utils.book_new();
+    var data=[];
+    // Row 1: dates - Col A empty or NAME, Col B every 2 cols date
+    var row1=[];
+    row1[0]='NAME';
+    for(var di=0; di<cur.dates.length; di++){
+      var c=1+di*2;
+      row1[c]=cur.dates[di].date||'';
+      row1[c+1]='';
     }
-    var script=document.createElement('script');
-    script.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    script.onload=cb;
-    script.onerror=function(){
-      toast('Failed to load PDF capture library - trying fallback');
-      exportPDF_fallback();
-    };
-    document.head.appendChild(script);
+    row1[1+cur.dates.length*2]='Total';
+    row1[1+cur.dates.length*2+1]='TOTAL HOURS Minus Breaks';
+    data.push(row1);
+    // Row 2: days
+    var row2=[];
+    row2[0]='';
+    for(var di=0; di<cur.dates.length; di++){
+      var c=1+di*2;
+      var day=(cur.dates[di].day||'').toUpperCase();
+      row2[c]=day;
+      row2[c+1]=day;
+    }
+    row2[1+cur.dates.length*2]='TOTAL HOURS';
+    row2[1+cur.dates.length*2+1]='Minus Breaks';
+    data.push(row2);
+    // Staff rows
+    var staffRows=[];
+    for(var si=0; si<cur.staff.length; si++){
+      var st=cur.staff[si];
+      var row=[];
+      row[0]=(st.lastName||'')+', '+(st.firstName||'');
+      var totalH=0;
+      for(var di=0; di<cur.dates.length; di++){
+        var c=1+di*2;
+        var sh=(st.shifts && st.shifts[di]!=null) ? st.shifts[di] : 'OFF';
+        var up=String(sh).toUpperCase().trim();
+        var orig=st.originalShifts && st.originalShifts[di] ? st.originalShifts[di] : '';
+        var isFull=st.employmentType!=='casual';
+        var isClosed=st.shopClosed && st.shopClosed[di];
+        var isAbsent=st.absentApproved && st.absentApproved[di];
+        var isPending=st.pendingOffers && st.pendingOffers[di];
+        var isGreen=st.cellGreen && st.cellGreen[di];
+        var isNA=st.unavailable && st.unavailable[di];
+        var isWeekend=['SAT','SUN','SATURDAY','SUNDAY'].indexOf((cur.dates[di].day||'').toUpperCase().substring(0,3))!==-1 || ['SAT','SUN'].indexOf((cur.dates[di].day||'').toUpperCase())!==-1;
+        // Parse shift into start/end
+        var start='', end='';
+        if(up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED' || isClosed){
+          start='CLOSED'; end='CLOSED';
+        } else if(up==='AB' || up==='ABSENT' || up.indexOf(' AB')!==-1 || isAbsent){
+          // Show original time + AB
+          var clean=sh.replace(/\s*AB$/i,'').trim();
+          if(!clean || clean.toUpperCase()==='AB' || clean.toUpperCase()==='OFF'){
+            clean=orig||'';
+          }
+          clean=clean.replace(/\s*AB$/i,'').trim();
+          var m=clean.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+          if(m){ start=m[1]; end=m[2]+' AB'; }
+          else if(clean){ start=clean; end='AB'; }
+          else { start='AB'; end=''; }
+        } else if(up==='OFF' || up==='' || up==='NA' || up==='UA'){
+          start=''; end='';
+        } else {
+          var m=sh.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+          if(m){ start=m[1]; end=m[2]; }
+          else { start=sh; end=''; }
+        }
+        row[c]=start;
+        row[c+1]=end;
+        // Calculate total - V192 logic: full-time closed/absent counts original, casual not
+        var net=0;
+        if(isPending){
+          net=0;
+        } else if(isAbsent){
+          net=isFull ? netH(orig||sh) : 0;
+        } else if(isClosed){
+          net=isFull ? netH(orig||sh) : 0;
+        } else if(isNA){
+          net=isFull ? netH(orig||sh) : 0;
+        } else {
+          var up2=String(sh).toUpperCase().trim();
+          if(['OFF','NA','UA','AB','ABSENT','CLOSED','CLOSE',''].includes(up2) || up2.indexOf('CLOSED')!==-1) net=0;
+          else net=netH(sh);
+        }
+        totalH+=net;
+        staffRows.push({rowIdx:2+si, colIdx:c, isWeekend:isWeekend, isGreen:isGreen, isPending:isPending, isAbsent:isAbsent, isClosed:isClosed, isNA:isNA, isOff:up==='OFF'||up==='' });
+      }
+      // Totals
+      row[1+cur.dates.length*2]=totalH.toFixed(1)+'h';
+      row[1+cur.dates.length*2+1]=totalH.toFixed(1);
+      data.push(row);
+    }
+    var ws=XLSX.utils.aoa_to_sheet(data);
+    // Apply styles - colours matching website roster
+    try{
+      var range=XLSX.utils.decode_range(ws['!ref']);
+      // Style Row1 and Row2 header - grey
+      for(var C=range.s.c; C<=range.e.c; C++){
+        for(var R=0; R<=1; R++){
+          var addr=XLSX.utils.encode_cell({r:R,c:C});
+          if(!ws[addr]) continue;
+          if(!ws[addr].s) ws[addr].s={};
+          ws[addr].s.fill={patternType:'solid', fgColor:{rgb:'FF111111'}};
+          ws[addr].s.font={color:{rgb:'FFFFFFFF'}, bold:true, sz:11};
+          ws[addr].s.alignment={horizontal:'center', vertical:'center'};
+          ws[addr].s.border={top:{style:'thin',color:{rgb:'FF000000'}},bottom:{style:'thin',color:{rgb:'FF000000'}},left:{style:'thin',color:{rgb:'FF000000'}},right:{style:'thin',color:{rgb:'FF000000'}}};
+        }
+      }
+      // Style staff rows with colours
+      for(var si=0; si<cur.staff.length; si++){
+        var st=cur.staff[si];
+        var R=2+si;
+        // Name col
+        var nameAddr=XLSX.utils.encode_cell({r:R,c:0});
+        if(ws[nameAddr]){
+          if(!ws[nameAddr].s) ws[nameAddr].s={};
+          ws[nameAddr].s.fill={patternType:'solid', fgColor:{rgb:'FFFFFFFF'}};
+          ws[nameAddr].s.font={bold:true};
+          ws[nameAddr].s.border={top:{style:'thin',color:{rgb:'FF000000'}},bottom:{style:'thin',color:{rgb:'FF000000'}},left:{style:'thin',color:{rgb:'FF000000'}},right:{style:'thin',color:{rgb:'FF000000'}}};
+        }
+        for(var di=0; di<cur.dates.length; di++){
+          var c1=1+di*2;
+          var c2=c1+1;
+          for(var cc=0; cc<2; cc++){
+            var C=c1+cc;
+            var addr=XLSX.utils.encode_cell({r:R,c:C});
+            if(!ws[addr]) continue;
+            if(!ws[addr].s) ws[addr].s={};
+            var sh=(st.shifts && st.shifts[di]!=null) ? st.shifts[di] : 'OFF';
+            var up=String(sh).toUpperCase().trim();
+            var isWeekend=['SAT','SUN','SATURDAY','SUNDAY'].indexOf((cur.dates[di].day||'').toUpperCase().substring(0,3))!==-1;
+            var isClosed=st.shopClosed && st.shopClosed[di];
+            var isAbsent=st.absentApproved && st.absentApproved[di];
+            var isPending=st.pendingOffers && st.pendingOffers[di];
+            var isGreen=st.cellGreen && st.cellGreen[di];
+            var isNA=st.unavailable && st.unavailable[di];
+            var isOff=up==='OFF'||up===''||up==='NA'||up==='UA';
+            // Determine colour matching website
+            var bg='FFFFFFFF'; // white default
+            var fontColor='FF000000';
+            var bold=false;
+            if(isClosed || up==='CLOSED' || up==='CLOSE' || up.indexOf('CLOSED')!==-1){
+              bg='FF000000'; fontColor='FFFFFFFF'; bold=true; // black with white text
+            } else if(isPending){
+              bg='FFFFFF00'; fontColor='FF000000'; bold=true; // yellow pending
+            } else if(isAbsent || up==='AB' || up.indexOf(' AB')!==-1){
+              bg='FFFFA9B6'; fontColor='FF000000'; // pink absent
+            } else if(isNA || up==='UA' || up==='NA'){
+              bg='FF111111'; fontColor='FFFFFFFF'; // black UA
+            } else if(isGreen){
+              bg='FFB6F7C5'; fontColor='FF000000'; // green
+            } else if(isOff){
+              bg='FF9DA0A3'; fontColor='FF9DA0A3'; // grey off - transparent text
+              if(isWeekend){ bg='FFA8C4D8'; fontColor='FFA8C4D8'; }
+            } else {
+              // Work shift - white, but weekend blue
+              if(isWeekend){ bg='FFD6EBFF'; }
+              else { bg='FFFFFFFF'; }
+            }
+            ws[addr].s.fill={patternType:'solid', fgColor:{rgb:bg}};
+            ws[addr].s.font={color:{rgb:fontColor}, bold:bold};
+            ws[addr].s.alignment={horizontal:'center', vertical:'center'};
+            ws[addr].s.border={top:{style:'thin',color:{rgb:'FF000000'}},bottom:{style:'thin',color:{rgb:'FF000000'}},left:{style:'thin',color:{rgb:'FF000000'}},right:{style:'thin',color:{rgb:'FF000000'}}};
+          }
+        }
+        // Total col
+        var totalC1=1+cur.dates.length*2;
+        var totalC2=totalC1+1;
+        for(var tc=totalC1; tc<=totalC2; tc++){
+          var tAddr=XLSX.utils.encode_cell({r:R,c:tc});
+          if(!ws[tAddr]) continue;
+          if(!ws[tAddr].s) ws[tAddr].s={};
+          ws[tAddr].s.fill={patternType:'solid', fgColor:{rgb:'FFE0E0E0'}};
+          ws[tAddr].s.font={bold:true};
+          ws[tAddr].s.border={top:{style:'thin',color:{rgb:'FF000000'}},bottom:{style:'thin',color:{rgb:'FF000000'}},left:{style:'thin',color:{rgb:'FF000000'}},right:{style:'thin',color:{rgb:'FF000000'}}};
+          ws[tAddr].s.alignment={horizontal:'center'};
+        }
+      }
+      // Set column widths
+      ws['!cols']=[];
+      ws['!cols'][0]={wch:18};
+      for(var i=1;i<=cur.dates.length*2;i++){ ws['!cols'][i]={wch:10}; }
+      ws['!cols'][1+cur.dates.length*2]={wch:10};
+      ws['!cols'][1+cur.dates.length*2+1]={wch:18};
+    }catch(e){ console.log('Style error', e); }
+    XLSX.utils.book_append_sheet(wb, ws, 'Roster');
+    var filename=(cur.label||'roster').replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().split('T')[0]+'_TEMPLATE.xlsx';
+    XLSX.writeFile(wb, filename);
+    toast('Excel exported matching template with colours - '+filename);
+    var statusEl=document.getElementById('import-status');
+    if(statusEl) statusEl.innerHTML='<span style="color:green">✅ Excel exported: '+filename+' - matches template with colours (blue weekend, green, yellow pending, pink AB, black CLOSED)</span>';
+  }catch(e){
+    console.error('Export error', e);
+    toast('Export error: '+e.message);
+    // Fallback to old CSV
+    try{
+      let cur2=getCurrentFortnight();
+      let csv='NAME,'+cur2.dates.map(d=>d.day+' '+d.date).join(',')+',Total\n';
+      cur2.staff.forEach(st=>{ let total=0; (st.shifts||[]).forEach((s,idx)=>{ let orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : s; let isAbsent=st.absentApproved && st.absentApproved[idx]; let isClosed=st.shopClosed && st.shopClosed[idx]; let isFull=st.employmentType!=='casual'; let net; if(isAbsent||isClosed){ net = isFull ? netH(orig) : 0; } else { let up=(s||'').toUpperCase().trim(); if(['OFF','NA','AB','ABSENT','CLOSED','CLOSE',''].includes(up)) net=0; else net=netH(s); } total+=net; }); csv+='"'+st.lastName+' '+st.firstName+'",'+(st.shifts||[]).map((s,i)=>{ let orig=st.originalShifts && st.originalShifts[i] ? st.originalShifts[i] : ''; let isAbs=st.absentApproved && st.absentApproved[i]; let isCl=st.shopClosed && st.shopClosed[i]; if(isCl) return '"CLOSED"'; if(isAbs && orig) return '"'+orig+' AB"'; if(s==='OFF' || s==='' ) return '""'; return '"'+s+'"'; }).join(',')+',"'+total.toFixed(1)+'h"\n'; });
+      let blob=new Blob([csv],{type:'text/csv'});let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download=cur2.label+'.csv';a.click();toast('CSV fallback exported');
+    }catch(e2){ toast('Export failed: '+e2.message); }
+  }
+}
+function exportExcel(){ exportCSV(); }
+
+function exportPDF(){ 
+  let cur=getSelectedFortnight() || getCurrentFortnight(); 
+  if(!cur){ toast('No roster'); return; } 
+  toast('Generating PDF - capturing roster EXACTLY as shown...');
+  
+  function loadLibs(cb){
+    var loaded=0;
+    var need=2;
+    function check(){ loaded++; if(loaded>=need) cb(); }
+    if(typeof html2canvas!=='undefined'){ check(); } else {
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload=check; s.onerror=function(){ console.log('html2canvas load fail'); check(); };
+      document.head.appendChild(s);
+    }
+    if(window.jspdf && window.jspdf.jsPDF){ check(); } else {
+      var s2=document.createElement('script');
+      s2.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s2.onload=check; s2.onerror=function(){ console.log('jspdf load fail'); check(); };
+      document.head.appendChild(s2);
+    }
   }
   
-  loadHtml2Canvas(function(){
+  loadLibs(function(){
     try{
       var mount=document.getElementById('roster-mount');
       if(!mount || !mount.innerHTML.trim()){
-        toast('No roster to export - showing roster first');
         try{ renderRosterSafe(); }catch(e){}
         mount=document.getElementById('roster-mount');
       }
-      if(!mount){
-        toast('Roster mount not found');
-        return;
-      }
+      if(!mount){ toast('Roster mount not found'); return; }
       
-      // FIXED V170: Reset all table scrolls to 0 so day columns line up in PDF
-      var originalStyle=mount.style.cssText;
-      var originalScrolls=[];
-      try{
-        var wraps=mount.querySelectorAll('.r-table-wrap');
-        wraps.forEach(function(w){
-          originalScrolls.push({el:w, left:w.scrollLeft});
-          w.scrollLeft=0;
-        });
-      }catch(e){}
+      // V191: Clone mount and make it fully visible for capture - remove scroll, show all tables identical
+      var cloneContainer=document.createElement('div');
+      cloneContainer.style.position='absolute';
+      cloneContainer.style.left='-9999px';
+      cloneContainer.style.top='0';
+      cloneContainer.style.width=mount.scrollWidth+'px';
+      cloneContainer.style.background='#F2F2F2';
+      cloneContainer.style.padding='20px';
+      cloneContainer.style.zIndex='-1';
       
-      html2canvas(mount, {
+      var mountClone=mount.cloneNode(true);
+      mountClone.style.overflow='visible';
+      mountClone.style.width='auto';
+      mountClone.style.maxWidth='none';
+      mountClone.style.height='auto';
+      
+      // Fix all table wraps to show full width, no scroll
+      var wraps=mountClone.querySelectorAll('.r-table-wrap, .roster-section, .r-table');
+      wraps.forEach(function(w){
+        w.style.overflow='visible';
+        w.style.width='auto';
+        w.style.maxWidth='none';
+      });
+      
+      // Ensure colours are preserved - inline important styles
+      var allCells=mountClone.querySelectorAll('td, th, .roster-section, .sec-head');
+      // Keep original classes, html2canvas will capture computed styles
+      
+      cloneContainer.appendChild(mountClone);
+      document.body.appendChild(cloneContainer);
+      
+      // Capture header info
+      var headerDiv=document.createElement('div');
+      headerDiv.style.background='#111';
+      headerDiv.style.color='#fff';
+      headerDiv.style.padding='12px 16px';
+      headerDiv.style.fontFamily='Arial Black, sans-serif';
+      headerDiv.style.fontWeight='900';
+      headerDiv.style.fontSize='16px';
+      headerDiv.style.marginBottom='12px';
+      headerDiv.style.borderRadius='8px';
+      headerDiv.innerHTML='REPCO ROSTER - '+(cur.label||'')+' - '+cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date+' - Exported '+new Date().toLocaleString();
+      cloneContainer.insertBefore(headerDiv, mountClone);
+      
+      console.log('V191 PDF: Clone ready, capturing with html2canvas', cloneContainer.scrollWidth, cloneContainer.scrollHeight);
+      
+      html2canvas(cloneContainer, {
         scale: 2,
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#ffffff',
+        backgroundColor: '#F2F2F2',
         logging: false,
-        width: mount.scrollWidth,
-        height: mount.scrollHeight,
-        windowWidth: mount.scrollWidth,
-        windowHeight: mount.scrollHeight
+        width: cloneContainer.scrollWidth,
+        height: cloneContainer.scrollHeight,
+        windowWidth: cloneContainer.scrollWidth,
+        windowHeight: cloneContainer.scrollHeight,
+        onclone: function(clonedDoc){
+          // Ensure all styles are visible in clone
+          var clonedMount=clonedDoc.getElementById('roster-mount');
+          if(clonedMount){
+            clonedMount.style.display='block';
+          }
+        }
       }).then(function(canvas){
         try{
-          // Restore scroll positions after capture
-          try{
-            originalScrolls.forEach(function(item){
-              if(item.el) item.el.scrollLeft=item.left;
-            });
-          }catch(e){}
+          document.body.removeChild(cloneContainer);
+          
+          console.log('V191 PDF: Canvas captured', canvas.width, canvas.height);
+          
           const { jsPDF } = window.jspdf;
           var imgData=canvas.toDataURL('image/png');
           
+          // Calculate PDF size - A3 landscape but keep aspect
           var imgWidth=canvas.width;
           var imgHeight=canvas.height;
-          
-          // Use A3 landscape but calculate to fit width
-          // A3 landscape: 420mm x 297mm
-          var pdfWidth=420;
+          var pdfWidth=420; // A3 landscape mm
           var pdfHeight=297;
-          
-          // Calculate aspect ratio
           var ratio=imgHeight/imgWidth;
           var pdfImgHeight=pdfWidth*ratio;
           
           var doc;
           if(pdfImgHeight > pdfHeight){
-            // Need custom height or multiple pages
-            // Use larger format or split into pages
             var totalPages=Math.ceil(pdfImgHeight/pdfHeight);
             doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
+            var canvasSliceHeight=(pdfHeight/pdfWidth)*imgWidth;
             
-            // For long rosters, split into multiple pages
-            if(totalPages>1){
-              var y=0;
-              var remainingHeight=pdfImgHeight;
-              var canvasSliceHeight=(pdfHeight/pdfWidth)*imgWidth; // height in canvas pixels per PDF page
-              
-              for(var i=0;i<totalPages;i++){
-                if(i>0) doc.addPage();
-                
-                // Calculate slice
-                var sliceY=i*canvasSliceHeight;
-                var sliceHeight=Math.min(canvasSliceHeight, imgHeight-sliceY);
-                
-                // Create temporary canvas for slice
-                var sliceCanvas=document.createElement('canvas');
-                sliceCanvas.width=imgWidth;
-                sliceCanvas.height=sliceHeight;
-                var ctx=sliceCanvas.getContext('2d');
-                ctx.drawImage(canvas, 0, sliceY, imgWidth, sliceHeight, 0, 0, imgWidth, sliceHeight);
-                
-                var sliceImgData=sliceCanvas.toDataURL('image/png');
-                var slicePdfHeight=(sliceHeight/imgWidth)*pdfWidth;
-                
-                doc.addImage(sliceImgData, 'PNG', 0, 0, pdfWidth, slicePdfHeight);
-                
-                // Add page header
-                doc.setFontSize(8);
-                doc.setTextColor(100);
-                if(i===0){
-                  doc.text('REPCO ROSTER - '+cur.label+' - 21/10 to 03/11 - Generated '+new Date().toLocaleString(), 5, 5);
-                } else {
-                  doc.text('REPCO ROSTER - '+cur.label+' - Page '+(i+1), 5, 5);
-                }
-              }
-            } else {
-              doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
-              doc.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfImgHeight);
-              doc.setFontSize(10);
-              doc.text('REPCO ROSTER - '+cur.label, 10, 6);
+            for(var i=0;i<totalPages;i++){
+              if(i>0) doc.addPage();
+              var sliceY=i*canvasSliceHeight;
+              var sliceHeight=Math.min(canvasSliceHeight, imgHeight-sliceY);
+              var sliceCanvas=document.createElement('canvas');
+              sliceCanvas.width=imgWidth;
+              sliceCanvas.height=sliceHeight;
+              var ctx=sliceCanvas.getContext('2d');
+              ctx.drawImage(canvas, 0, sliceY, imgWidth, sliceHeight, 0, 0, imgWidth, sliceHeight);
+              var sliceImgData=sliceCanvas.toDataURL('image/png');
+              var slicePdfHeight=(sliceHeight/imgWidth)*pdfWidth;
+              doc.addImage(sliceImgData, 'PNG', 0, 0, pdfWidth, slicePdfHeight);
+              // Footer
+              doc.setFontSize(7);
+              doc.setTextColor(100);
+              doc.text('REPCO ROSTER - '+(cur.label||'')+' - Page '+(i+1)+'/'+totalPages+' - '+new Date().toLocaleString(), 5, pdfHeight-2);
             }
           } else {
             doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a3'});
-            doc.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfImgHeight);
-            doc.setFontSize(10);
-            doc.text('REPCO ROSTER - '+cur.label+' - '+cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date, 10, 6);
+            doc.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfImgHeight);
           }
           
-          var filename=(cur.label||'roster').replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().split('T')[0]+'.pdf';
+          var filename=(cur.label||'roster').replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().split('T')[0]+'_IDENTICAL.pdf';
           doc.save(filename);
-          toast('PDF exported - '+filename);
+          toast('PDF exported identical to roster - '+filename);
+          var statusEl=document.getElementById('import-status');
+          if(statusEl) statusEl.innerHTML='<span style="color:green">✅ PDF exported: '+filename+' - identical to roster page</span>';
           
         }catch(e){
-          console.error('PDF image error', e);
+          console.error('V191 PDF image error', e);
+          try{ document.body.removeChild(cloneContainer); }catch(e2){}
           toast('PDF error: '+e.message+' - trying fallback');
           exportPDF_fallback();
         }
       }).catch(function(err){
-        console.error('html2canvas error', err);
+        console.error('V191 html2canvas error', err);
+        try{ document.body.removeChild(cloneContainer); }catch(e){}
         toast('Capture failed - trying fallback');
         exportPDF_fallback();
       });
       
     }catch(e){
-      console.error('exportPDF error', e);
+      console.error('V191 exportPDF error', e);
       toast('PDF error: '+e.message);
       exportPDF_fallback();
     }
@@ -9959,7 +10379,7 @@ function renderMySchedule(){
           var d=fn.dates[di];
           var shiftStr=myStaffInFn.shifts && myStaffInFn.shifts[di]!=null ? myStaffInFn.shifts[di] : 'OFF';
           var up=String(shiftStr).toUpperCase().trim();
-          if(['OFF','NA',''].indexOf(up)!==-1 || up==='') continue; // AB kept for Absent display
+          if(['OFF','NA','AB','ABSENT','CLOSED','CLOSE','SHOP CLOSED',''].indexOf(up)!==-1 || up==='' || up.indexOf('CLOSED')!==-1 || up.indexOf('AB')!==-1) continue; // V192: AB and CLOSED excluded from active countdown - show next shift
           var parsed=parseShiftRange(shiftStr);
           if(!parsed) continue;
           var iso=d.iso;
@@ -10091,7 +10511,16 @@ function renderMySchedule(){
         var displayAB=origForAB?fmt(origForAB)+' AB':fmt(currentShift.shift)||'AB';
         if(displayAB.indexOf('AB')===-1) displayAB=displayAB+' AB';
         var dateLabelAB=currentShift.date.day+' '+currentShift.date.date;
-        htmlStr+='<div class="card" style="background:#FFA9B6;"><div style="font-weight:900;font-size:12px;color:#111">CURRENT SHIFT - ABSENT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+dateLabelAB+' - '+displayAB+'</div><div style="font-size:11px;background:#fff;color:#111;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent</div><div style="margin-top:6px;font-size:10px">Original: '+(origForAB?fmt(origForAB):'N/A')+'</div></div>';
+        htmlStr+='<div class="card" style="background:#FFA9B6;"><div style="font-weight:900;font-size:12px;color:#111">CURRENT SHIFT - ABSENT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+dateLabelAB+' - '+displayAB+'</div><div style="font-size:11px;background:#fff;color:#111;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Absent - no countdown, showing next shift below</div><div style="margin-top:6px;font-size:10px">Original: '+(origForAB?fmt(origForAB):'N/A')+'</div></div>';
+      } else if(currentShift.shift && (String(currentShift.shift).toUpperCase().trim()==='CLOSED' || (myStaff.shopClosed && myStaff.shopClosed[currentShift.idx]))){
+        var origForClosed='';
+        if(myStaff && myStaff.originalShifts && myStaff.originalShifts[currentShift.idx]){
+          origForClosed=myStaff.originalShifts[currentShift.idx];
+        }
+        var dateLabelClosed=currentShift.date.day+' '+currentShift.date.date;
+        var isFullClosed = myStaff.employmentType!=='casual';
+        var totalInfo = isFullClosed ? 'Full-time: original '+fmt(origForClosed)+' counted to totals' : 'Casual: not counted to totals';
+        htmlStr+='<div class="card" style="background:#000;color:#fff;border:3px solid #fff;"><div style="font-weight:900;font-size:12px;color:#fff">🚨 SHOP CLOSED - '+dateLabelClosed+'</div><div style="font-weight:900;font-size:16px;margin:6px 0;color:#fff">🚨 SHOP CLOSED</div><div style="font-size:11px;background:#fff;color:#000;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Shop Closed - no countdown</div><div style="margin-top:6px;font-size:10px;color:#ccc">Original: '+(origForClosed?fmt(origForClosed):'N/A')+' - '+totalInfo+'</div></div>';
       } else if(isCurrG){
         var dateLabelG=currentShift.date.day+' '+currentShift.date.date;
         var displayG=fmt(currentShift.shift);
