@@ -694,12 +694,12 @@ body:not(.is-admin) .daily-total-casual {
 
 <script>
 
-var FIREBASE_ENABLED = (typeof FIREBASE_DB_URL !== 'undefined' && FIREBASE_DB_URL && FIREBASE_DB_URL.indexOf('repco-roster-default') !== -1);
+var FIREBASE_ENABLED = true;
 var FIREBASE_404_COUNT = 0;
 var _origFetch = window.fetch.bind(window);
 function safeCloudFetch(url, opts){
   if(!FIREBASE_ENABLED) return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
-  if(url.indexOf('repco-roster-default-rtdb') !== -1 && FIREBASE_404_COUNT > 3){
+  if((url.indexOf('repco-roster-default-rtdb') !== -1 || url.indexOf('testing-de079') !== -1) && FIREBASE_404_COUNT > 20){
     return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
   }
   return _origFetch(url, opts).then(function(r){
@@ -720,7 +720,7 @@ window.addEventListener('unhandledrejection', function(e){
 
 // ===== SINGLE EARLY-STUB BLOCK V217 FINAL - FIXES ReferenceError V213/V211/V215 - 1 BLOCK ONLY - NO DUPLICATES =====
 var MEMORY_STORE = {};
-var FIREBASE_DB_URL = "https://repco-roster-default-rtdb.firebaseio.com";
+var FIREBASE_DB_URL = "https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
 var FIREBASE_CONFIG = {apiKey:"AIzaSyDummy",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
 var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive","repco_username","repco_currentRole","repco_session","repco_cloud_ts","retail_roster_rosters_v1","repco_rosters"];
 var db = null;
@@ -2776,6 +2776,7 @@ function populateFortnightSelect(){
   }catch(e){}
   var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
   // V224 RECOVERY: If data is corrupted (0, fallback, or invalid), force reseed
+  try{if(fns && Array.isArray(fns)){ var _bef=fns.length; fns=fns.filter(function(fn){return fn && fn.id && fn.id!=='0' && fn.id!==0 && fn.id!=='fallback' && fn.dates && fn.dates.length>0;});}}catch(e){}
   var isCorrupted = false;
   if(!fns || !Array.isArray(fns) || fns.length===0) isCorrupted = true;
   else if(fns.length===1 && (fns[0].id==='0' || fns[0].id===0 || fns[0].id==='fallback' || !fns[0].dates || fns[0].dates.length===0)) isCorrupted = true;
@@ -9951,6 +9952,7 @@ function checkMaintenance(){
     var maintMode = false;
     try{ maintMode = safeGet('maintenance_mode')==='true'; }catch(e){}
     var local=safeGetJSON('repco_maintenance_first_v1',{enabled:false});
+try{if(local.enabled && local.ts && (Date.now()-local.ts > 5*60*1000)){ safeSet('maintenance_mode','false'); safeSetJSON('repco_maintenance_first_v1',{enabled:false}); local.enabled=false; console.log('FIXED: cleared stale maintenance'); }}catch(e){}
     if(maintMode) local.enabled=true;
     var timeEl=document.getElementById('maint-time-display');
     if(timeEl){
@@ -12831,6 +12833,7 @@ function applyRoleVisibility(role){
   var bypassLabel = document.getElementById('admin-bypass-label');
   if(bypassLabel) bypassLabel.style.display = isMgr ? 'flex' : 'none';
   
+  try{ if((r||'').toLowerCase()==='admin'){ var btns=document.querySelectorAll('#menu button, .menu button, #global-header button, .r-btn-consistent'); btns.forEach(function(b){ var tt=(b.textContent||'').toLowerCase(); if((tt.includes('today') && tt.includes('budd')) || (tt.includes('tomorrow') && tt.includes('budd'))){ b.style.display='none'; }}); } }catch(e){}
   console.log('Role visibility applied - role:', r, 'isMgr:', isMgr);
 }
 function hideAllPages(){document.querySelectorAll('.full-page').forEach(function(el){el.style.display='none';});}

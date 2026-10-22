@@ -1,202 +1,79 @@
-// REPCO ROSTER Service Worker - Phone Notifications Outside Browser
-// Version: V224 - All Features Preserved
+// sw.js - Main Service Worker for REPCO Roster - FIXED V168
+const CACHE_NAME = 'repco-roster-v168-base-fix';
 
-const CACHE_NAME = 'repco-roster-v224';
 const urlsToCache = [
-  './',
-  './index.html',
-  './rmroster/index.html',
-  './manifest.json'
+  '/rmroster/',
+  '/rmroster/index.html',
+  '/rmroster/icon-192.png',
+  '/rmroster/icon-512.png',
+  '/rmroster/manifest.json'
 ];
 
-// Install - cache core files
 self.addEventListener('install', event => {
-  console.log('[SW] Install V224');
+  console.log('[SW] Install V168 - base /rmroster/ fix');
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('[SW] Caching app shell');
-        return cache.addAll(urlsToCache.map(url => new Request(url, {cache: 'reload'}))).catch(err => {
-          console.log('[SW] Cache addAll error (some files may not exist yet)', err);
-          // Try to cache at least root
-          return cache.add('./').catch(()=>{});
-        });
-      })
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache).catch(e=>console.log(e)))
   );
+  self.skipWaiting();
 });
 
-// Activate - clean old caches
 self.addEventListener('activate', event => {
-  console.log('[SW] Activate V224');
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('[SW] Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
+    caches.keys().then(names => Promise.all(
+      names.map(n => { if(n!==CACHE_NAME) return caches.delete(n); })
+    ))
   );
+  event.waitUntil(clients.claim());
 });
 
-// Fetch - network first, fallback to cache for navigation
 self.addEventListener('fetch', event => {
-  // Skip Firebase requests - always network
-  if (event.request.url.includes('firebaseio.com') || 
-      event.request.url.includes('googleapis.com') ||
-      event.request.url.includes('fcm') ||
-      event.request.url.includes('firestore')) {
-    return;
+  const url = new URL(event.request.url);
+  // Always network for Firebase RTDB
+  if (url.hostname.includes('firebasedatabase.app') || url.hostname.includes('firestore')) {
+    return event.respondWith(fetch(event.request));
   }
-
-  // For navigation requests (HTML), network first
-  if (event.request.mode === 'navigate') {
+  // Network-first for documents, cache-first for assets
+  if (event.request.destination === 'document') {
     event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          // Clone and cache
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
-          });
-          return response;
-        })
-        .catch(() => {
-          // Fallback to cache
-          return caches.match(event.request).then(cached => {
-            return cached || caches.match('./').then(r=>r || caches.match('./index.html'));
-          });
-        })
+      fetch(event.request).then(r => {
+        const clone = r.clone();
+        caches.open(CACHE_NAME).then(c=>c.put(event.request, clone));
+        return r;
+      }).catch(()=>caches.match(event.request).then(r=>r||caches.match('/rmroster/index.html')))
     );
-    return;
+  } else {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request))
+    );
   }
-
-  // For other requests, cache first then network
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        return response || fetch(event.request).then(fetchResponse => {
-          // Don't cache non-successful responses
-          if (!fetchResponse || fetchResponse.status !== 200 || fetchResponse.type !== 'basic') {
-            return fetchResponse;
-          }
-          const responseToCache = fetchResponse.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseToCache);
-          });
-          return fetchResponse;
-        });
-      })
-  );
 });
 
-// Push - handle FCM push notifications (phone outside browser)
-self.addEventListener('push', event => {
-  console.log('[SW] Push received:', event);
+self.addEventListener('push', function(event) {
   let data = {};
-  try {
-    if (event.data) {
-      data = event.data.json();
-    }
-  } catch (e) {
-    try {
-      data = { body: event.data.text() };
-    } catch (e2) {
-      data = { body: 'New roster update' };
-    }
+  if (event.data) {
+    try { data = event.data.json(); } catch(e){ data = { body: event.data.text() }; }
   }
-
-  // Default notification for roster
-  const title = data.notification?.title || data.title || 'REPCO ROSTER';
+  let title = (data.title || 'REPCO').replace(/blackbeard.*$/gi,'').trim();
+  if(title.length>30) title = title.substring(0,30);
+  let body = (data.body || 'Your roster updated').replace(/https?:\/\/[^\s]+/g,'').trim().substring(0,120);
   const options = {
-    body: data.notification?.body || data.body || data.message || 'New roster update available',
-    icon: './icon-192.png',
-    badge: './icon-192.png',
-    vibrate: [200, 100, 200],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1,
-      url: data.fcmOptions?.link || data.click_action || './',
-      ...data.data
-    },
-    actions: [
-      { action: 'open', title: 'Open Roster' },
-      { action: 'close', title: 'Dismiss' }
-    ],
-    tag: 'repco-roster-' + (data.data?.type || 'general'),
+    body,
+    icon: '/rmroster/icon-192.png',
+    badge: '/rmroster/icon-192.png',
+    tag: data.tag || 'repco-push',
+    vibrate: [200,100,200],
     renotify: true,
-    requireInteraction: false,
-    silent: false
+    data: { url: '/rmroster/' }
   };
-
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Notification click - open app
-self.addEventListener('notificationclick', event => {
-  console.log('[SW] Notification click:', event);
+self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-
-  if (event.action === 'close') {
-    return;
-  }
-
-  const urlToOpen = event.notification.data?.url || './';
-  
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then(windowClients => {
-        // If app is already open, focus it
-        for (let client of windowClients) {
-          if (client.url.includes(self.location.origin) && 'focus' in client) {
-            client.navigate(urlToOpen);
-            return client.focus();
-          }
-        }
-        // Otherwise open new window
-        if (clients.openWindow) {
-          return clients.openWindow(urlToOpen);
-        }
-      })
+    clients.matchAll({type:'window', includeUncontrolled:true}).then(list=>{
+      for(let c of list){ if(c.url.includes('/rmroster/') && 'focus' in c) return c.focus(); }
+      return clients.openWindow('/rmroster/');
+    })
   );
 });
-
-// Background sync for roster updates
-self.addEventListener('sync', event => {
-  console.log('[SW] Background sync:', event.tag);
-  if (event.tag === 'repco-roster-sync') {
-    event.waitUntil(
-      // Sync roster data when back online
-      fetch('https://repco-roster-default-rtdb.firebaseio.com/repco_state/retail_roster_byFortnight_v1.json')
-        .then(r=>r.json())
-        .then(data=>{
-          console.log('[SW] Background sync roster data', data ? 'has data' : 'no data');
-        })
-        .catch(err=>console.log('[SW] Sync failed', err))
-    );
-  }
-});
-
-// Message from client
-self.addEventListener('message', event => {
-  console.log('[SW] Message:', event.data);
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  if (event.data && event.data.type === 'roster_update') {
-    // Broadcast to all clients
-    self.clients.matchAll().then(clients => {
-      clients.forEach(client => {
-        client.postMessage({ type: 'roster_updated', ts: Date.now() });
-      });
-    });
-  }
-});
-
-console.log('[SW] Repco Roster V224 Service Worker loaded - All features preserved');
