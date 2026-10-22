@@ -3,8 +3,53 @@
 <head><link rel="icon" href="data:image/x-icon;,">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
-<title>REPCO ROSTER</title>
+<title>REPCO ROSTER V211 LIVE PERMANENT - FIXES</title>
+
+<script>
+// V211 EARLY STUBS - prevent ReferenceError before full script loads
+window.renderAccountPage = window.renderAccountPage || function(){ console.log('renderAccountPage early stub - waiting for full load'); };
+window.renderAccountMgmtPage = window.renderAccountMgmtPage || function(){};
+window.showCustomPrompt = window.showCustomPrompt || function(title, body, cb){ 
+  try{
+    var modal=document.getElementById('custom-modal');
+    if(modal){
+      var t=document.getElementById('custom-modal-title');
+      var b=document.getElementById('custom-modal-body');
+      var ok=document.getElementById('custom-modal-ok');
+      var cancel=document.getElementById('custom-modal-cancel');
+      if(t) t.textContent=title;
+      if(b) b.innerHTML=body;
+      if(ok) ok.textContent='SAVE';
+      if(cancel) { cancel.style.display='block'; cancel.textContent='CANCEL'; }
+      modal.classList.add('show');
+      if(ok) ok.onclick=function(){ modal.classList.remove('show'); if(cb) cb(true); };
+      if(cancel) cancel.onclick=function(){ modal.classList.remove('show'); if(cb) cb(false); };
+    }
+  }catch(e){ console.error('early showCustomPrompt',e); if(cb) cb(false); }
+};
+window.showCustomConfirm = window.showCustomConfirm || function(title, body, cb){
+  try{
+    var modal=document.getElementById('custom-modal');
+    if(modal){
+      var t=document.getElementById('custom-modal-title');
+      var b=document.getElementById('custom-modal-body');
+      var ok=document.getElementById('custom-modal-ok');
+      var cancel=document.getElementById('custom-modal-cancel');
+      if(t) t.textContent=title;
+      if(b) b.innerHTML='<div style="font-size:13px">'+(body||'')+'</div>';
+      if(ok) ok.textContent='CONFIRM';
+      if(cancel) { cancel.style.display='block'; cancel.textContent='CANCEL'; }
+      modal.classList.add('show');
+      if(ok) ok.onclick=function(){ modal.classList.remove('show'); if(cb) cb(true); };
+      if(cancel) cancel.onclick=function(){ modal.classList.remove('show'); if(cb) cb(false); };
+    }
+  }catch(e){ if(cb) cb(false); }
+};
+window.openPage = window.openPage || function(id){ console.log('openPage early stub', id); };
+</script>
+
 <!-- V167_FINAL_FIXED_ALL_ISSUES -->
+<!-- V211_FIXED_LOGIN_PERSIST_AND_ACCOUNT_CRASH -->
 <!-- V167_FIXED_OFF_TO_SHIFT_NOTIFICATION_AND_WELCOME_ONCE -->
 <!-- V164_FIXED_WELCOME_ONCE_AND_HIDDEN_BELOW_CASUAL -->
 <link rel="manifest" href="./manifest.json">
@@ -12292,6 +12337,112 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
   }
   if(userEl) userEl.addEventListener('keydown', onEnter);
   if(passEl) passEl.addEventListener('keydown', onEnter);
+})();
+</script>
+
+
+<script>
+// V211 FIX: Stay logged in on refresh - refresh should only refresh data, not log out
+(function(){
+  function autoRestoreSession(){
+    try{
+      var username=null;
+      try{ username=localStorage.getItem('repco_username'); }catch(e){}
+      if(!username){
+        try{ username=sessionStorage.getItem('repco_username'); }catch(e){}
+      }
+      if(!username && typeof MEMORY_STORE!=='undefined' && MEMORY_STORE['repco_username']){
+        username=MEMORY_STORE['repco_username'];
+      }
+      var role=null;
+      try{ role=localStorage.getItem('repco_currentRole'); }catch(e){}
+      if(username && role){
+        console.log('V211: Restoring session on refresh for', username, role);
+        // Don't clear session - just refresh data and show main
+        setTimeout(function(){
+          try{
+            if(typeof forceRefreshCurrentData==='function') forceRefreshCurrentData();
+          }catch(e){}
+          try{
+            if(typeof showMain==='function'){
+              showMain();
+            } else {
+              var loginPage=document.getElementById('login-page');
+              if(loginPage){ loginPage.style.display='none'; }
+              var repco=document.getElementById('repco-v65');
+              if(repco){ repco.classList.add('show'); repco.style.display='block'; }
+              var header=document.getElementById('global-header');
+              if(header){ header.style.display='flex'; header.classList.add('show'); }
+            }
+            try{ if(typeof renderRosterSafe==='function') renderRosterSafe(); }catch(e){}
+          }catch(e){ console.error('autoRestoreSession',e); }
+        }, 300);
+        return true;
+      }
+    }catch(e){ console.error('autoRestoreSession error',e); }
+    return false;
+  }
+  
+  // Run on load
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(autoRestoreSession, 100); });
+  } else {
+    setTimeout(autoRestoreSession, 100);
+  }
+  
+  // Also intercept beforeunload to NOT clear session
+  window.addEventListener('beforeunload', function(){
+    // Save that we want to stay logged in
+    try{ localStorage.setItem('repco_keep_logged_in','true'); }catch(e){}
+  });
+  
+  // Override any code that clears username on refresh - ensure session persists
+  var originalDoLogout = window.doLogout;
+  window.doLogout = function(){
+    console.log('V211: doLogout called - clearing session intentionally');
+    try{ localStorage.removeItem('repco_keep_logged_in'); }catch(e){}
+    if(originalDoLogout) return originalDoLogout.apply(this, arguments);
+    // fallback
+    try{
+      localStorage.removeItem('repco_username');
+      localStorage.removeItem('repco_currentRole');
+    }catch(e){}
+    var loginPage=document.getElementById('login-page');
+    if(loginPage){ loginPage.style.display='flex'; }
+    var repco=document.getElementById('repco-v65');
+    if(repco){ repco.classList.remove('show'); repco.style.display='none'; }
+    var header=document.getElementById('global-header');
+    if(header){ header.style.display='none'; header.classList.remove('show'); }
+  };
+})();
+</script>
+<script>
+// V211 FIX: Ensure all page render functions are attached to window to prevent ReferenceError
+(function(){
+  function attachAll(){
+    try{
+      if(typeof renderAccountPage==='function') window.renderAccountPage=renderAccountPage;
+      if(typeof renderAccountMgmtPage==='function') window.renderAccountMgmtPage=renderAccountMgmtPage;
+      if(typeof showCustomPrompt==='function') window.showCustomPrompt=showCustomPrompt;
+      if(typeof showCustomConfirm==='function') window.showCustomConfirm=showCustomConfirm;
+      if(typeof openPage==='function') window.openPage=openPage;
+      if(typeof adminEditUser==='function') window.adminEditUser=adminEditUser;
+      if(typeof renderOptions==='function') window.renderOptions=renderOptions;
+      if(typeof renderRequests==='function') window.renderRequests=renderRequests;
+      if(typeof renderMySchedule==='function') window.renderMySchedule=renderMySchedule;
+      if(typeof renderRosterSafe==='function') window.renderRosterSafe=renderRosterSafe;
+      if(typeof showMain==='function') window.showMain=showMain;
+      if(typeof doLogin==='function') window.doLogin=doLogin;
+      console.log('V211: Attached all render functions to window');
+    }catch(e){ console.error('attachAll error',e); }
+  }
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', attachAll);
+  } else {
+    attachAll();
+  }
+  setTimeout(attachAll, 500);
+  setTimeout(attachAll, 1500);
 })();
 </script>
 
