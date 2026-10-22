@@ -1,4 +1,4 @@
-const CACHE_NAME = "repco-v175-yellow-time-persist-login";
+const CACHE_NAME = "repco-v176-yellow-time-persist-login";
 const urlsToCache = [
   "./",
   "./index.html",
@@ -10,7 +10,7 @@ self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(function(cache) {
-        console.log('V175 SW: Caching');
+        console.log('V176 SW: Caching');
         return cache.addAll(urlsToCache);
       })
   );
@@ -25,7 +25,7 @@ self.addEventListener('activate', function(event) {
         cacheNames.map(function(cacheName) {
           // Delete old caches but keep current
           if (cacheName !== CACHE_NAME && cacheName.startsWith('repco-')) {
-            console.log('V175 SW: Deleting old cache', cacheName);
+            console.log('V176 SW: Deleting old cache', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -64,9 +64,9 @@ self.addEventListener('fetch', function(event) {
   }
 });
 
-// V175: Handle push notifications even when user hasn't logged in recently - keep login alive
+// V176: Handle push notifications even when user hasn't logged in recently - keep login alive
 self.addEventListener('push', function(event){
-  console.log('V175 SW: Push received', event);
+  console.log('V176 SW: Push received', event);
   var data = {};
   try{
     data = event.data ? event.data.json() : {};
