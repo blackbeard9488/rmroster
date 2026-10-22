@@ -251,10 +251,22 @@ body.maintenance-active{overflow:hidden!important;height:100vh!important;positio
     min-height:48px !important;
   }
   
-  /* My Schedule page - larger, easier to read */
+  /* My Schedule page - larger, easier to read - V199 fix visibility */
   .mysched-card{
     padding:16px !important;
     margin-bottom:14px !important;
+  }
+  #mysched-list{
+    display:block !important;
+    visibility:visible !important;
+    opacity:1 !important;
+  }
+  #mysched-page .card{
+    display:block !important;
+    visibility:visible !important;
+  }
+  #mysched-page{
+    min-height:50vh !important;
   }
   
   /* Requests page - prevent accidental approve/deny */
@@ -274,9 +286,10 @@ body.maintenance-active{overflow:hidden!important;height:100vh!important;positio
     font-size:14px !important;
   }
   
-  /* Prevent horizontal overflow */
-  *{max-width:100% !important; box-sizing:border-box !important;}
-  html, body{overflow-x:hidden !important;}
+  /* Prevent horizontal overflow - V199: Less aggressive to not break roster table */
+  html, body{overflow-x:hidden !important; box-sizing:border-box !important;}
+  img, video{max-width:100% !important;}
+  /* Don't apply max-width to table cells - breaks roster */
   
   /* Modal - full width on mobile with safe areas */
   .modal, [style*="position:fixed"]{
@@ -773,7 +786,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V197_FIX_PENDING_AND_OFFERS";
+const BUILD_ID="20261022_V201_CLOSED_WHOLE_DAY";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -3357,23 +3370,29 @@ function renderRosterSafe(){
       rows+='<tr class="'+rowClass+'"><td class="staff-cell" '+(isMgr?'onclick="editStaffType('+globalStaffIdx+')" style="cursor:pointer"':'')+'>'+st.lastName.toUpperCase()+', '+st.firstName+(own?' ← YOU':'')+'</td>';
       (st.shifts||[]).forEach(function(sh,idx){
         // V172: Check pending FIRST - before any other logic, so yellow shows offered time but data stays OFF
+        // V198: CLOSED should NEVER be treated as pending
         var hasPendingOffer = false;
         var pendingOfferData = null;
         try{
-          if(st.pendingOffers && st.pendingOffers[idx] && st.pendingOffers[idx].status==='pending'){
+          var isClosedForPendingCheck=(sh||'').toString().toUpperCase().includes('CLOSED');
+          if(!isClosedForPendingCheck && st.pendingOffers && st.pendingOffers[idx] && st.pendingOffers[idx].status==='pending'){
             hasPendingOffer = true;
             pendingOfferData = st.pendingOffers[idx];
           } else {
-            var allOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
-            var myUsernameLower = (st.username||'').toLowerCase();
-            var curDate = cur.dates[idx] ? cur.dates[idx].iso : '';
-            for(var oi=0; oi<allOffers.length; oi++){
-              var o = allOffers[oi];
-              if(o && o.status==='pending' && o.targetUsername===myUsernameLower && o.date===curDate){
+            // V198: CLOSED cells never show as pending
+            var isClosedGlobalCheck=(sh||'').toString().toUpperCase().includes('CLOSED');
+            if(!isClosedGlobalCheck){
+              var allOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+              var myUsernameLower = (st.username||'').toLowerCase();
+              var curDate = cur.dates[idx] ? cur.dates[idx].iso : '';
+              for(var oi=0; oi<allOffers.length; oi++){
+                var o = allOffers[oi];
+                if(o && o.status==='pending' && o.targetUsername===myUsernameLower && o.date===curDate){
                 hasPendingOffer = true;
                 pendingOfferData = o;
                 break;
               }
+            }
             }
           }
         }catch(e){}
@@ -4466,6 +4485,18 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             actualShift='UA';
           } else if(up==='OFF' || up===''){
             actualShift='OFF';
+            // V201: If current is CLOSED and user backspaces to OFF, treat as WHOLE DAY revert
+            if(staff.shopClosed && staff.shopClosed[colIdx]){
+              isClosedToggleOff=true;
+              window._isClosedToggleOff=true;
+              isClosed=false;
+              window._isClosed=false;
+              if(staff.originalShifts && staff.originalShifts[colIdx]){
+                actualShift=staff.originalShifts[colIdx];
+                if(actualShift.toUpperCase()==='CLOSED') actualShift='OFF';
+              }
+              console.log('V201: Backspace on CLOSED - WHOLE DAY revert to', actualShift);
+            }
           }
           // Auto G for Luke or Chris DISABLED - user requested off
           try{
@@ -4483,8 +4514,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           // V171: Detect OFF->shift new offer - pending should NEVER show posted until accepted
           var currentCleanForPending = (current||'').toString().trim().toUpperCase();
           var actualCleanForPending = (actualShift||'').toString().trim().toUpperCase();
+          // V198: CLOSED should NEVER be pending - even if OFF->CLOSED
           var isOffToShiftPending = (currentCleanForPending==='' || currentCleanForPending==='OFF' || currentCleanForPending==='-' || currentCleanForPending==='0') && 
-                                    (actualCleanForPending!=='' && actualCleanForPending!=='OFF' && actualCleanForPending!=='-' && actualCleanForPending!=='0' && actualCleanForPending!=='UA' && actualCleanForPending!=='NA' && !actualCleanForPending.includes('AB'));
+                                    (actualCleanForPending!=='' && actualCleanForPending!=='OFF' && actualCleanForPending!=='-' && actualCleanForPending!=='0' && actualCleanForPending!=='UA' && actualCleanForPending!=='NA' && !actualCleanForPending.includes('AB') && !actualCleanForPending.includes('CLOSED') && !actualCleanForPending.includes('CLOSE'));
           
           try{ if(typeof pushUndo==='function') pushUndo(); }catch(e){}
           // V171: If OFF->shift, keep roster as OFF initially, yellow pending - don't post shift yet
@@ -4525,51 +4557,194 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             }
             console.log('AB removed, restored to', actualShift);
           } else if(isClosedToggleOff || window._isClosedToggleOff){
-            // V192 CLOSED OFF - restore
+            // V201: CLOSED OFF - WHOLE DAY REVERT - if removed from any shift, revert ALL shifts on that day
+            var revertDateObj = cur && cur.dates && cur.dates[colIdx] ? cur.dates[colIdx] : {day:'', date:'', iso:''};
+            var revertLabel = (revertDateObj.day||'')+' '+(revertDateObj.date||'');
+            var revertISO = revertDateObj.iso||revertDateObj.date||'';
+            console.log('V201: SHOP CLOSED REVERT WHOLE DAY for', revertLabel, revertISO);
+            try{
+              var allStaffForRevert = cur.staff||[];
+              var revertedCount=0;
+              for(var rsIdx=0; rsIdx<allStaffForRevert.length; rsIdx++){
+                var rs = allStaffForRevert[rsIdx];
+                if(!rs) continue;
+                if(rs.shopClosed && rs.shopClosed[colIdx]){
+                  var origToRestore = (rs.originalShifts && rs.originalShifts[colIdx]) ? rs.originalShifts[colIdx] : null;
+                  if(!origToRestore || String(origToRestore).toUpperCase().includes('CLOSED')){
+                    origToRestore='OFF';
+                  }
+                  rs.shifts[colIdx]=origToRestore;
+                  rs.shopClosed[colIdx]=false;
+                  if(rs.absentApproved) rs.absentApproved[colIdx]=false;
+                  // Clean originalShifts if it was just CLOSED placeholder
+                  if(rs.originalShifts && rs.originalShifts[colIdx] && String(rs.originalShifts[colIdx]).toUpperCase()==='OFF'){
+                    try{ delete rs.originalShifts[colIdx]; }catch(e){}
+                  }
+                  revertedCount++;
+                } else if(rs.shifts && String(rs.shifts[colIdx]||'').toUpperCase().includes('CLOSED')){
+                  // Also revert any shift that is CLOSED even if flag missing
+                  var orig2 = (rs.originalShifts && rs.originalShifts[colIdx]) ? rs.originalShifts[colIdx] : 'OFF';
+                  if(String(orig2).toUpperCase().includes('CLOSED')) orig2='OFF';
+                  rs.shifts[colIdx]=orig2;
+                  if(rs.shopClosed) rs.shopClosed[colIdx]=false;
+                  if(rs.absentApproved) rs.absentApproved[colIdx]=false;
+                  revertedCount++;
+                }
+              }
+              console.log('V201: Reverted', revertedCount, 'staff for', revertLabel);
+            }catch(e){ console.log('V201 whole day revert error', e); }
+            // Ensure initiating staff also reverted (should already be via loop)
             if(staff.shopClosed) staff.shopClosed[colIdx]=false;
             staff.shifts[colIdx]=actualShift;
             if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+            // V201: Delete SHOP CLOSED notifications for ALL staff on that date when CLOSED removed from any shift
+            try{
+              var notifsDel=safeGetJSON('repco_notifications_v1',[]);
+              var dateISOForDel=cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso||cur.dates[colIdx].date||'') : '';
+              var dayLabelForDel=cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].day+' '+cur.dates[colIdx].date) : '';
+              var filteredNotifs=notifsDel.filter(function(n){
+                if(!n) return true;
+                // Delete ALL shop_closed notifications matching this date (whole day revert)
+                if(n.type==='shop_closed'){
+                  if(n.date===dateISOForDel || (n.date && dateISOForDel && n.date.substring(0,10)===dateISOForDel.substring(0,10))) return false;
+                  if(n.shiftDate===dayLabelForDel) return false;
+                  if(n.shiftIdx===colIdx) return false;
+                  // Also if date string matches dayLabel
+                  if(n.formattedDate===dayLabelForDel) return false;
+                }
+                return true;
+              });
+              if(filteredNotifs.length!==notifsDel.length){
+                safeSetJSON('repco_notifications_v1', filteredNotifs);
+                console.log('V198: Deleted SHOP CLOSED notification for', staff.firstName, dateISOForDel);
+                // Push to Firebase
+                try{
+                  if(typeof FIREBASE_DB_URL!=='undefined'){
+                    fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(filteredNotifs),mode:'cors'}).catch(function(){});
+                  }
+                  if(window.db){
+                    try{ window.db.ref('repco_notifications_v1').set(filteredNotifs); }catch(e){}
+                  }
+                }catch(e){}
+              }
+            }catch(e){ console.log('V198 delete closed notif error', e); }
             console.log('V192 CLOSED removed, restored to', actualShift);
           } else if(isClosed || window._isClosed){
-            // V192 CLOSED ON - black cell, preserves original for full-time totals
-            if(!staff.shopClosed) staff.shopClosed={};
-            staff.shopClosed[colIdx]=true;
-            if(!staff.originalShifts) staff.originalShifts={};
-            if(!staff.originalShifts[colIdx] || staff.originalShifts[colIdx].toUpperCase()==='OFF' || staff.originalShifts[colIdx].toUpperCase()==='CLOSED'){
-              var origToKeep=current;
-              if(origToKeep) origToKeep=origToKeep.replace(/\s*CLOSED$/i,'').trim();
-              if(origToKeep && origToKeep.toUpperCase()!=='OFF' && origToKeep.toUpperCase()!=='CLOSED' && origToKeep!==''){
-                staff.originalShifts[colIdx]=origToKeep;
+            // V201: CLOSED ON - WHOLE DAY - set ALL staff with a shift on this date to CLOSED
+            var wholeDayDateObj = cur && cur.dates && cur.dates[colIdx] ? cur.dates[colIdx] : {day:'', date:'', iso:''};
+            var wholeDayLabel = (wholeDayDateObj.day||'')+' '+(wholeDayDateObj.date||'');
+            var wholeDayISO = wholeDayDateObj.iso||wholeDayDateObj.date||'';
+            console.log('V201: SHOP CLOSED WHOLE DAY for', wholeDayLabel, wholeDayISO, 'colIdx', colIdx);
+            // Apply to all staff in current fortnight for this colIdx who had a shift
+            try{
+              var allStaffForClosed = cur.staff||[];
+              var affectedCount=0;
+              for(var csIdx=0; csIdx<allStaffForClosed.length; csIdx++){
+                var cs = allStaffForClosed[csIdx];
+                if(!cs) continue;
+                var csCurrent = (cs.shifts && cs.shifts[colIdx]!=null) ? cs.shifts[colIdx] : 'OFF';
+                var csUp = String(csCurrent||'').toUpperCase().trim();
+                // Only close if they had a shift (not OFF, not already CLOSED, not NA/UA)
+                var hadShift = csUp!=='' && csUp!=='OFF' && csUp!=='NA' && csUp!=='UA' && csUp!=='UNAVAILABLE' && !csUp.includes('CLOSED') && !csUp.includes('CLOSE');
+                // Also include if this is the edited staff (even if OFF? No, per spec: only those that had a shift)
+                // Per spec: "set all staff's shifts on that day/date that had a shift to closed"
+                if(!hadShift && cs!==staff) continue;
+                // For the initiating staff, always close even if OFF? No, only if had shift - but allow closing OFF too? Spec says had shift, so skip OFF for others
+                // Actually for initiating staff, if they were OFF and set to CLOSED, we still close them (they explicitly set)
+                if(cs===staff) hadShift=true; // initiator always
+
+                if(!hadShift) continue;
+                
+                if(!cs.shopClosed) cs.shopClosed={};
+                // Preserve original if not already preserved
+                if(!cs.originalShifts) cs.originalShifts={};
+                var existingOrig = cs.originalShifts[colIdx];
+                if(!existingOrig || String(existingOrig).toUpperCase()==='OFF' || String(existingOrig).toUpperCase().includes('CLOSED')){
+                  var keepOrig = csCurrent;
+                  if(keepOrig) keepOrig=String(keepOrig).replace(/\s*CLOSED$/i,'').replace(/\s*CLOSE$/i,'').replace(/\s*AB$/i,'').trim();
+                  if(keepOrig && keepOrig.toUpperCase()!=='OFF' && !keepOrig.toUpperCase().includes('CLOSED') && keepOrig!==''){
+                    cs.originalShifts[colIdx]=keepOrig;
+                  } else if(cs!==staff && cs.shifts[colIdx] && cs.shifts[colIdx].toUpperCase()!=='OFF'){
+                    // Keep even if OFF? No
+                  }
+                }
+                cs.shopClosed[colIdx]=true;
+                cs.shifts[colIdx]='CLOSED';
+                if(cs.cellGreen) cs.cellGreen[colIdx]=false;
+                if(cs.cellG) cs.cellG[colIdx]=false;
+                if(cs.absentApproved) cs.absentApproved[colIdx]=false;
+                if(cs.unavailable) cs.unavailable[colIdx]=false;
+                // Clear pending
+                if(cs.pendingOffers && cs.pendingOffers[colIdx]){
+                  delete cs.pendingOffers[colIdx];
+                  if(Object.keys(cs.pendingOffers).length===0) delete cs.pendingOffers;
+                }
+                affectedCount++;
               }
-            }
-            staff.shifts[colIdx]='CLOSED';
+              console.log('V201: Closed', affectedCount, 'staff for', wholeDayLabel);
+              // Ensure current staff reference is updated too (it is same object)
+              if(!staff.shopClosed) staff.shopClosed={};
+              staff.shopClosed[colIdx]=true;
+              if(!staff.originalShifts) staff.originalShifts={};
+              if(!staff.originalShifts[colIdx] || String(staff.originalShifts[colIdx]).toUpperCase()==='OFF' || String(staff.originalShifts[colIdx]).toUpperCase().includes('CLOSED')){
+                var origToKeep=current;
+                if(origToKeep) origToKeep=String(origToKeep).replace(/\s*CLOSED$/i,'').trim();
+                if(origToKeep && origToKeep.toUpperCase()!=='OFF' && !origToKeep.toUpperCase().includes('CLOSED') && origToKeep!==''){
+                  staff.originalShifts[colIdx]=origToKeep;
+                }
+              }
+              staff.shifts[colIdx]='CLOSED';
+            }catch(e){ console.log('V201 whole day close error', e); }
             if(staff.cellGreen) staff.cellGreen[colIdx]=false;
             if(staff.cellG) staff.cellG[colIdx]=false;
             if(staff.absentApproved) staff.absentApproved[colIdx]=false;
             if(staff.unavailable) staff.unavailable[colIdx]=false;
-            console.log('V192: Set CLOSED for', staff.firstName, colIdx, 'original preserved', staff.originalShifts[colIdx]);
-            // V192: Create notification with siren icon for shop closed
+            // V198: CLOSED must NEVER be pending - clear any pending flags
+            window._pendingNewShiftForOffer=null;
+            window._pendingOldShiftForOffer=null;
+            if(staff.pendingOffers && staff.pendingOffers[colIdx]){
+              delete staff.pendingOffers[colIdx];
+              if(Object.keys(staff.pendingOffers).length===0) delete staff.pendingOffers;
+            }
+            console.log('V201: Set CLOSED WHOLE DAY for', wholeDayLabel, 'original preserved', staff.originalShifts[colIdx]);
+            // V201: Create notifications for ALL staff affected by shop closed whole day
             try{
               var dateObjClosed = cur && cur.dates && cur.dates[colIdx] ? cur.dates[colIdx] : {day:'', date:'', iso:''};
               var dayLabelClosed = (dateObjClosed.day||'')+' '+(dateObjClosed.date||'');
               var notifsClosed = safeGetJSON('repco_notifications_v1',[]);
-              var closedNotif = {
-                id: 'closed_'+Date.now()+'_'+Math.random().toString(36).substr(2,5),
-                type: 'shop_closed',
-                employee: staff.firstName+' '+staff.lastName,
-                targetUsername: (staff.username||staff.firstName||'').toLowerCase(),
-                date: dateObjClosed.iso||dateObjClosed.date||'',
-                formattedDate: dayLabelClosed,
-                message: '🚨 Shift '+dayLabelClosed+' - SHOP CLOSED',
-                title: '🚨 Shop Closed',
-                shiftDate: dayLabelClosed,
-                shiftIdx: colIdx,
-                timestamp: Date.now(),
-                read: false,
-                originalShift: staff.originalShifts[colIdx]||current,
-                employmentType: staff.employmentType||'casual'
-              };
-              notifsClosed.push(closedNotif);
+              var allStaffForNotif = cur.staff||[staff];
+              for(var nIdx=0; nIdx<allStaffForNotif.length; nIdx++){
+                var ns = allStaffForNotif[nIdx];
+                if(!ns) continue;
+                // Only notify those who were closed (had a shift and now CLOSED, or were already CLOSED)
+                // Check if this staff was affected in this close operation
+                var wasAffected = false;
+                if(ns.shopClosed && ns.shopClosed[colIdx]) wasAffected=true;
+                else if(ns===staff) wasAffected=true;
+                if(!wasAffected) continue;
+                // Don't duplicate notification for same user+date if already exists today
+                var existingNotif = notifsClosed.find(function(nn){
+                  return nn && nn.type==='shop_closed' && nn.targetUsername===(ns.username||ns.firstName||'').toLowerCase() && nn.date===(dateObjClosed.iso||dateObjClosed.date||'') && (Date.now()-nn.timestamp)<60000;
+                });
+                if(existingNotif) continue;
+                var closedNotif = {
+                  id: 'closed_'+Date.now()+'_'+nIdx+'_'+Math.random().toString(36).substr(2,5),
+                  type: 'shop_closed',
+                  employee: ns.firstName+' '+ns.lastName,
+                  targetUsername: (ns.username||ns.firstName||'').toLowerCase(),
+                  date: dateObjClosed.iso||dateObjClosed.date||'',
+                  formattedDate: dayLabelClosed,
+                  message: '🚨 Shift '+(ns.originalShifts && ns.originalShifts[colIdx] ? ns.originalShifts[colIdx] : (ns===staff ? (staff.originalShifts[colIdx]||current||dayLabelClosed) : dayLabelClosed))+' cancelled - SHOP CLOSED',
+                  title: '🚨 Shop Closed',
+                  shiftDate: dayLabelClosed,
+                  shiftIdx: colIdx,
+                  timestamp: Date.now(),
+                  read: false,
+                  originalShift: (ns.originalShifts && ns.originalShifts[colIdx]) ? ns.originalShifts[colIdx] : current,
+                  employmentType: ns.employmentType||'casual'
+                };
+                notifsClosed.push(closedNotif);
+              }
               safeSetJSON('repco_notifications_v1', notifsClosed);
               try{
                 if(typeof FIREBASE_DB_URL!=='undefined'){
@@ -4579,7 +4754,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   try{ window.db.ref('repco_notifications_v1').set(notifsClosed); }catch(e){}
                 }
               }catch(e){ console.log('Closed notif push error', e); }
-              toast('🚨 Notified '+staff.firstName+': Shift '+dayLabelClosed+' - SHOP CLOSED');
+              var origShiftForMsg=staff.originalShifts[colIdx]||current||dayLabelClosed;
+              toast('🚨 Notified '+staff.firstName+': Shift '+origShiftForMsg+' cancelled - SHOP CLOSED');
             }catch(e){ console.log('Closed notification error', e); }
           } else if(isGreen){
             if(!staff.cellGreen) staff.cellGreen=[];
@@ -5291,8 +5467,9 @@ function showMain(){
     try{ if(typeof applyRoleVisibility==='function') try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){ console.log('applyRoleVisibility in showMain', e); }
   }catch(e){ console.error('showMain', e); }
 }
-function toggleMobileMenu(){
+function toggleMobileMenu(e){
   try{
+    if(e){ try{ e.preventDefault(); e.stopPropagation(); }catch(err){} }
     var gh=document.getElementById('global-header');
     var btn=document.getElementById('mobile-menu-toggle');
     if(!gh){
@@ -5304,6 +5481,14 @@ function toggleMobileMenu(){
       gh.classList.remove('mobile-open');
       if(btn) btn.textContent='☰';
       console.log('Mobile menu closed');
+      // Reset padding
+      setTimeout(function(){
+        try{
+          document.querySelectorAll('.full-page.show, #repco-v65.show').forEach(function(el){
+            el.style.paddingTop='70px';
+          });
+        }catch(err){}
+      },50);
     } else {
       gh.classList.add('mobile-open');
       if(btn) btn.textContent='✕';
@@ -5313,31 +5498,34 @@ function toggleMobileMenu(){
         var btns=gh.querySelector('.r-btns-consistent');
         if(btns) btns.scrollTop=0;
       }, 100);
+      // Recalculate page padding for all visible pages
+      setTimeout(function(){
+        try{
+          var headerHeight=gh.offsetHeight||60;
+          document.querySelectorAll('.full-page.show, #repco-v65.show').forEach(function(el){
+            el.style.paddingTop=(headerHeight+10)+'px';
+          });
+        }catch(err){}
+      },50);
     }
-    // Recalculate page padding for all visible pages
-    setTimeout(function(){
-      try{
-        var headerHeight=gh.offsetHeight||60;
-        document.querySelectorAll('.full-page.show, #repco-v65.show').forEach(function(el){
-          el.style.paddingTop=(headerHeight+10)+'px';
-        });
-      }catch(e){}
-    },50);
-  }catch(e){ console.error('toggleMobileMenu error', e); }
+  }catch(err){ console.error('toggleMobileMenu error', err); }
 }
-// FIXED V174: Close mobile menu when tapping outside or selecting a page
+// FIXED V174: Close mobile menu when tapping outside or selecting a page - V199: Fixed mobile tap handling
 document.addEventListener('click', function(e){
   try{
     var gh=document.getElementById('global-header');
     var btn=document.getElementById('mobile-menu-toggle');
     if(!gh || !btn) return;
     if(!gh.classList.contains('mobile-open')) return;
+    // Don't close if clicking the toggle button itself (handled by toggleMobileMenu)
+    if(e.target && (e.target.id==='mobile-menu-toggle' || e.target.closest('#mobile-menu-toggle'))) return;
     // If click is outside header, close menu
     if(!gh.contains(e.target)){
       gh.classList.remove('mobile-open');
       btn.textContent='☰';
+      console.log('Mobile menu closed via outside tap');
     }
-  }catch(e){}
+  }catch(err){}
 });
 
 
@@ -10150,14 +10338,43 @@ function renderMySchedule(){
     }
     var cur=foundToday||curForToday;
     var myStaff=null;
-    for(var ff=0;ff<fnsAll.length;ff++){
-      var fnn=fnsAll[ff];
-      var ms=findMyStaff(fnn);
-      if(ms){ if(!myStaff) myStaff=ms; }
-    }
-    if(!myStaff) myStaff=findMyStaff(cur);
+    // V199: Mobile fix - try multiple methods to find staff
+    try{
+      for(var ff=0;ff<fnsAll.length;ff++){
+        var fnn=fnsAll[ff];
+        var ms=findMyStaff(fnn);
+        if(ms){ if(!myStaff) myStaff=ms; break; }
+      }
+      if(!myStaff) myStaff=findMyStaff(cur);
+      // Fallback: direct username match if findMyStaff fails (mobile localStorage timing)
+      if(!myStaff){
+        var unameFallback=(safeGet('repco_username')||'').toLowerCase().trim();
+        console.log('V199 MySchedule: findMyStaff failed, trying fallback for', unameFallback);
+        for(var ff2=0; ff2<fnsAll.length; ff2++){
+          var fnn2=fnsAll[ff2];
+          if(!fnn2.staff) continue;
+          for(var ss=0; ss<fnn2.staff.length; ss++){
+            var s=fnn2.staff[ss];
+            if(!s) continue;
+            var full=(s.firstName+' '+s.lastName).toLowerCase();
+            var first=(s.firstName||'').toLowerCase();
+            var user=(s.username||'').toLowerCase();
+            if(full===unameFallback || first===unameFallback || user===unameFallback || full.indexOf(unameFallback)!==-1 || unameFallback.indexOf(first)!==-1){
+              myStaff=s;
+              console.log('V199 MySchedule: Found via fallback', s.firstName, s.lastName);
+              break;
+            }
+          }
+          if(myStaff) break;
+        }
+      }
+      // Last resort: try current fortnight staff first entry if still not found (debug)
+      if(!myStaff && fnsAll.length>0 && fnsAll[0].staff && fnsAll[0].staff.length>0){
+        console.log('V199 MySchedule: Still not found, fnsAll has', fnsAll.length, 'fortnights');
+      }
+    }catch(e){ console.log('V199 MySchedule find error', e); }
     if(!myStaff){
-      el.innerHTML='<div class="card">Could not find your staff record - username: '+safeGet('repco_username')+'</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">BACK TO ROSTER</button></div>';
+      el.innerHTML='<div class="card" style="background:#FFF3E0;border:3px solid #E30613;padding:12px"><div style="font-weight:900">Could not find your staff record</div><div style="font-size:11px;margin-top:6px">Username: '+safeGet('repco_username')+'<br>Trying to reload data...<br><br>Please check you are logged in as staff, not admin.</div></div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:12px;font-weight:900;width:100%">BACK TO ROSTER</button><button onclick="location.reload()" style="background:#E30613;color:#fff;border-radius:9999px;padding:12px;font-weight:900;width:100%;margin-top:8px">RELOAD PAGE</button></div>';
       return;
     }
     var now=new Date();
