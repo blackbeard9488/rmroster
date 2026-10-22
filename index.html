@@ -919,7 +919,7 @@ function getISO(){
 
 
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
-const MEMORY_STORE={};
+window.MEMORY_STORE = window.MEMORY_STORE || {}; var MEMORY_STORE = window.MEMORY_STORE;
 function safeGet(k){try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:null;}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){}MEMORY_STORE[k]=v; if(CLOUD_KEYS.includes(k) && !suppressCloudSave) cloudSave(); }
 function safeGetJSON(k,def){const r=safeGet(k);if(!r)return def;try{return JSON.parse(r);}catch(e){return def;}}
@@ -12395,8 +12395,185 @@ function renderRequestsSafe(){try{renderRequests();}catch(e){}}
 function renderRequests(){var el=document.getElementById('requests-list'); if(!el) return; var reqs=safeGetJSON('retail_roster_requests_v2',[]); var offers=safeGetJSON('retail_roster_shift_offers_v1',[]); var all=[]; if(Array.isArray(reqs)) all=all.concat(reqs); if(Array.isArray(offers)) all=all.concat(offers); if(all.length===0){el.innerHTML='<div class="small">No requests - LIVE SYNC Firebase SDK on(value) REST 1.2s</div>'; return;} var finalTsByDate={}; all.forEach(function(r){if(r.status==='approved'||r.status==='denied'){var dates=r.dates||[r.dateLabel||r.shiftDate||'']; dates.forEach(function(d){if(!d) return; var key=(r.username||'')+'|'+d; var ts=r.deniedTs||r.approvedTs||r.ts||0; if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;});}}); var html=''; all.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).forEach(function(r){var datesStr=r.dates?r.dates.join(', '):(r.dateLabel||r.shiftDate||''); html+='<div class="list-item"><div><b>'+(r.username||'')+'</b> - '+(r.type||'')+' - '+datesStr+'<br><span class="small">'+(r.reason||r.newShift||'')+' ts:'+(r.ts||0)+' deniedTs:'+(r.deniedTs||0)+' approvedTs:'+(r.approvedTs||0)+'</span> <span class="badge '+r.status+'">'+r.status+'</span></div><div><button class="btn-grey" onclick="approveRequest(\''+r.id+'\')">Approve</button><button class="btn-grey" onclick="denyRequest(\''+r.id+'\')">Deny</button><button class="btn-grey" onclick="deleteRequest(\''+r.id+'\')">Delete</button></div></div>';}); el.innerHTML=html; updateRequestsBadge();}
 function approveRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var all=reqs; var r=all.find(function(x){return x.id===id;}); if(!r) return; r.status='approved'; r.approvedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); renderRosterSafe(); cloudSave(); toast('Approved finalTsByDate');}
 function denyRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var r=reqs.find(function(x){return x.id===id;}); if(!r) return; r.status='denied'; r.deniedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); cloudSave(); toast('Denied resubmit allowed Daniel fix');}
-function deleteRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); reqs=reqs.filter(function(x){return x.id!==id;}); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); updateRequestsBadge(); cloudSave(); toast('Deleted');}
-(function setupLiveSync(){try{if(db&&db.ref){db.ref('repco_state').on('value',function(snap){var val=snap.val(); if(!val) return; var lt=parseInt(safeGet('repco_cloud_ts','0')||'0'); var rt=val._ts||0; if(rt>lt){Object.keys(val).forEach(function(k){if(k.indexOf('_')===0) return; safeSetJSON(k,val[k]);}); safeSet('repco_cloud_ts',String(rt)); try{renderRosterSafe(); renderRequestsSafe();}catch(e){}}});}}catch(e){} setInterval(async function(){try{var r1=await fetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'}); if(r1.ok){var data=await r1.json(); if(data&&data._ts){var lt=parseInt(safeGet('repco_cloud_ts','0')||'0'); if(data._ts>lt){var cloudReqs=data['retail_roster_requests_v2']||[]; var localReqs=safeGetJSON('retail_roster_requests_v2',[]); var finalTsByDate={}; var merged=cloudReqs.concat(localReqs); merged.forEach(function(r){if(r.status==='approved'||r.status==='denied'){var dates=r.dates||[r.dateLabel||r.shiftDate||'']; dates.forEach(function(d){var key=(r.username||'')+'|'+d; var ts=r.deniedTs||r.approvedTs||r.ts||0; if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;});}}); var seen={}; var filtered=[]; merged.forEach(function(r){var id=r.id; if(!seen[id]){seen[id]=r; filtered.push(r);} else {if(r.status==='pending'&& (seen[id].status==='denied'||seen[id].status==='approved')){var pts=r.ts||0; var fts=0; var dates=r.dates||[r.dateLabel||r.shiftDate||'']; for(var i=0;i<dates.length;i++){var k=(r.username||'')+'|'+dates[i]; if(finalTsByDate[k]&&finalTsByDate[k]>fts) fts=finalTsByDate[k];} if(pts>fts){seen[id]=r; for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}}} else {if(r.status!=='pending'){seen[id]=r; for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}}}}}); var finalFiltered=[]; filtered.forEach(function(x){if(x.status!=='pending'){finalFiltered.push(x); return;} var dates=x.dates||[x.dateLabel||x.shiftDate||'']; var isOld=false; for(var i=0;i<dates.length;i++){var k=(x.username||'')+'|'+dates[i]; var fts=finalTsByDate[k]||0; var pts=x.ts||0; if(fts>0&&pts<=fts){isOld=true; break;}} if(!isOld) finalFiltered.push(x);}); Object.keys(data).forEach(function(k){if(k.indexOf('_')!==0&&k!=='retail_roster_requests_v2') safeSetJSON(k,data[k]);}); safeSetJSON('retail_roster_requests_v2',finalFiltered); safeSet('repco_cloud_ts',String(data._ts)); renderRosterSafe(); renderRequestsSafe(); updateRequestsBadge();}}}, {cache:'no-store'}); }catch(e){}},1200);})();
+function deleteRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); reqs=reqs.filter(function(x){return x.id!==id;}); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); updateRequestsBadge(); cloudSave(); toast('Deleted');};
+
+;(function setupLiveSync(){
+  try{
+    if(db&&db.ref){
+      db.ref('repco_state').on('value',function(snap){
+        var val=snap.val();
+        if(!val) return;
+        var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
+        var rt=val._ts||0;
+        if(rt>lt){
+          Object.keys(val).forEach(function(k){if(k.indexOf('_')===0) return; safeSetJSON(k,val[k]);});
+          safeSet('repco_cloud_ts',String(rt));
+          try{renderRosterSafe(); renderRequestsSafe();}catch(e){}
+        }
+      });
+    }
+  }catch(e){}
+  setInterval(async function(){
+    try{
+      var r1=await fetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
+      if(r1.ok){
+        var data=await r1.json();
+        if(data&&data._ts){
+          var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
+          if(data._ts>lt){
+            var cloudReqs=data['retail_roster_requests_v2']||[];
+            var localReqs=safeGetJSON('retail_roster_requests_v2',[]);
+            var finalTsByDate={};
+            var merged=cloudReqs.concat(localReqs);
+            merged.forEach(function(r){
+              if(r.status==='approved'||r.status==='denied'){
+                var dates=r.dates||[r.dateLabel||r.shiftDate||''];
+                dates.forEach(function(d){
+                  var key=(r.username||'')+'|'+d;
+                  var ts=r.deniedTs||r.approvedTs||r.ts||0;
+                  if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;
+                });
+              }
+            });
+            var seen={};
+            var filtered=[];
+            merged.forEach(function(r){
+              var id=r.id;
+              if(!seen[id]){
+                seen[id]=r; filtered.push(r);
+              }else{
+                if(r.status==='pending'&& (seen[id].status==='denied'||seen[id].status==='approved')){
+                  var pts=r.ts||0; var fts=0;
+                  var dates=r.dates||[r.dateLabel||r.shiftDate||''];
+                  for(var i=0;i<dates.length;i++){
+                    var k=(r.username||'')+'|'+dates[i];
+                    if(finalTsByDate[k]&&finalTsByDate[k]>fts) fts=finalTsByDate[k];
+                  }
+                  if(pts>fts){
+                    seen[id]=r;
+                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
+                  }
+                }else{
+                  if(r.status!=='pending'){
+                    seen[id]=r;
+                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
+                  }
+                }
+              }
+            });
+            var finalFiltered=[];
+            filtered.forEach(function(x){
+              if(x.status!=='pending'){finalFiltered.push(x); return;}
+              var dates=x.dates||[x.dateLabel||x.shiftDate||''];
+              var isOld=false;
+              for(var i=0;i<dates.length;i++){
+                var k=(x.username||'')+'|'+dates[i];
+                var fts=finalTsByDate[k]||0;
+                var pts=x.ts||0;
+                if(fts>0&&pts<=fts){isOld=true; break;}
+              }
+              if(!isOld) finalFiltered.push(x);
+            });
+            Object.keys(data).forEach(function(k){if(k.indexOf('_')!==0&&k!=='retail_roster_requests_v2') safeSetJSON(k,data[k]);});
+            safeSetJSON('retail_roster_requests_v2',finalFiltered);
+            safeSet('repco_cloud_ts',String(data._ts));
+            renderRosterSafe(); renderRequestsSafe(); updateRequestsBadge();
+          }
+        }
+      }
+    }catch(e){}
+  },1200);
+})();
+
+
+;(function setupLiveSync(){
+  try{
+    if(db&&db.ref){
+      db.ref('repco_state').on('value',function(snap){
+        var val=snap.val();
+        if(!val) return;
+        var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
+        var rt=val._ts||0;
+        if(rt>lt){
+          Object.keys(val).forEach(function(k){if(k.indexOf('_')===0) return; safeSetJSON(k,val[k]);});
+          safeSet('repco_cloud_ts',String(rt));
+          try{renderRosterSafe(); renderRequestsSafe();}catch(e){}
+        }
+      });
+    }
+  }catch(e){}
+  setInterval(async function(){
+    try{
+      var r1=await fetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
+      if(r1.ok){
+        var data=await r1.json();
+        if(data&&data._ts){
+          var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
+          if(data._ts>lt){
+            var cloudReqs=data['retail_roster_requests_v2']||[];
+            var localReqs=safeGetJSON('retail_roster_requests_v2',[]);
+            var finalTsByDate={};
+            var merged=cloudReqs.concat(localReqs);
+            merged.forEach(function(r){
+              if(r.status==='approved'||r.status==='denied'){
+                var dates=r.dates||[r.dateLabel||r.shiftDate||''];
+                dates.forEach(function(d){
+                  var key=(r.username||'')+'|'+d;
+                  var ts=r.deniedTs||r.approvedTs||r.ts||0;
+                  if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;
+                });
+              }
+            });
+            var seen={};
+            var filtered=[];
+            merged.forEach(function(r){
+              var id=r.id;
+              if(!seen[id]){
+                seen[id]=r; filtered.push(r);
+              }else{
+                if(r.status==='pending'&& (seen[id].status==='denied'||seen[id].status==='approved')){
+                  var pts=r.ts||0; var fts=0;
+                  var dates=r.dates||[r.dateLabel||r.shiftDate||''];
+                  for(var i=0;i<dates.length;i++){
+                    var k=(r.username||'')+'|'+dates[i];
+                    if(finalTsByDate[k]&&finalTsByDate[k]>fts) fts=finalTsByDate[k];
+                  }
+                  if(pts>fts){
+                    seen[id]=r;
+                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
+                  }
+                }else{
+                  if(r.status!=='pending'){
+                    seen[id]=r;
+                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
+                  }
+                }
+              }
+            });
+            var finalFiltered=[];
+            filtered.forEach(function(x){
+              if(x.status!=='pending'){finalFiltered.push(x); return;}
+              var dates=x.dates||[x.dateLabel||x.shiftDate||''];
+              var isOld=false;
+              for(var i=0;i<dates.length;i++){
+                var k=(x.username||'')+'|'+dates[i];
+                var fts=finalTsByDate[k]||0;
+                var pts=x.ts||0;
+                if(fts>0&&pts<=fts){isOld=true; break;}
+              }
+              if(!isOld) finalFiltered.push(x);
+            });
+            Object.keys(data).forEach(function(k){if(k.indexOf('_')!==0&&k!=='retail_roster_requests_v2') safeSetJSON(k,data[k]);});
+            safeSetJSON('retail_roster_requests_v2',finalFiltered);
+            safeSet('repco_cloud_ts',String(data._ts));
+            renderRosterSafe(); renderRequestsSafe(); updateRequestsBadge();
+          }
+        }
+      }
+    }catch(e){}
+  },1200);
+})();
+
 function renderUnavailCalendar(){var el=document.getElementById('unavail-calendar'); if(!el) return; var dates=getDatesForFortnight(getSelectedFortnight()||generateFortnightId(new Date())); var html=''; dates.forEach(function(iso){var sel=selectedUnavailDates.has(iso)?'selected':''; html+='<div class="cal-day '+sel+'" onclick="toggleUnavailDate(\''+iso+'\')">'+getDDMM(iso)+'</div>';}); el.innerHTML=html; updateSelectedUnavailDisplay();}
 function toggleUnavailDate(iso){if(selectedUnavailDates.has(iso)) selectedUnavailDates.delete(iso); else selectedUnavailDates.add(iso); renderUnavailCalendar();}
 function updateSelectedUnavailDisplay(){var el=document.getElementById('selected-unavail-dates'); if(!el) return; if(selectedUnavailDates.size===0){el.textContent='No dates selected'; return;} var arr=Array.from(selectedUnavailDates).map(getDDMM); el.textContent=arr.join(', ');}
