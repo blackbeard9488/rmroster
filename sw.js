@@ -1,4 +1,4 @@
-const CACHE_NAME = "repco-v196-fix-applyrole";
+const CACHE_NAME = "repco-v203-import-confirm-fix";
 const urlsToCache = ["./","./manifest.json"];
 self.addEventListener('install', e=>{ self.skipWaiting(); e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(urlsToCache))); });
 self.addEventListener('activate', e=>{ e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>{ if(k!==CACHE_NAME && k.startsWith('repco-')) return caches.delete(k); }))).then(()=>self.clients.claim())); });

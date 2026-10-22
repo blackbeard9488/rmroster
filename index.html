@@ -435,6 +435,19 @@ button, .r-btn-consistent{
 
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
+// V203: Early fallback for showCustomConfirm to prevent ReferenceError before full definition loads
+if(typeof showCustomConfirm==='undefined'){
+  window.showCustomConfirm = function(title, body, cb){
+    try{
+      var ok=confirm(title + "\n" + (body||'').replace(/<[^>]*>/g,''));
+      if(typeof cb==='function') cb(ok);
+    }catch(e){
+      if(typeof cb==='function') cb(false);
+    }
+  };
+  try{ showCustomConfirm = window.showCustomConfirm; }catch(e){}
+}
+
 function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
 function closeAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.remove("show"); m.style.display="none"; } }
 document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=document.getElementById('admin-modal'); if(m && m.style.display==='flex') closeAdmin(); } });
@@ -786,7 +799,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V202C_ROSTER_MENU_AUTO_HIDE";
+const BUILD_ID="20261022_V203_IMPORT_CONFIRM_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -7537,8 +7550,66 @@ function importExcelFile(file){
           if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state);
         }catch(e){}
       } else {
-        // Create next/new roster option
-        showCustomConfirm('Create New Roster?', 'Found '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.<br><br>Create as new roster or update current?<br><br>Click OK to create NEW roster, Cancel to update CURRENT roster.', function(ok){
+        // Create next/new roster option - V203: fallback if showCustomConfirm not defined
+        var _confirmFn = (typeof showCustomConfirm==='function') ? showCustomConfirm : (typeof window.showCustomConfirm==='function' ? window.showCustomConfirm : null);
+        if(!_confirmFn){
+          // Fallback to native confirm
+          var ok = confirm('Create New Roster?\nFound '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.\n\nOK = Create NEW roster\nCancel = Update CURRENT roster');
+          (function(ok){
+          var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
+          if(ok){
+            var newFn={
+              id:'fn_'+Date.now(),
+              label:'14 Days - '+dates[0].date+' - '+dates[dates.length-1].date,
+              dates:dates,
+              staff:staff
+            };
+            fns2.push(newFn);
+            safeSetJSON('retail_roster_byFortnight_v1',fns2);
+            safeSet('retail_roster_currentFortnightId',newFn.id);
+            toast('Created new roster: '+newFn.label);
+            populateFortnightSelect();
+            renderRosterSafe();
+            try{ debouncedCloudSave(); }catch(e){}
+          } else {
+            var cur=getCurrentFortnight();
+            if(cur){
+              // Update current preserving admin edits
+              var fns3=safeGetJSON('retail_roster_byFortnight_v1',[]);
+              var curIdx=fns3.findIndex(function(f){return f.id===cur.id;});
+              if(curIdx!==-1){
+                // Merge logic - preserve admin edits
+                for(var si=0; si<staff.length; si++){
+                  var imp=staff[si];
+                  var exist=fns3[curIdx].staff.find(function(s){return s.lastName.toUpperCase()===imp.lastName.toUpperCase() && s.firstName.toLowerCase()===imp.firstName.toLowerCase();});
+                  if(exist){
+                    // Only update if not admin edited
+                    for(var di=0; di<imp.shifts.length && di<exist.shifts.length; di++){
+                      var adminEdited=false;
+                      if(exist.originalShifts && (exist.originalShifts[di]!==undefined)) adminEdited=true;
+                      if(exist.cellGreen && exist.cellGreen[di]) adminEdited=true;
+                      if(exist.absentApproved && exist.absentApproved[di]) adminEdited=true;
+                      if(exist.pendingOffers && exist.pendingOffers[di]) adminEdited=true;
+                      if(!adminEdited){
+                        exist.shifts[di]=imp.shifts[di];
+                      }
+                    }
+                  } else {
+                    fns3[curIdx].staff.push(imp);
+                  }
+                }
+                safeSetJSON('retail_roster_byFortnight_v1',fns3);
+                toast('Updated current roster preserving admin edits');
+                populateFortnightSelect();
+                renderRosterSafe();
+                try{ debouncedCloudSave(); }catch(e){}
+              }
+            }
+          }
+          })(ok);
+          return;
+        }
+        _confirmFn('Create New Roster?', 'Found '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.<br><br>Create as new roster or update current?<br><br>Click OK to create NEW roster, Cancel to update CURRENT roster.', function(ok){
           var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
           if(ok){
             // Create new
@@ -11617,8 +11688,7 @@ try{
     };
   }
 }catch(e){}
-
-
+try{ window.showCustomConfirm = showCustomConfirm; }catch(e){}
 function deleteMyRequest(idx){
   showCustomConfirm('Delete / Undo Request?', '<div style="font-size:11px">Delete this request?<br><br>If you made an error, you can delete and submit again.<br><br>This will remove the request permanently and sync to all devices instantly.</div>', function(confirmed){
     if(!confirmed) return;
