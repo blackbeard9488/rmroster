@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V177_YELLOW_CLICK_CANCEL";
+const BUILD_ID="20261022_V180_NO_POPUP_EDITS";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1989,22 +1989,47 @@ async function cloudLoad(){
             }
           }
         } else {
-          // Cloud offer not in local - check if we have denied/cancelled version of same employee+date
-          // If local has denied for same employee+date, don't re-add pending
+          // V178 FIX: Cloud offer not in local - check if we have denied/cancelled version of same employee+date
+          // If local has denied/cancelled for same employee+date, NEVER re-add pending - cancelled is final
           var isDuplicatePending = false;
           for(var li=0; li<localOffers.length; li++){
             var lo2 = localOffers[li];
             if(lo2 && (lo2.status==='denied' || lo2.status==='cancelled') && lo2.targetUsername===co.targetUsername && lo2.date===co.date && co.status==='pending'){
-              // Same employee+date denied before, and cloud has pending again - check timestamp
-              if(lo2.timestamp > co.timestamp || (Date.now() - lo2.timestamp) < 60000){
+              // Check any timestamp: timestamp, cancelledTs, deniedTs, acceptedTs
+              var loTime = lo2.cancelledTs || lo2.deniedTs || lo2.timestamp || 0;
+              var coTime = co.timestamp || 0;
+              // V178: Cancelled/denied ALWAYS wins over pending for same employee+date, regardless of timestamp, within 7 days
+              // This prevents pending from returning after cancel
+              if((Date.now() - loTime) < 7*24*60*60*1000){
                 isDuplicatePending = true;
-                console.log('V171: Skipping duplicate pending that was denied/cancelled', co.id, 'for', co.targetUsername, co.date);
+                console.log('V178: Skipping duplicate pending that was denied/cancelled', co.id, 'for', co.targetUsername, co.date, 'local', lo2.status, 'time', loTime);
                 break;
+              } else if(loTime > coTime || (Date.now() - loTime) < 60000){
+                isDuplicatePending = true;
+                console.log('V178: Skipping duplicate pending (timestamp check)', co.id, 'for', co.targetUsername, co.date);
+                break;
+              }
+            }
+          }
+          // V178: Also check if any local cancelled/denied exists for same employee+date, even if id different, block pending
+          if(!isDuplicatePending){
+            for(var li2=0; li2<localOffers.length; li2++){
+              var lo3 = localOffers[li2];
+              if(lo3 && (lo3.status==='denied' || lo3.status==='cancelled') && lo3.targetUsername===co.targetUsername && lo3.date===co.date && co.status==='pending'){
+                // If we have ANY cancelled/denied for this employee+date in last 7 days, block pending comeback
+                var lo3Time = lo3.cancelledTs || lo3.deniedTs || lo3.timestamp || 0;
+                if((Date.now() - lo3Time) < 7*24*60*60*1000){
+                  isDuplicatePending = true;
+                  console.log('V178: Blocking pending comeback - have cancelled/denied for same date', co.targetUsername, co.date);
+                  break;
+                }
               }
             }
           }
           if(!isDuplicatePending){
             merged.push(co);
+          } else {
+            console.log('V178: Prevented pending from returning for', co.targetUsername, co.date);
           }
         }
       });
@@ -2106,56 +2131,122 @@ async function cloudLoad(){
             var cs = cfn.staff[s];
             var ls = lfn.staff.find(function(x){ return x.username && cs.username && x.username.toLowerCase()===cs.username.toLowerCase(); });
             if(!ls || !cs.shifts) continue;
-            // If local has pending offer for this cell, keep local OFF, don't overwrite with cloud newShift
+            // V178 FIX: If local has pending offer, keep OFF, BUT check if cancelled exists for same date - if so, delete marker and force OFF
             if(ls.pendingOffers){
               for(var d in ls.pendingOffers){
                 var po = ls.pendingOffers[d];
+                if(!po) continue;
+                var dIdx = parseInt(d);
+                if(isNaN(dIdx) || !cfn.staff[s].shifts[dIdx]) continue;
+                // V178: Check if any cancelled/denied exists for same employee+date - if so, don't preserve pending, force OFF
+                var hasCancelledForThisIdx = false;
+                try{
+                  var dateForIdx = cfn.dates && cfn.dates[dIdx] ? cfn.dates[dIdx].iso : '';
+                  for(var oiC=0; oiC<offersLocal.length; oiC++){
+                    var offC = offersLocal[oiC];
+                    if(offC && (offC.status==='cancelled' || offC.status==='denied') && offC.targetUsername===cs.username.toLowerCase() && offC.date===dateForIdx){
+                      var offCTime = offC.cancelledTs || offC.deniedTs || offC.timestamp || 0;
+                      if((Date.now() - offCTime) < 7*24*60*60*1000){
+                        hasCancelledForThisIdx=true; break;
+                      }
+                    }
+                  }
+                }catch(e){}
+                if(hasCancelledForThisIdx){
+                  console.log('V178: NOT preserving pending because cancelled exists for idx', dIdx, 'forcing OFF');
+                  cfn.staff[s].shifts[dIdx] = 'OFF';
+                  if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[dIdx]){
+                    delete cfn.staff[s].pendingOffers[dIdx];
+                  }
+                  continue;
+                }
                 if(po && (po.status==='pending' || po.status==='denied' || po.status==='cancelled')){
-                  var dIdx = parseInt(d);
-                  if(!isNaN(dIdx) && cfn.staff[s].shifts[dIdx]){
-                    var cloudShift = cfn.staff[s].shifts[dIdx];
-                    // If cloud has newShift posted but local is OFF (pending/denied), keep OFF
-                    if(cloudShift!==ls.shifts[dIdx] && (cloudShift===po.newShift || po.status==='denied')){
-                      console.log('V171: Preserving local OFF (pending/denied), not overwriting with cloud posted', ls.username, 'day', d, 'cloud', cloudShift, 'local', ls.shifts[dIdx], 'pending', po.newShift, 'status', po.status);
-                      cfn.staff[s].shifts[dIdx] = ls.shifts[dIdx]; // Keep local OFF
-                      if(po.status==='pending'){
+                  var cloudShift = cfn.staff[s].shifts[dIdx];
+                  if(cloudShift!==ls.shifts[dIdx] && (cloudShift===po.newShift || po.status==='denied')){
+                    console.log('V178: Preserving local OFF (pending/denied)', ls.username, 'day', d, 'cloud', cloudShift, 'local', ls.shifts[dIdx], 'pending', po.newShift, 'status', po.status);
+                    cfn.staff[s].shifts[dIdx] = ls.shifts[dIdx];
+                    if(po.status==='pending'){
+                      // Double-check no cancelled exists before restoring pending marker
+                      if(!hasCancelledForThisIdx){
                         if(!cfn.staff[s].pendingOffers) cfn.staff[s].pendingOffers={};
                         cfn.staff[s].pendingOffers[dIdx] = po;
-                      } else {
-                        // Denied/cancelled - ensure no pending marker and OFF
-                        if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[dIdx]){
-                          delete cfn.staff[s].pendingOffers[dIdx];
-                        }
+                      }
+                    } else {
+                      if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[dIdx]){
+                        delete cfn.staff[s].pendingOffers[dIdx];
                       }
                     }
                   }
                 }
               }
             }
-            // Also check global offers - if local has pending/denied and cloud shows newShift, preserve OFF
-            for(var oi=0; oi<offersLocal.length; oi++){
-              var off = offersLocal[oi];
-              if(off && (off.status==='pending' || off.status==='denied' || off.status==='cancelled') && off.targetUsername===cs.username.toLowerCase()){
-                var cfnDate = cfn.dates ? cfn.dates.findIndex(function(dd){ return dd.iso===off.date; }) : -1;
-                if(cfnDate!==-1){
-                  var cloudShiftForCheck = cfn.staff[s].shifts[cfnDate];
-                  if(cloudShiftForCheck===off.newShift && off.status==='pending'){
-                    var localShiftForDate = ls.shifts[cfnDate]||'OFF';
-                    if(localShiftForDate.toUpperCase()==='OFF' || localShiftForDate===''){
-                      console.log('V171: Roster poll preserving OFF for pending', off.targetUsername, off.date);
-                      cfn.staff[s].shifts[cfnDate] = localShiftForDate;
-                      if(!cfn.staff[s].pendingOffers) cfn.staff[s].pendingOffers={};
-                      cfn.staff[s].pendingOffers[cfnDate] = {offerId: off.id, status: 'pending', newShift: off.newShift, oldShift: off.oldShift};
-                    }
-                  } else if(off.status==='denied' || off.status==='cancelled'){
-                    // If denied/cancelled, ensure roster is OFF, not newShift
-                    if(cloudShiftForCheck===off.newShift){
-                      console.log('V171: Roster poll fixing denied/cancelled - cloud shows', off.newShift, 'but should be OFF for', off.targetUsername, off.date);
-                      cfn.staff[s].shifts[cfnDate] = off.oldShift||'OFF';
-                      if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[cfnDate]){
-                        delete cfn.staff[s].pendingOffers[cfnDate];
+            // V178 FIX: Check global offers - if local has pending and cloud shows newShift, preserve OFF, BUT if cancelled/denied, ALWAYS force OFF and delete marker
+            // First, check if any cancelled/denied exists for this staff+date - if so, force OFF and never restore pending
+            var hasCancelledForDate = false;
+            for(var oiCheck=0; oiCheck<offersLocal.length; oiCheck++){
+              var offCheck = offersLocal[oiCheck];
+              if(offCheck && (offCheck.status==='cancelled' || offCheck.status==='denied') && offCheck.targetUsername===cs.username.toLowerCase()){
+                var cfnDateCheck = cfn.dates ? cfn.dates.findIndex(function(dd){ return dd.iso===offCheck.date; }) : -1;
+                if(cfnDateCheck!==-1 && cfnDateCheck===cfn.dates.findIndex(function(dd){ return dd.iso===cs.date || true; })){
+                  // Will check actual date below
+                }
+                if(offCheck.date && cfn.dates){
+                  for(var cd=0; cd<cfn.dates.length; cd++){
+                    if(cfn.dates[cd].iso===offCheck.date){
+                      if((Date.now() - (offCheck.cancelledTs||offCheck.deniedTs||offCheck.timestamp||0)) < 7*24*60*60*1000){
+                        // Mark for later - check in loop below
                       }
                     }
+                  }
+                }
+              }
+            }
+            for(var oi=0; oi<offersLocal.length; oi++){
+              var off = offersLocal[oi];
+              if(!off || !off.targetUsername) continue;
+              if(off.targetUsername!==cs.username.toLowerCase()) continue;
+              var cfnDate = cfn.dates ? cfn.dates.findIndex(function(dd){ return dd.iso===off.date; }) : -1;
+              if(cfnDate===-1) continue;
+              var cloudShiftForCheck = cfn.staff[s].shifts[cfnDate];
+              if(off.status==='pending'){
+                // V178: Only preserve pending if NO cancelled/denied exists for same employee+date
+                var hasCancelledForThisDate = false;
+                for(var oi2=0; oi2<offersLocal.length; oi2++){
+                  var off2 = offersLocal[oi2];
+                  if(off2 && (off2.status==='cancelled' || off2.status==='denied') && off2.targetUsername===off.targetUsername && off2.date===off.date){
+                    var off2Time = off2.cancelledTs || off2.deniedTs || off2.timestamp || 0;
+                    if((Date.now() - off2Time) < 7*24*60*60*1000){
+                      hasCancelledForThisDate=true; break;
+                    }
+                  }
+                }
+                if(hasCancelledForThisDate){
+                  console.log('V178: Roster poll - NOT preserving pending because cancelled exists for', off.targetUsername, off.date);
+                  // Force OFF and delete marker
+                  if(cloudShiftForCheck===off.newShift || (cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[cfnDate])){
+                    console.log('V178: Fixing - cloud shows', cloudShiftForCheck, 'but cancelled exists, forcing OFF');
+                    cfn.staff[s].shifts[cfnDate] = off.oldShift||'OFF';
+                    if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[cfnDate]){
+                      delete cfn.staff[s].pendingOffers[cfnDate];
+                    }
+                  }
+                } else if(cloudShiftForCheck===off.newShift){
+                  var localShiftForDate = ls.shifts[cfnDate]||'OFF';
+                  if(localShiftForDate.toUpperCase()==='OFF' || localShiftForDate===''){
+                    console.log('V178: Roster poll preserving OFF for pending', off.targetUsername, off.date);
+                    cfn.staff[s].shifts[cfnDate] = localShiftForDate;
+                    if(!cfn.staff[s].pendingOffers) cfn.staff[s].pendingOffers={};
+                    cfn.staff[s].pendingOffers[cfnDate] = {offerId: off.id, status: 'pending', newShift: off.newShift, oldShift: off.oldShift};
+                  }
+                }
+              } else if(off.status==='denied' || off.status==='cancelled'){
+                // V178: If denied/cancelled, ALWAYS ensure roster is OFF, not newShift, and delete pending marker
+                if(cloudShiftForCheck===off.newShift || (cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[cfnDate])){
+                  console.log('V178: Roster poll fixing denied/cancelled - cloud shows', cloudShiftForCheck, 'but should be OFF for', off.targetUsername, off.date, 'status', off.status);
+                  cfn.staff[s].shifts[cfnDate] = off.oldShift||'OFF';
+                  if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[cfnDate]){
+                    delete cfn.staff[s].pendingOffers[cfnDate];
+                    console.log('V178: Deleted pending marker for cancelled', off.targetUsername, cfnDate);
                   }
                 }
               }
@@ -2278,7 +2369,7 @@ function restoreEditDraftIfNeeded(){
     // Only auto-restore for managers and only if not a fresh login popup spam
     if(!isManagerRole(getActualRole())) { clearEditDraft(); return; }
     // Silently restore to in-cell draft, don't show modal popup
-    toast('Restored unsaved draft: '+(draft.staffName||'')+' '+(draft.dateLabel||'')+' = '+draft.value);
+    console.log('V180: Restored unsaved draft: '+(draft.staffName||'')+' '+(draft.dateLabel||'')+' = '+draft.value);
     // Don't show the modal popup, just keep draft for when they click the cell again
   }catch(e){ console.error('restoreEditDraftIfNeeded', e); }
 }
@@ -3679,40 +3770,59 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
     }
     doEditCell();
     function doEditCell(){
-      // V177 FIX: If cell is yellow pending (01:00-02:00 ⏳), clicking it should directly cancel pending - no need to backspace
+      // V179 FIX: Yellow pending cells (01:00-02:00 ⏳) MUST show confirmation dialog - robust detection
       try{
         var pendingCheckDateISO = cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso || cur.dates[colIdx].date || '') : '';
         var pendingCheckUsername = (staff.username||'').toLowerCase() || (staff.firstName||'').toLowerCase();
+        var elText = (el.textContent||'').trim();
+        var elClass = (el.className||'')+'';
+        var origClassStr = (typeof origClass!=='undefined' ? origClass : '')+'';
+        // V179: Detect yellow by multiple signals - class, ⏳, pendingOffers marker, or global offers
         var isYellowPending = false;
         var yellowPendingOffer = null;
-        // Check staff.pendingOffers marker
-        if(staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
+        
+        // Signal 1: Visual - cell has ⏳ or yellow class
+        if(elText.indexOf('⏳')!==-1 || elClass.indexOf('cell-pending')!==-1 || origClassStr.indexOf('cell-pending')!==-1){
+          isYellowPending = true;
+          console.log('V179: Yellow detected via visual ⏳/class', elText, elClass);
+        }
+        // Signal 2: staff.pendingOffers marker
+        if(!isYellowPending && staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
           isYellowPending = true;
           yellowPendingOffer = staff.pendingOffers[colIdx];
+          console.log('V179: Yellow detected via staff.pendingOffers', yellowPendingOffer.newShift);
         }
-        // Check fns
+        // Signal 3: Check fns for pending marker
         if(!isYellowPending){
           try{
             var fnsCheck = safeGetJSON('retail_roster_byFortnight_v1',[]);
             for(var fc=0; fc<fnsCheck.length; fc++){
               var fnC = fnsCheck[fc];
               if(!fnC.dates || !fnC.staff) continue;
-              var dIdxC = fnC.dates.findIndex(function(d){ return d.iso===pendingCheckDateISO || d.date===pendingCheckDateISO; });
+              var dIdxC = -1;
+              for(var di=0; di<fnC.dates.length; di++){
+                if(fnC.dates[di].iso===pendingCheckDateISO || fnC.dates[di].date===pendingCheckDateISO){ dIdxC=di; break; }
+                if(fnC.dates[di].iso && pendingCheckDateISO && fnC.dates[di].iso.substring(0,10)===pendingCheckDateISO.substring(0,10)){ dIdxC=di; break; }
+              }
               if(dIdxC===-1) continue;
               for(var sc=0; sc<fnC.staff.length; sc++){
                 if(fnC.staff[sc].username && fnC.staff[sc].username.toLowerCase()===pendingCheckUsername){
-                  if(fnC.staff[sc].pendingOffers && fnC.staff[sc].pendingOffers[dIdxC] && fnC.staff[sc].pendingOffers[dIdxC].status==='pending'){
-                    isYellowPending = true;
-                    yellowPendingOffer = fnC.staff[sc].pendingOffers[dIdxC];
-                    break;
+                  if(fnC.staff[sc].pendingOffers && fnC.staff[sc].pendingOffers[dIdxC]){
+                    var po = fnC.staff[sc].pendingOffers[dIdxC];
+                    if(po && (po.status==='pending' || po.status===undefined)){
+                      isYellowPending = true;
+                      yellowPendingOffer = po;
+                      console.log('V179: Yellow detected via fns pendingOffers', po.newShift);
+                      break;
+                    }
                   }
                 }
               }
               if(isYellowPending) break;
             }
-          }catch(e){}
+          }catch(e){ console.log('V179 fns check error', e); }
         }
-        // Check global offers
+        // Signal 4: Check global offers array
         if(!isYellowPending){
           try{
             var offersCheck = safeGetJSON('retail_roster_shift_offers_v1',[]);
@@ -3721,36 +3831,65 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               if(oC && oC.status==='pending'){
                 var uM = oC.targetUsername && oC.targetUsername.toLowerCase()===pendingCheckUsername;
                 var dM = oC.date===pendingCheckDateISO || (oC.date && pendingCheckDateISO && oC.date.substring(0,10)===pendingCheckDateISO.substring(0,10));
-                if(uM && dM){ isYellowPending=true; yellowPendingOffer=oC; break; }
+                if(uM && dM){ isYellowPending=true; yellowPendingOffer=oC; console.log('V179: Yellow detected via global offers', oC.newShift); break; }
               }
             }
-          }catch(e){}
+          }catch(e){ console.log('V179 offers check error', e); }
         }
-        // Also check visual class
-        if(!isYellowPending && el && el.className && el.className.indexOf('cell-pending')!==-1){
-          isYellowPending = true;
-        }
+        
         if(isYellowPending){
-          console.log('V177: Yellow pending cell clicked - showing cancel dialog for', staff.firstName, pendingCheckDateISO, yellowPendingOffer?yellowPendingOffer.newShift:'?');
-          var pendingTime = yellowPendingOffer ? (yellowPendingOffer.newShift||'') : (el.textContent||'').replace('⏳','').trim();
-          // Show confirm to cancel
-          if(typeof showCustomConfirm==='function'){
-            showCustomConfirm('Cancel Pending Shift?', '<div style="font-size:13px;text-align:center;padding:10px">This cell is pending: <b>'+pendingTime+'</b><br><br>For '+staff.firstName+' '+staff.lastName+' on '+(cur.dates[colIdx].day+' '+cur.dates[colIdx].date)+'<br><br>Do you want to <b>CANCEL</b> this pending offer?<br><br><span style="color:#666;font-size:11px">Clicking YES will remove yellow and set to OFF, and delete notification from employee phone.</span></div>', function(confirmed){
-              if(!confirmed) return;
-              console.log('V177: User confirmed cancel of yellow cell');
+          var pendingTime = yellowPendingOffer ? (yellowPendingOffer.newShift||'') : elText.replace('⏳','').trim();
+          if(!pendingTime || pendingTime==='OFF' || pendingTime==='') pendingTime = elText.replace('⏳','').trim() || 'pending shift';
+          console.log('V179: YELLOW CELL CLICKED - Showing cancel confirmation for', staff.firstName, pendingCheckDateISO, pendingTime);
+          
+          // V179: Ensure modal exists, if not create fallback
+          var modalEl = document.getElementById('custom-modal');
+          if(!modalEl){
+            console.log('V179: custom-modal not found, using native confirm');
+            if(confirm('Cancel pending shift '+pendingTime+' for '+staff.firstName+' '+staff.lastName+' on '+(cur.dates[colIdx].day+' '+cur.dates[colIdx].date)+'?\n\nClick OK to CANCEL and set to OFF')){
+              console.log('V179: Native confirm YES');
               try{
                 window._pendingNewShiftForOffer=null;
                 window._pendingOldShiftForOffer=null;
-                // Cancel via function
                 if(typeof cancelPendingOffersForCell==='function'){
                   cancelPendingOffersForCell(pendingCheckUsername, pendingCheckDateISO, 'Admin cancelled yellow pending '+pendingTime+' via click');
+                }
+                renderRosterSafe();
+                console.log('V180: Pending cancelled '+pendingTime+' - no popup');
+              }catch(e){ console.log('V179 cancel error', e); }
+            }
+            return;
+          }
+          
+          // Use custom confirm with very visible styling
+          if(typeof showCustomConfirm==='function'){
+            var confirmHtml = '<div style="font-size:14px;text-align:center;padding:12px;line-height:1.4">'
+              + '<div style="background:#FFEB3B;border:3px solid #111;border-radius:8px;padding:10px;margin-bottom:12px;font-weight:900;font-size:16px">⏳ '+pendingTime+'</div>'
+              + '<div>For <b>'+staff.firstName+' '+staff.lastName+'</b><br>on <b>'+(cur.dates[colIdx].day+' '+cur.dates[colIdx].date)+'</b></div>'
+              + '<div style="margin-top:12px;font-weight:900;color:#E30613">Do you want to CANCEL this pending offer?</div>'
+              + '<div style="margin-top:8px;font-size:11px;color:#666">YES = Remove yellow, set to OFF, delete notification from employee phone<br>NO = Keep pending</div>'
+              + '</div>';
+            console.log('V179: Calling showCustomConfirm');
+            showCustomConfirm('Cancel Pending Shift?', confirmHtml, function(confirmed){
+              console.log('V179: Confirm callback', confirmed);
+              if(!confirmed){
+                console.log('V179: User chose NO, keeping pending');
+                return;
+              }
+              console.log('V179: User confirmed YES, cancelling');
+              try{
+                window._pendingNewShiftForOffer=null;
+                window._pendingOldShiftForOffer=null;
+                // V178: Use cancel function that blocks return
+                if(typeof cancelPendingOffersForCell==='function'){
+                  cancelPendingOffersForCell(pendingCheckUsername, pendingCheckDateISO, 'Admin cancelled yellow pending '+pendingTime+' via click - V179');
                 } else {
-                  // Fallback inline
                   var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
                   for(var i=0;i<offers.length;i++){
-                    if(offers[i].targetUsername===pendingCheckUsername && offers[i].date===pendingCheckDateISO && offers[i].status==='pending'){
+                    if(offers[i].targetUsername===pendingCheckUsername && (offers[i].date===pendingCheckDateISO || offers[i].date.substring(0,10)===pendingCheckDateISO.substring(0,10)) && offers[i].status==='pending'){
                       offers[i].status='cancelled';
                       offers[i].cancelledTs=Date.now();
+                      offers[i].cancelledBy=safeGet('repco_username')||'admin';
                     }
                   }
                   safeSetJSON('retail_roster_shift_offers_v1', offers);
@@ -3758,7 +3897,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   for(var fi=0;fi<fns.length;fi++){
                     var fn = fns[fi];
                     if(!fn.dates || !fn.staff) continue;
-                    var dIdx = fn.dates.findIndex(function(d){ return d.iso===pendingCheckDateISO; });
+                    var dIdx = -1;
+                    for(var di=0; di<fn.dates.length; di++){ if(fn.dates[di].iso===pendingCheckDateISO){ dIdx=di; break; } }
                     if(dIdx===-1) continue;
                     for(var si=0;si<fn.staff.length;si++){
                       if(fn.staff[si].username && fn.staff[si].username.toLowerCase()===pendingCheckUsername){
@@ -3769,25 +3909,27 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   }
                   safeSetJSON('retail_roster_byFortnight_v1', fns);
                 }
-                try{ renderRosterSafe(); }catch(e){}
+                try{ renderRosterSafe(); }catch(e){ console.log('V179 render error', e); }
                 try{ updateShiftOffersBadge(); }catch(e){}
-                toast('Pending '+pendingTime+' cancelled - set to OFF');
-              }catch(e){ console.log('V177 cancel error', e); toast('Error cancelling: '+e.message); }
+                try{ renderShiftOffers(); }catch(e){}
+                console.log('V180: Pending '+pendingTime+' CANCELLED');
+              }catch(e){ console.log('V179 cancel error', e); toast('Error cancelling: '+e.message); }
             });
           } else {
-            // Fallback if no custom confirm, just cancel directly
-            if(confirm('Cancel pending shift '+pendingTime+' for '+staff.firstName+'?')){
+            console.log('V179: showCustomConfirm not found, using native confirm');
+            if(confirm('Cancel pending shift '+pendingTime+' for '+staff.firstName+' '+staff.lastName+' on '+(cur.dates[colIdx].day+' '+cur.dates[colIdx].date)+'?')){
               try{
                 if(typeof cancelPendingOffersForCell==='function'){
-                  cancelPendingOffersForCell(pendingCheckUsername, pendingCheckDateISO, 'Admin cancelled yellow pending via click');
+                  cancelPendingOffersForCell(pendingCheckUsername, pendingCheckDateISO, 'Admin cancelled yellow pending via click - V179 native');
                 }
                 renderRosterSafe();
-              }catch(e){}
+                console.log('V180: Pending cancelled');
+              }catch(e){ console.log('V179 native cancel error', e); }
             }
           }
-          return; // Don't open input for yellow cells - handle via dialog
+          return;
         }
-      }catch(e){ console.log('V177 yellow check error', e); }
+      }catch(e){ console.log('V179 yellow check outer error', e); }
       // V134: Close any other open edits first - prevent multiple inputs staying open
       try{
         var mount=document.getElementById('roster-mount');
@@ -4035,7 +4177,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               el.className='cell-off';
               isSaving=false;
               try{ _rosterEditActive=false; }catch(e){}
-              toast('Pending shift cancelled - cell reset to OFF');
+              console.log('V180: Pending cancelled - no toast');
               return;
             }
           }catch(e){ console.log('V176 early cancel error', e); }
@@ -4546,7 +4688,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   }
                 }catch(e){}
               }catch(e){}
-              toast('Green cleared - '+staff.firstName+' '+dateStr+' now '+actualShift+' as if never requested (superseded '+matchedReqs.length+' request(s))');
+              console.log('V180: Green cleared - '+staff.firstName+' '+dateStr+' now '+actualShift+');
               try{ renderMySchedule(); }catch(e){}
             } else if(wasBackspaceRestore){
               // V139: Backspace restore - clear green even if no approved matched, and force supersede any approved for this date/staff
@@ -4662,7 +4804,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           else if(isAB) msg='Marked AB';
           else if(isNA) msg='Marked unavailable';
           else if(newVal===staff.originalShifts[colIdx]) msg='Restored original';
-          if(!hadApprovedRevert) toast(msg+' - '+staff.firstName+' '+cur.dates[colIdx].date);
+          // V180: Removed toast popup for routine edits - user requested no popup
+          if(!hadApprovedRevert){ console.log('V180: Edit - '+msg+' - '+staff.firstName+' '+cur.dates[colIdx].date); }
           // V118/V119: Force instant cloud sync for roster edits - don't wait for debounce
           try{ 
             // Immediate push
@@ -5478,7 +5621,7 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     
     console.log('V169: Cancelled', cancelled.length, 'offers, deleted', deletedNotifIds.length, 'notifications');
     if(cancelled.length>0){
-      try{ toast('Cancelled '+cancelled.length+' pending offer(s) - removed from employee phone'); }catch(e){}
+      try{ console.log('V180: Cancelled '+cancelled.length+' pending - no popup'); }catch(e){}
       try{ renderShiftOffers(); }catch(e){}
       try{ updateShiftOffersBadge(); }catch(e){}
       try{ renderRosterSafe(); }catch(e){}

@@ -1,4 +1,4 @@
-const CACHE_NAME = "repco-v177-yellow-click-cancel";
+const CACHE_NAME = "repco-v180-no-popup";
 const urlsToCache = [
   "./",
   "./index.html",
@@ -10,7 +10,7 @@ self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(function(cache) {
-        console.log('V177 SW: Caching');
+        console.log('V178 SW: Caching');
         return cache.addAll(urlsToCache);
       })
   );
@@ -25,7 +25,7 @@ self.addEventListener('activate', function(event) {
         cacheNames.map(function(cacheName) {
           // Delete old caches but keep current
           if (cacheName !== CACHE_NAME && cacheName.startsWith('repco-')) {
-            console.log('V177 SW: Deleting old cache', cacheName);
+            console.log('V178 SW: Deleting old cache', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -64,9 +64,9 @@ self.addEventListener('fetch', function(event) {
   }
 });
 
-// V177: Handle push notifications even when user hasn't logged in recently - keep login alive
+// V178: Handle push notifications even when user hasn't logged in recently - keep login alive
 self.addEventListener('push', function(event){
-  console.log('V177 SW: Push received', event);
+  console.log('V178 SW: Push received', event);
   var data = {};
   try{
     data = event.data ? event.data.json() : {};
