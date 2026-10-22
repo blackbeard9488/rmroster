@@ -780,7 +780,48 @@ window.buildSection = window.buildSection || function(type){};
 var currentFortnightId=null; var is24H=false; var time24=false; var undoStack=[]; var selectedUnavailDates=new Set(); var phAllocations=[]; var fortnightDatesCache={}; var selectedFortnightKey=null;
 function toast(msg){var c=document.getElementById('toast-v141'); if(!c){alert(msg); return;} var el=document.createElement('div'); el.className='toast-item'; el.textContent=msg; c.appendChild(el); setTimeout(function(){try{el.remove();}catch(e){}},3500);}
 function generateFortnightId(d){var y=d.getFullYear(); var s=new Date(y,0,1); var diff=Math.floor((d-s)/86400000); var fn=Math.floor(diff/14)+1; return y+'-FN'+String(fn).padStart(2,'0');}
-function getDatesForFortnight(fnId){if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId]; var parts=fnId.split('-FN'); if(parts.length<2) return []; var y=parseInt(parts[0]); var fn=parseInt(parts[1]); var first=new Date(y,0,1); var st=new Date(first.getTime()+(fn-1)*14*86400000); var dates=[]; for(var i=0;i<14;i++){var dd=new Date(st.getTime()+i*86400000); dates.push(getISO(dd));} fortnightDatesCache[fnId]=dates; return dates;}
+function getDatesForFortnight(fnId){
+  if(!fnId) return [];
+  if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId];
+  try{
+    var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{});
+    var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;});
+    var found=fns.find(function(f){return f.id===fnId;});
+    if(found && found.dates && found.dates.length>0){
+      var isoDates=found.dates.map(function(d){return d.iso||d;});
+      fortnightDatesCache[fnId]=isoDates;
+      return isoDates;
+    }
+    if(fnId.indexOf('_to_')!==-1){
+      var parts=fnId.split('_to_');
+      if(parts.length===2){
+        var startDate=new Date(parts[0]);
+        var endDate=new Date(parts[1]);
+        if(!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())){
+          var dates=[];
+          var cur=new Date(startDate);
+          while(cur<=endDate){
+            dates.push(getISO(cur));
+            cur.setDate(cur.getDate()+1);
+            if(dates.length>20) break;
+          }
+          fortnightDatesCache[fnId]=dates;
+          return dates;
+        }
+      }
+    }
+  }catch(e){}
+  var parts=fnId.split('-FN');
+  if(parts.length<2) return [];
+  var y=parseInt(parts[0]);
+  var fn=parseInt(parts[1]);
+  var first=new Date(y,0,1);
+  var st=new Date(first.getTime()+(fn-1)*14*86400000);
+  var dates=[];
+  for(var i=0;i<14;i++){var dd=new Date(st.getTime()+i*86400000); dates.push(getISO(dd));}
+  fortnightDatesCache[fnId]=dates;
+  return dates;
+}
 async function doLogin(){
   try{
     var uEl=document.getElementById('login-user'); var pEl=document.getElementById('login-pass'); var errEl=document.getElementById('login-err');
@@ -7852,153 +7893,86 @@ function triggerImport(){
 function renderAccountMgmtPage(){
   try{
     var el=document.getElementById('account-mgmt-inner');
-    if(!el){
-      setTimeout(function(){ try{ renderAccountMgmtPage(); }catch(e){} },300);
-      return;
-    }
+    if(!el){ setTimeout(function(){ try{ renderAccountMgmtPage(); }catch(e){} },300); return; }
     var users=safeGetJSON('retail_roster_users_v1',[]);
     if(!Array.isArray(users)) users=[];
-    var fnsRaw=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    var fns=[];
-    if(Array.isArray(fnsRaw)) fns=fnsRaw;
-    else if(fnsRaw && typeof fnsRaw==='object'){
-      fns=Object.values(fnsRaw).filter(function(v){return v && (v.dates||v.id||v.staff);});
-    }
+    var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{});
+    var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;});
     var cur=null;
-    try{ cur=getSelectedFortnight()||getCurrentFortnight(); }catch(e){}
+    try{ cur=getSelectedFortnight() ? fns.find(function(f){return f.id===getSelectedFortnight();}) : null; }catch(e){}
     if(!cur && fns.length>0) cur=fns[0];
     var allRosterStaffMap={};
     var hiddenStaff=[];
-    try{
-      hiddenStaff=safeGetJSON('retail_roster_hidden_staff_v1',[])||[];
-      if(!Array.isArray(hiddenStaff)) hiddenStaff=[];
-    }catch(e){ hiddenStaff=[]; }
+    try{ hiddenStaff=safeGetJSON('retail_roster_hidden_staff_v1',[])||[]; if(!Array.isArray(hiddenStaff)) hiddenStaff=[]; }catch(e){ hiddenStaff=[]; }
     try{
       for(var fi=0;fi<fns.length;fi++){
-        var fn=fns[fi];
-        if(!fn.staff) continue;
+        var fn=fns[fi]; if(!fn.staff) continue;
         for(var si=0;si<fn.staff.length;si++){
-          var s=fn.staff[si];
-          if(!s) continue;
+          var s=fn.staff[si]; if(!s) continue;
           var key=((s.firstName||'')+'_'+(s.lastName||'')).toLowerCase().trim();
           if(!key||key==='_') continue;
           if(!allRosterStaffMap[key]){
             allRosterStaffMap[key]={firstName:s.firstName||'',lastName:s.lastName||'',name:s.name||((s.firstName||'')+' '+(s.lastName||'')),employmentType:s.employmentType||'casual',username:s.username||'',foundIn:[]};
           }
-          if(fn.id && allRosterStaffMap[key].foundIn.indexOf(fn.id)===-1) allRosterStaffMap[key].foundIn.push(fn.id);
         }
       }
     }catch(e){}
     try{
-      if(hiddenStaff.length===0){
-        var oldHidden=safeGetJSON('retail_roster_hidden_v1',[])||[];
-        if(oldHidden.length>0 && typeof oldHidden[0]==='string'){
-          hiddenStaff=oldHidden.map(function(name){
-            var parts=name.split(' ');
-            return {firstName:parts[0]||name,lastName:parts.slice(1).join(' ')||'',username:(parts[0]||name).toLowerCase(),isHidden:true};
-          });
-        }
-      }
       for(var hi=0;hi<hiddenStaff.length;hi++){
-        var h=hiddenStaff[hi];
-        if(!h) continue;
+        var h=hiddenStaff[hi]; if(!h) continue;
         var key=((h.firstName||'')+'_'+(h.lastName||'')).toLowerCase().trim();
-        if(!key||key==='_'){
-          if(h.username) key=h.username.toLowerCase();
-          else continue;
-        }
+        if(!key||key==='_'){ if(h.username) key=h.username.toLowerCase(); else continue; }
         if(!allRosterStaffMap[key]){
           allRosterStaffMap[key]={firstName:h.firstName||'',lastName:h.lastName||'',name:(h.firstName||'')+' '+(h.lastName||''),employmentType:'casual',username:h.username||'',isHidden:true,foundIn:['hidden']};
-        }else{
-          allRosterStaffMap[key].isHidden=true;
-        }
+        }else{ allRosterStaffMap[key].isHidden=true; }
       }
     }catch(e){}
-    var allRosterStaff=Object.values(allRosterStaffMap).sort(function(a,b){
-      return (a.lastName||'').localeCompare(b.lastName||'')||(a.firstName||'').localeCompare(b.firstName||'');
-    });
+    var allRosterStaff=Object.values(allRosterStaffMap).sort(function(a,b){ return (a.lastName||'').localeCompare(b.lastName||'')||(a.firstName||'').localeCompare(b.firstName||''); });
     try{
-      var existingUsernames={};
-      users.forEach(function(u){ if(u.username) existingUsernames[u.username.toLowerCase()]=true; });
-      var existingPwds=[];
-      users.forEach(function(u){ if(u.password) existingPwds.push(u.password); });
+      var existingUsernames={}; users.forEach(function(u){ if(u.username) existingUsernames[u.username.toLowerCase()]=true; });
+      var existingPwds=[]; users.forEach(function(u){ if(u.password) existingPwds.push(u.password); });
       var toCreate=[];
       allRosterStaff.forEach(function(s){
         var baseUsername=(s.username||s.firstName||'').toLowerCase().trim();
-        if(!baseUsername) return;
-        if(existingUsernames[baseUsername]) return;
+        if(!baseUsername) return; if(existingUsernames[baseUsername]) return;
         if(s.firstName==='Michael' && s.lastName.toUpperCase()==='BLAIK') baseUsername='michaelb';
         if(s.firstName==='Michael' && s.lastName.toUpperCase()==='EVANS') baseUsername='michaele';
         if(existingUsernames[baseUsername]) return;
-        var pwd=s.firstName||baseUsername;
-        var lowerMap={};
-        existingPwds.forEach(function(p){ lowerMap[p.toLowerCase()]=true; });
+        var pwd=s.firstName||baseUsername; var lowerMap={}; existingPwds.forEach(function(p){ lowerMap[p.toLowerCase()]=true; });
         if(lowerMap[pwd.toLowerCase()]){
           var initial=(s.lastName||'').charAt(0).toUpperCase();
           var withInitial=pwd+initial;
           if(!lowerMap[withInitial.toLowerCase()]) pwd=withInitial;
-          else{
-            var i=2;
-            while(lowerMap[(withInitial+String(i)).toLowerCase()]){ i++; }
-            pwd=withInitial+String(i);
-          }
+          else{ var i=2; while(lowerMap[(withInitial+String(i)).toLowerCase()]){ i++; } pwd=withInitial+String(i); }
         }
         existingPwds.push(pwd);
         toCreate.push({username:baseUsername,firstName:s.firstName,lastName:s.lastName,role:'staff',employmentType:s.employmentType||'casual',password:pwd});
         existingUsernames[baseUsername]=true;
       });
       if(toCreate.length>0){
-        toCreate.forEach(function(nu){
-          users.push({username:nu.username,password:nu.password,firstName:nu.firstName,lastName:nu.lastName,role:nu.role||'staff',employmentType:nu.employmentType||'casual'});
-        });
+        toCreate.forEach(function(nu){ users.push({username:nu.username,password:nu.password,firstName:nu.firstName,lastName:nu.lastName,role:nu.role||'staff',employmentType:nu.employmentType||'casual'}); });
         safeSetJSON('retail_roster_users_v1',users);
       }
-    }catch(e){ console.error('Auto-create error',e); }
+    }catch(e){}
     var html='';
-    html+='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">BULK PASSWORD RESET - FirstName + Initial if duplicate</div><div style="font-size:10px;margin-bottom:8px">Set passwords to first name, duplicate first names get + last initial (MichaelB, MichaelE).</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div>';
-    html+='<div class="card" style="background:#fff;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">FIX DUPLICATES</div><button onclick="deduplicateAllRosters(true)" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">REMOVE DUPLICATE STAFF</button></div>';
-    html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL STAFF FROM ROSTER (including hidden, deduped): '+allRosterStaff.length+' - from '+fns.length+' fortnights + '+hiddenStaff.length+' hidden</div><div style="max-height:200px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:8px;margin-bottom:12px">';
-    if(allRosterStaff.length===0){
-      html+='<div style="font-size:11px;color:#E30613">No roster staff found - upload Excel first</div>';
-    }else{
-      allRosterStaff.forEach(function(s){
-        var hiddenBadge=s.isHidden?'<span style="background:#90CAF9;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;margin-left:4px">HIDDEN</span>':'';
-        html+='<div style="padding:2px 0;font-size:11px;border-bottom:1px solid #f5f5f5"><b>'+(s.lastName||'').toUpperCase()+', '+(s.firstName||'')+'</b> '+hiddenBadge+' <small style="opacity:.6">('+ (s.employmentType||'')+')</small></div>';
-      });
-    }
+    html+='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">BULK PASSWORD RESET - FirstName + Initial if duplicate</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div>';
+    html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL STAFF FROM ROSTER (including hidden, deduped): '+allRosterStaff.length+' - from '+fns.length+' fortnights</div><div style="max-height:200px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:8px;margin-bottom:12px">';
+    if(allRosterStaff.length===0){ html+='<div style="font-size:11px;color:#E30613">No roster staff found - upload Excel first (B1,D1,F1...AB1 dates, A3 names, Row18 ignored)</div>'; }
+    else{ allRosterStaff.forEach(function(s){ var hiddenBadge=s.isHidden?'<span style="background:#90CAF9;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;margin-left:4px">HIDDEN</span>':''; html+='<div style="padding:2px 0;font-size:11px;border-bottom:1px solid #f5f5f5"><b>'+(s.lastName||'').toUpperCase()+', '+(s.firstName||'')+'</b> '+hiddenBadge+'</div>'; }); }
     html+='</div></div>';
-    html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS ('+users.length+' users, '+allRosterStaff.length+' roster unique)</div><div id="admin-user-list-all">';
+    html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS ('+users.length+' users)</div><div id="admin-user-list-all">';
     html+=users.map(function(u,i){
-      var rosterLink='Not linked';
-      var rosterFound=false;
-      var isHiddenUser=false;
-      if(allRosterStaff && allRosterStaff.length>0){
-        var found=allRosterStaff.find(function(s){
-          if(!s.firstName) return false;
-          if(u.firstName && u.lastName){
-            return s.firstName.toLowerCase()===u.firstName.toLowerCase() && s.lastName.toLowerCase()===u.lastName.toLowerCase();
-          }
-          if(s.username && u.username && s.username.toLowerCase()===u.username.toLowerCase()) return true;
-          if(s.firstName && u.username && s.firstName.toLowerCase()===u.username.toLowerCase()) return true;
-          return false;
-        });
-        if(found){
-          rosterLink=found.lastName.toUpperCase()+', '+found.firstName;
-          rosterFound=true;
-          isHiddenUser=!!found.isHidden;
-          if(isHiddenUser) rosterLink+=' (HIDDEN)';
-        }
+      var rosterFound=false; var isHiddenUser=false; var rosterLink='Not linked';
+      if(allRosterStaff.length>0){
+        var found=allRosterStaff.find(function(s){ if(!s.firstName) return false; if(u.firstName && u.lastName){ return s.firstName.toLowerCase()===u.firstName.toLowerCase() && s.lastName.toLowerCase()===u.lastName.toLowerCase(); } if(s.username && u.username && s.username.toLowerCase()===u.username.toLowerCase()) return true; return false; });
+        if(found){ rosterLink=found.lastName.toUpperCase()+', '+found.firstName; rosterFound=true; isHiddenUser=!!found.isHidden; }
       }
       var badge=rosterFound?'<span style="background:'+(isHiddenUser?'#90CAF9':'#B6F7C5')+';color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;font-weight:900">LINKED: '+rosterLink+'</span>':'<span style="background:#FFEB3B;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px">NOT LINKED</span>';
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:8px"><div><b>'+u.username+'</b> ('+u.role+(isHiddenUser?' - hidden':'')+')<br><small>'+(u.firstName||'')+' '+(u.lastName||'')+' | pwd: '+(u.password||'')+'</small> '+badge+'</div><div style="display:flex;gap:4px"><button onclick="adminEditUser('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">EDIT</button><button onclick="adminDelUser('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">DEL</button></div></div>';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:8px"><div><b>'+u.username+'</b> ('+u.role+')<br><small>'+(u.firstName||'')+' '+(u.lastName||'')+' | pwd: '+(u.password||'')+'</small> '+badge+'</div><div style="display:flex;gap:4px"><button onclick="adminEditUser('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">EDIT</button><button onclick="adminDelUser('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">DEL</button></div></div>';
     }).join('');
-    html+='</div><div style="margin-top:16px;font-weight:900">ADD NEW USER</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><input id="new-user-name" placeholder="Username e.g. michaelb" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-pass" placeholder="Password" type="password" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-first" placeholder="First Name" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-last" placeholder="Last Name" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><select id="new-user-role" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option><option value="master">master</option></select><button onclick="adminAddUserMgmt()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ADD USER</button></div><div class="card" style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">BACK TO ROSTER</button></div></div>';
+    html+='</div><div style="margin-top:16px;font-weight:900">ADD NEW USER</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><input id="new-user-name" placeholder="Username" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-pass" placeholder="Password" type="password" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-first" placeholder="First Name" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-last" placeholder="Last Name" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><select id="new-user-role" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option></select><button onclick="adminAddUserMgmt()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ADD USER</button></div><div class="card" style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">BACK TO ROSTER</button></div></div>';
     el.innerHTML=html;
-  }catch(err){
-    console.error('renderAccountMgmtPage error',err);
-    var el2=document.getElementById('account-mgmt-inner');
-    if(el2) el2.innerHTML='<div style="padding:20px;color:#E30613"><b>Error:</b> '+err.message+'<br><button onclick="renderAccountMgmtPage()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px">RETRY</button></div>';
-  }
+  }catch(err){ console.error('renderAccountMgmtPage error',err); var el2=document.getElementById('account-mgmt-inner'); if(el2) el2.innerHTML='<div style="padding:20px;color:#E30613"><b>Error:</b> '+err.message+'<br><button onclick="renderAccountMgmtPage()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px">RETRY</button></div>'; }
 }
 
 function adminAddUserMgmt(){
@@ -8126,53 +8100,23 @@ function adminSetAllPasswordsToFirstname(){
       if(!ok) return;
       var users=safeGetJSON('retail_roster_users_v1',[]);
       var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[])||[];
-      var hiddenUsernames={};
-      for(var hi=0;hi<hidden.length;hi++){
-        if(hidden[hi] && hidden[hi].username) hiddenUsernames[hidden[hi].username.toLowerCase()]=true;
-      }
+      var hiddenUsernames={}; for(var hi=0;hi<hidden.length;hi++){ if(hidden[hi] && hidden[hi].username) hiddenUsernames[hidden[hi].username.toLowerCase()]=true; }
       var excluded=['admin','manager','master','chris'];
       var firstNameCounts={};
-      users.forEach(function(u){
-        if(!u.firstName) return;
-        var uname=(u.username||'').toLowerCase();
-        if(excluded.indexOf(uname)!==-1) return;
-        if(hiddenUsernames[uname]) return;
-        var fn=u.firstName.toLowerCase();
-        if(!firstNameCounts[fn]) firstNameCounts[fn]=0;
-        firstNameCounts[fn]++;
-      });
-      var used=[];
-      var changed=0;
+      users.forEach(function(u){ if(!u.firstName) return; var uname=(u.username||'').toLowerCase(); if(excluded.indexOf(uname)!==-1) return; if(hiddenUsernames[uname]) return; var fn=u.firstName.toLowerCase(); if(!firstNameCounts[fn]) firstNameCounts[fn]=0; firstNameCounts[fn]++; });
+      var used=[]; var changed=0;
       for(var i=0;i<users.length;i++){
-        var u=users[i];
-        if(!u.username || !u.firstName) continue;
-        var uname=(u.username||'').toLowerCase();
-        if(excluded.indexOf(uname)!==-1) continue;
-        if(hiddenUsernames[uname]) continue;
-        var fnLower=u.firstName.toLowerCase();
-        var newPwd='';
-        if(firstNameCounts[fnLower] && firstNameCounts[fnLower]>1){
-          var initial=(u.lastName||'').charAt(0).toUpperCase();
-          newPwd=u.firstName+initial;
-        }else{
-          newPwd=u.firstName;
-        }
-        var base=newPwd;
-        var c=2;
-        while(used.indexOf(newPwd.toLowerCase())!==-1){
-          newPwd=base+c;
-          c++;
-        }
+        var u=users[i]; if(!u.username || !u.firstName) continue; var uname=(u.username||'').toLowerCase(); if(excluded.indexOf(uname)!==-1) continue; if(hiddenUsernames[uname]) continue;
+        var fnLower=u.firstName.toLowerCase(); var newPwd='';
+        if(firstNameCounts[fnLower] && firstNameCounts[fnLower]>1){ var initial=(u.lastName||'').charAt(0).toUpperCase(); newPwd=u.firstName+initial; }else{ newPwd=u.firstName; }
+        var base=newPwd; var c=2; while(used.indexOf(newPwd.toLowerCase())!==-1){ newPwd=base+c; c++; }
         used.push(newPwd.toLowerCase());
         if(u.password!==newPwd){ u.password=newPwd; changed++; }
       }
       safeSetJSON('retail_roster_users_v1',users);
       toast('Set '+changed+' passwords: firstName (+last initial if duplicate)');
       renderAccountMgmtPage();
-      try{
-        var state=getAllState(); state._ts=Date.now();
-        if(typeof db!=='undefined' && db && db.ref){ db.ref('repco_state').set(state); }
-      }catch(e){}
+      try{ var state=getAllState(); state._ts=Date.now(); if(typeof db!=='undefined' && db && db.ref){ db.ref('repco_state').set(state); } }catch(e){}
     });
   }catch(e){ console.error('adminSetAllPasswords error',e); toast('Error: '+e.message); }
 }
@@ -11635,7 +11579,32 @@ function renderBuddies(which){
 
 
 
+function cleanupCorruptedRequests(){
+  try{
+    var reqs=safeGetJSON('retail_roster_requests_v2',[]);
+    if(!Array.isArray(reqs)) return;
+    var cleaned=reqs.filter(function(r){
+      if(!r || typeof r!=='object') return false;
+      // Remove corrupted new_shift_offer that belongs in shift offers
+      if(r.type && r.type.indexOf('new_shift_offer')!==-1){
+        // Keep only recent valid ones, remove junk with ts:0 and huge deniedTs
+        if(!r.ts || r.ts===0){
+          if(r.deniedTs && r.deniedTs>1e12) return false; // Remove future junk like 1792601634310
+          if(r.approvedTs===0 && r.deniedTs===0) return false; // Remove ts:0 junk
+        }
+      }
+      // Remove entries with no username
+      if(!r.username) return false;
+      return true;
+    });
+    if(cleaned.length!==reqs.length){
+      console.log('Cleaned corrupted requests', reqs.length, '->', cleaned.length);
+      safeSetJSON('retail_roster_requests_v2',cleaned);
+    }
+  }catch(e){}
+}
 function renderRequests(){
+  try{ cleanupCorruptedRequests(); }catch(e){}
   var el=document.getElementById('requests-list');
   if(!el) return;
   var isMgr=isManagerRole(getActualRole());
@@ -12565,12 +12534,12 @@ function isGStatus(s,n){return isGShift(s,n);}
 function classifyCell(shift){if(!shift) return 'cell-off'; var s=(shift+'').toUpperCase().trim(); if(s==='OFF'||s==='') return 'cell-off'; if(s==='NA'||s==='UA') return 'cell-na'; if(s==='AB'||s==='ABSENT') return 'cell-absent'; if(s==='G') return 'cell-g'; return '';}
 function sortStaffByLastName(staff){return staff.slice().sort(function(a,b){var aLast=(a.lastName||a.name.split(' ').pop()||'').toLowerCase(); var bLast=(b.lastName||b.name.split(' ').pop()||'').toLowerCase(); if(aLast<bLast) return -1; if(aLast>bLast) return 1; return a.name.localeCompare(b.name);});}
 function calcHours(shift){if(!shift) return 0; if(shift==='OFF'||shift==='NA'||shift==='UA'||shift==='AB'||shift==='G') return 0; var dash=shift.indexOf('-'); if(dash<0) return 0; var left=shift.substring(0,dash).trim(); var right=shift.substring(dash+1).trim(); function toMins(t){var p=t.split(':'); if(p.length<2) return null; var h=parseInt(p[0]); var m=parseInt(p[1]); if(isNaN(h)||isNaN(m)) return null; return h*60+m;} var a=toMins(left); var b=toMins(right); if(a===null||b===null) return 0; var diff=b-a; if(diff<0) diff+=24*60; diff=diff/60; if(diff>=5) diff-=0.5; return diff;}
-function renderTableForType(type,tableId){try{var table=document.getElementById(tableId); if(!table) return; var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var staffList=(cur.staff||[]).filter(function(s){if(type==='hidden') return s.hidden===true; if(s.hidden) return false; var emp=(s.employmentType||'').toLowerCase(); if(type==='fulltime') return emp==='fulltime'; if(type==='casual') return emp==='casual'||emp===''; return false;}); staffList=sortStaffByLastName(staffList); var html='<thead><tr><th class="staff-col">STAFF</th>'; dates.forEach(function(iso){var d=new Date(iso); var dn=d.toLocaleDateString('en-AU',{weekday:'short'}); var isWE=(d.getDay()===0||d.getDay()===6); var ph=getPublicHolidayForDate(iso); var cls=''; if(ph) cls='day-ph'; else if(isWE) cls='day-blue col-weekend'; else cls='day-yellow'; html+='<th class="'+cls+'">'+dn+'<br>'+getDDMM(iso)+'</th>';}); html+='<th>Totals hrs LIVE diff>=5?diff-0.5</th></tr></thead><tbody>'; staffList.forEach(function(s,rowIdx){var tot=0; html+='<tr><td class="staff-col" onclick="editStaffType(\''+s.name.replace(/'/g,'')+'\')">'+s.name+'</td>'; dates.forEach(function(iso,colIdx){var sh=(s.shifts&&s.shifts[colIdx]!==undefined)?s.shifts[colIdx]:((s.shifts&&s.shifts[iso])||'OFF'); var c=classifyCell(sh); if(isGShift(sh,s.name)) c='cell-g'; var ph=getPublicHolidayForDate(iso); if(ph) c+=' day-ph'; var isWE=(new Date(iso).getDay()===0||new Date(iso).getDay()===6); if(isWE) c+=' col-weekend'; if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!=='') tot+=calcHours(sh); html+='<td class="'+c+'" onclick="editCell('+rowIdx+','+colIdx+',\''+type+'\')">'+sh+'</td>';}); html+='<td style="background:#111;color:#fff">'+tot.toFixed(1)+'</td></tr>';}); html+='<tr class="totals"><td class="staff-col">TOTALS</td>'; dates.forEach(function(iso,colIdx){var cnt=0; var hrs=0; staffList.forEach(function(s){var sh=(s.shifts&&s.shifts[colIdx]!==undefined)?s.shifts[colIdx]:((s.shifts&&s.shifts[iso])||'OFF'); if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!==''){cnt++; hrs+=calcHours(sh);}}); html+='<td>'+cnt+'/'+hrs.toFixed(1)+'</td>';}); html+='<td>'+staffList.length+'</td></tr></tbody>'; table.innerHTML=html;}catch(e){console.error(e);}}
+function renderTableForType(type,tableId){try{var table=document.getElementById(tableId); if(!table) return; var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var selId=getSelectedFortnight(); var cur=fns.find(function(f){return f.id===selId;}); if(!cur && fns.length>0) cur=fns[0]; if(!cur) return; var datesRaw=cur.dates||[]; var dates=datesRaw.map(function(d){return d.iso||d;}); if(dates.length===0) dates=getDatesForFortnight(cur.id); var staffList=(cur.staff||[]).filter(function(s){if(type==='hidden') return s.hidden===true; if(s.hidden) return false; var emp=(s.employmentType||'').toLowerCase(); if(type==='fulltime') return emp==='fulltime'; if(type==='casual') return emp==='casual'||emp===''; return false;}); staffList=sortStaffByLastName(staffList); var html='<thead><tr><th class="staff-col">STAFF</th>'; dates.forEach(function(iso){var d=new Date(iso); var dn=d.toLocaleDateString('en-AU',{weekday:'short'}); var isWE=(d.getDay()===0||d.getDay()===6); var ph=getPublicHolidayForDate(iso); var cls=''; if(ph) cls='day-ph'; else if(isWE) cls='day-blue col-weekend'; else cls='day-yellow'; html+='<th class="'+cls+'">'+dn+'<br>'+getDDMM(iso)+'</th>';}); html+='<th>Totals hrs LIVE diff>=5?diff-0.5</th></tr></thead><tbody>'; staffList.forEach(function(s,rowIdx){var tot=0; html+='<tr><td class="staff-col" onclick="editStaffType(\''+s.name.replace(/'/g,'')+'\')">'+s.name+'</td>'; dates.forEach(function(iso,colIdx){var sh=(s.shifts&&s.shifts[colIdx]!==undefined)?s.shifts[colIdx]:((s.shifts&&s.shifts[iso])||'OFF'); var c=classifyCell(sh); if(isGShift(sh,s.name)) c='cell-g'; var ph=getPublicHolidayForDate(iso); if(ph) c+=' day-ph'; var isWE=(new Date(iso).getDay()===0||new Date(iso).getDay()===6); if(isWE) c+=' col-weekend'; if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!=='') tot+=calcHours(sh); html+='<td class="'+c+'" onclick="editCell('+rowIdx+','+colIdx+',\''+type+'\')">'+sh+'</td>';}); html+='<td style="background:#111;color:#fff">'+tot.toFixed(1)+'</td></tr>';}); html+='<tr class="totals"><td class="staff-col">TOTALS</td>'; dates.forEach(function(iso,colIdx){var cnt=0; var hrs=0; staffList.forEach(function(s){var sh=(s.shifts&&s.shifts[colIdx]!==undefined)?s.shifts[colIdx]:((s.shifts&&s.shifts[iso])||'OFF'); if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!==''){cnt++; hrs+=calcHours(sh);}}); html+='<td>'+cnt+'/'+hrs.toFixed(1)+'</td>';}); html+='<td>'+staffList.length+'</td></tr></tbody>'; table.innerHTML=html;}catch(e){console.error(e);}}
 function renderRosterSafe(){try{renderTableForType('fulltime','table-fulltime'); renderTableForType('casual','table-casual'); renderTableForType('hidden','table-hidden'); updateRequestsBadge();}catch(e){}}
 function pushUndo(){try{var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var snap=JSON.stringify(byF); if(undoStack.length>=20) undoStack.shift(); undoStack.push(snap); try{updateUndoButton();}catch(e){}}catch(e){}}
 function updateUndoButton(){var btn=document.getElementById('undo-btn'); if(btn) btn.textContent='UNDO ('+undoStack.length+')';}
 function undoLastEdit(){if(undoStack.length===0){toast('Nothing to undo'); return;} var prev=undoStack.pop(); try{var byF=JSON.parse(prev); safeSetJSON('retail_roster_byFortnight_v1',byF); renderRosterSafe(); cloudSave(); updateUndoButton(); toast('Undo');}catch(e){toast('Undo failed');}}
-function editCell(rowIdx,colIdx,type){try{var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var staffList=(cur.staff||[]).filter(function(s){if(type==='hidden') return s.hidden===true; if(s.hidden) return false; var emp=(s.employmentType||'').toLowerCase(); if(type==='fulltime') return emp==='fulltime'; if(type==='casual') return emp==='casual'||emp===''; return false;}); staffList=sortStaffByLastName(staffList); var staff=staffList[rowIdx]; if(!staff){toast('Staff not found'); return;} var realIdx=-1; for(var i=0;i<cur.staff.length;i++){if(cur.staff[i].name===staff.name){realIdx=i; break;}} if(realIdx<0){toast('Real staff not found'); return;} var iso=dates[colIdx]||''; var curShift=(cur.staff[realIdx].shifts&&cur.staff[realIdx].shifts[colIdx]!==undefined)?cur.staff[realIdx].shifts[colIdx]:((cur.staff[realIdx].shifts&&cur.staff[realIdx].shifts[iso])||'OFF'); var ns=prompt('Edit shift for '+staff.name+' on '+getDDMM(iso)+' ('+iso+'): e.g. 09:00-17:00, G = 07:30-20:00 for Luke/Chris, OFF, NA, AB:',curShift); if(ns===null) return; ns=ns.trim()||'OFF'; if(!cur.staff[realIdx].originalShifts) cur.staff[realIdx].originalShifts=[]; if(cur.staff[realIdx].originalShifts[colIdx]===undefined) cur.staff[realIdx].originalShifts[colIdx]=curShift; pushUndo(); if(!cur.staff[realIdx].shifts) cur.staff[realIdx].shifts=[]; cur.staff[realIdx].shifts[colIdx]=ns; byF[getSelectedFortnight()]=cur; safeSetJSON('retail_roster_byFortnight_v1',byF); renderRosterSafe(); cloudSave(); toast('Saved LIVE');}catch(e){toast('editCell error '+e.message);}}
+function editCell(rowIdx,colIdx,type){try{var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var selId=getSelectedFortnight(); var cur=fns.find(function(f){return f.id===selId;}); if(!cur && fns.length>0) cur=fns[0]; if(!cur) return; var datesRaw=cur.dates||[]; var dates=datesRaw.map(function(d){return d.iso||d;}); if(dates.length===0) dates=getDatesForFortnight(cur.id); var staffList=(cur.staff||[]).filter(function(s){if(type==='hidden') return s.hidden===true; if(s.hidden) return false; var emp=(s.employmentType||'').toLowerCase(); if(type==='fulltime') return emp==='fulltime'; if(type==='casual') return emp==='casual'||emp===''; return false;}); staffList=sortStaffByLastName(staffList); var staff=staffList[rowIdx]; if(!staff){toast('Staff not found'); return;} var realIdx=-1; for(var i=0;i<cur.staff.length;i++){if(cur.staff[i].name===staff.name){realIdx=i; break;}} if(realIdx<0){toast('Real staff not found'); return;} var iso=dates[colIdx]||''; var curShift=(cur.staff[realIdx].shifts&&cur.staff[realIdx].shifts[colIdx]!==undefined)?cur.staff[realIdx].shifts[colIdx]:((cur.staff[realIdx].shifts&&cur.staff[realIdx].shifts[iso])||'OFF'); var ns=prompt('Edit shift for '+staff.name+' on '+getDDMM(iso)+' ('+iso+'): e.g. 09:00-17:00, G = 07:30-20:00 for Luke/Chris, OFF, NA, AB:',curShift); if(ns===null) return; ns=ns.trim()||'OFF'; if(!cur.staff[realIdx].originalShifts) cur.staff[realIdx].originalShifts=[]; if(cur.staff[realIdx].originalShifts[colIdx]===undefined) cur.staff[realIdx].originalShifts[colIdx]=curShift; pushUndo(); if(!cur.staff[realIdx].shifts) cur.staff[realIdx].shifts=[]; cur.staff[realIdx].shifts[colIdx]=ns; byF[getSelectedFortnight()]=cur; safeSetJSON('retail_roster_byFortnight_v1',byF); renderRosterSafe(); cloudSave(); toast('Saved LIVE');}catch(e){toast('editCell error '+e.message);}}
 function editStaffType(name){var nt=prompt('Edit employment type for '+name+' (fulltime/casual):',''); if(nt===null) return; nt=nt.trim().toLowerCase(); if(nt!=='fulltime'&&nt!=='casual'){toast('Use fulltime or casual'); return;} var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var s=cur.staff.find(function(x){return x.name===name;}); if(s){pushUndo(); s.employmentType=nt; safeSetJSON('retail_roster_byFortnight_v1',byF); renderRosterSafe(); cloudSave(); toast('Type updated');}}
 function updateRequestsBadge(){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var p=0; if(Array.isArray(reqs)) p=reqs.filter(function(r){return r.status==='pending';}).length; var b=document.getElementById('requests-badge'); if(b){if(p>0){b.textContent=p; b.style.display='inline-block';} else b.style.display='none';}}
 function renderRequestsSafe(){try{renderRequests();}catch(e){}}
@@ -12697,10 +12666,10 @@ function renderExistingPH(){var el=document.getElementById('ph-existing-list'); 
 function deletePH(idx){var list=safeGetJSON('retail_roster_public_holidays_v1',[]); var removed=list.splice(idx,1)[0]; safeSetJSON('retail_roster_public_holidays_v1',list); if(removed){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); Object.keys(byF).forEach(function(fid){var roster=byF[fid]; if(!roster.staff) return; roster.staff.forEach(function(s){if(s.originalShifts){var dates=getDatesForFortnight(fid); var colIdx=dates.indexOf(removed.dateISO); if(colIdx>=0&&s.originalShifts[colIdx]!==undefined){if(!s.shifts) s.shifts=[]; s.shifts[colIdx]=s.originalShifts[colIdx]; delete s.originalShifts[colIdx];}}});}); safeSetJSON('retail_roster_byFortnight_v1',byF);} renderExistingPH(); renderRosterSafe(); toast('Deleted and restored'); cloudSave();}
 function deletePublicHoliday(idx){deletePH(idx);}
 function renderPublicHolidayPage(){renderPHStaffSelect(); renderPHAllocList(); renderExistingPH();}
-function renderBuddiesToday(){var today=getISO(new Date()); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var idx=dates.indexOf(today); var todayEl=document.getElementById('buddy-today-date'); if(todayEl) todayEl.textContent=today+' '+getDDMM(today); var listEl=document.getElementById('buddy-today-list'); if(!listEl) return; if(idx<0){listEl.innerHTML='<div class="small">Today not in current fortnight</div>'; return;} var buddies=[]; (cur.staff||[]).forEach(function(s){if(s.hidden) return; var sh=(s.shifts&&s.shifts[idx]!==undefined)?s.shifts[idx]:((s.shifts&&s.shifts[today])||'OFF'); if(sh!=='OFF') buddies.push(s.name+' - '+sh);}); listEl.innerHTML=buddies.length?buddies.map(function(b){return '<div class="list-item">'+b+'</div>';}).join(''):'<div class="small">No buddies</div>';}
-function renderBuddiesTomorrow(){var tomorrow=getISO(new Date(Date.now()+86400000)); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var idx=dates.indexOf(tomorrow); var elDate=document.getElementById('buddy-tomorrow-date'); if(elDate) elDate.textContent=tomorrow+' '+getDDMM(tomorrow); var listEl=document.getElementById('buddy-tomorrow-list'); if(!listEl) return; if(idx<0){listEl.innerHTML='<div class="small">Tomorrow not in current fortnight</div>'; return;} var buddies=[]; (cur.staff||[]).forEach(function(s){if(s.hidden) return; var sh=(s.shifts&&s.shifts[idx]!==undefined)?s.shifts[idx]:((s.shifts&&s.shifts[tomorrow])||'OFF'); if(sh!=='OFF') buddies.push(s.name+' - '+sh);}); listEl.innerHTML=buddies.length?buddies.map(function(b){return '<div class="list-item">'+b+'</div>';}).join(''):'<div class="small">No buddies</div>';}
+function renderBuddiesToday(){var today=getISO(new Date()); var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var selId=getSelectedFortnight(); var cur=fns.find(function(f){return f.id===selId;}); if(!cur && fns.length>0) cur=fns[0]; if(!cur) return; var datesRaw=cur.dates||[]; var dates=datesRaw.map(function(d){return d.iso||d;}); if(dates.length===0) dates=getDatesForFortnight(cur.id); var idx=dates.indexOf(today); var todayEl=document.getElementById('buddy-today-date'); if(todayEl) todayEl.textContent=today+' '+getDDMM(today); var listEl=document.getElementById('buddy-today-list'); if(!listEl) return; if(idx<0){listEl.innerHTML='<div class="small">Today not in current fortnight</div>'; return;} var buddies=[]; (cur.staff||[]).forEach(function(s){if(s.hidden) return; var sh=(s.shifts&&s.shifts[idx]!==undefined)?s.shifts[idx]:((s.shifts&&s.shifts[today])||'OFF'); if(sh!=='OFF') buddies.push(s.name+' - '+sh);}); listEl.innerHTML=buddies.length?buddies.map(function(b){return '<div class="list-item">'+b+'</div>';}).join(''):'<div class="small">No buddies</div>';}
+function renderBuddiesTomorrow(){var tomorrow=getISO(new Date(Date.now()+86400000)); var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var selId=getSelectedFortnight(); var cur=fns.find(function(f){return f.id===selId;}); if(!cur && fns.length>0) cur=fns[0]; if(!cur) return; var datesRaw=cur.dates||[]; var dates=datesRaw.map(function(d){return d.iso||d;}); if(dates.length===0) dates=getDatesForFortnight(cur.id); var idx=dates.indexOf(tomorrow); var elDate=document.getElementById('buddy-tomorrow-date'); if(elDate) elDate.textContent=tomorrow+' '+getDDMM(tomorrow); var listEl=document.getElementById('buddy-tomorrow-list'); if(!listEl) return; if(idx<0){listEl.innerHTML='<div class="small">Tomorrow not in current fortnight</div>'; return;} var buddies=[]; (cur.staff||[]).forEach(function(s){if(s.hidden) return; var sh=(s.shifts&&s.shifts[idx]!==undefined)?s.shifts[idx]:((s.shifts&&s.shifts[tomorrow])||'OFF'); if(sh!=='OFF') buddies.push(s.name+' - '+sh);}); listEl.innerHTML=buddies.length?buddies.map(function(b){return '<div class="list-item">'+b+'</div>';}).join(''):'<div class="small">No buddies</div>';}
 function renderBuddies(){renderBuddiesToday(); renderBuddiesTomorrow();}
-function populateMyScheduleFortnights(){var sel=document.getElementById('mysched-fortnight'); if(!sel) return; var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF).sort(); sel.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; sel.appendChild(opt);});}
+function populateMyScheduleFortnights(){var sel=document.getElementById('mysched-fortnight'); if(!sel) return; var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var keys=fns.map(function(f){return f.id;}).sort(); sel.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; sel.appendChild(opt);});}
 function renderMySchedule(){var el=document.getElementById('my-schedule-list'); if(!el) return; var sel=document.getElementById('mysched-fortnight'); var fnId=(sel&&sel.value)||getSelectedFortnight(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[fnId]; if(!cur){el.innerHTML='<div class="small">No roster</div>'; return;} var username=(safeGet('repco_username','')||'').toLowerCase(); var staff=(cur.staff||[]).find(function(s){return (s.username||'').toLowerCase()===username||s.name.toLowerCase()===username;}); if(!staff){el.innerHTML='<div class="small">No schedule for '+username+' - My Schedule Live find by username</div>'; return;} var dates=getDatesForFortnight(fnId); var html=''; dates.forEach(function(iso,idx){var sh=(staff.shifts&&staff.shifts[idx]!==undefined)?staff.shifts[idx]:((staff.shifts&&staff.shifts[iso])||'OFF'); html+='<div class="list-item"><b>'+getDDMM(iso)+'</b> '+sh+'</div>';}); el.innerHTML=html;}
 function renderAccountPage(){var user=window.currentUser||{username:safeGet('repco_username','')}; if(!user) return; var uEl=document.getElementById('acc-user'); if(uEl) uEl.value=user.username||'';}
 function saveAccount(){var newUser=document.getElementById('acc-user').value.trim(); var newPass=document.getElementById('acc-pass').value.trim(); var users=safeGetJSON('retail_roster_users_v1',[]); var cur=window.currentUser; if(!cur){toast('No current user'); return;} var idx=users.findIndex(function(u){return u.username===cur.username;}); if(idx===-1){toast('User not found'); return;} if(newUser){if(users.find(function(u){return u.username===newUser&&u.username!==cur.username;})){toast('Username exists'); return;} users[idx].username=newUser; safeSet('repco_username',newUser);} if(newPass) users[idx].password=newPass; safeSetJSON('retail_roster_users_v1',users); window.currentUser=users[idx]; safeSetJSON('repco_currentUser',users[idx]); renderAccountPage(); toast('Account saved'); cloudSave();}
@@ -12716,7 +12685,29 @@ function exportCSV(){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var
 function deleteRoster(){var fid=getSelectedFortnight(); if(!fid){toast('No fortnight'); return;} if(!confirm('Delete Roster '+fid+'?')) return; pushUndo(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var arch=safeGetJSON('repco_archive',{}); if(byF[fid]){arch[fid]=byF[fid]; delete byF[fid]; safeSetJSON('retail_roster_byFortnight_v1',byF); safeSetJSON('repco_archive',arch); toast('Deleted '+fid); var keys=Object.keys(byF).sort(); if(keys.length>0){setSelectedFortnight(keys[keys.length-1]); populateFortnightSelect(); renderRosterSafe();} cloudSave();}}
 function getSelectedFortnight(){return currentFortnightId||selectedFortnightKey;}
 function setSelectedFortnight(k){currentFortnightId=k; selectedFortnightKey=k; var sel=document.getElementById('fortnight-select'); if(sel) sel.value=k; var mySel=document.getElementById('mysched-fortnight'); if(mySel) mySel.value=k;}
-function getCurrentRoster(){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur){cur={id:getSelectedFortnight(),dates:getDatesForFortnight(getSelectedFortnight()),staff:[]}; byF[getSelectedFortnight()]=cur; safeSetJSON('retail_roster_byFortnight_v1',byF);} return cur;}
+function getCurrentRoster(){
+  try{
+    var byF=safeGetJSON('retail_roster_byFortnight_v1',{});
+    var fns=[];
+    if(Array.isArray(byF)) fns=byF;
+    else if(byF && typeof byF==='object') fns=Object.values(byF).filter(function(v){return v && v.id;});
+    var selId=getSelectedFortnight();
+    if(!selId && fns.length>0) selId=fns[0].id;
+    var cur=fns.find(function(f){return f.id===selId;});
+    if(!cur && fns.length>0) cur=fns[0];
+    if(!cur){
+      var id=selId||generateFortnightId(new Date());
+      cur={id:id,dates:getDatesForFortnight(id),staff:[]};
+      if(Array.isArray(byF)) byF.push(cur);
+      else byF[id]=cur;
+      safeSetJSON('retail_roster_byFortnight_v1',byF);
+    }
+    return cur;
+  }catch(e){
+    console.error('getCurrentRoster error',e);
+    return {id:'temp',dates:[],staff:[]};
+  }
+}
 function updateBrisbaneTime(){var now=new Date(); var txt=formatBrisbane(now); try{var opts={timeZone:'Australia/Brisbane',hour12:!is24H&&!time24,hour:'2-digit',minute:'2-digit'}; var t=now.toLocaleTimeString('en-AU',opts); var dPart=now.toLocaleDateString('en-AU',{timeZone:'Australia/Brisbane',weekday:'short',day:'2-digit',month:'short'}); txt=dPart+' '+t;}catch(e){} var el=document.getElementById('brisbane-time'); var elV=document.getElementById('brisbane-time-v141'); if(el) el.textContent=txt; if(elV) elV.textContent=txt;}
 setInterval(updateBrisbaneTime,1000); updateBrisbaneTime();
 function toggleTimeFormat(){is24H=!is24H; time24=!time24; safeSetJSON('repco_time24',time24); updateBrisbaneTime(); renderRosterSafe();}
@@ -12786,9 +12777,30 @@ function applyRoleVisibility(role){
   console.log('Role visibility applied - role:', r, 'isMgr:', isMgr);
 }
 function hideAllPages(){document.querySelectorAll('.full-page').forEach(function(el){el.style.display='none';});}
-function showPage(id){hideAllPages(); var main=document.getElementById('repco-v65'); if(main) main.style.display='none'; var target=document.getElementById(id); if(target) target.style.display='block'; if(id==='requests-page') renderRequestsSafe(); if(id==='staff-unavailable-page'){renderUnavailCalendar(); renderMyRequests(); populateCorrectionDates(); populateCorrectionDropdown();} if(id==='hidden-staff-page'){renderHiddenStaffFormGrid(); renderHiddenStaffList();} if(id==='public-holidays-page'){renderPHStaffSelect(); renderPHAllocList(); renderExistingPH();} if(id==='buddies-page'){renderBuddiesToday();} if(id==='buddies-tomorrow-page'){renderBuddiesTomorrow();} if(id==='my-schedule-page'){populateMyScheduleFortnights(); renderMySchedule();} if(id==='account-page') renderAccountPage(); if(id==='account-mgmt-page') renderAccountMgmtPage(); if(id==='archive-page') renderArchive();}
+function showPage(id){
+  hideAllPages();
+  var main=document.getElementById('repco-v65');
+  if(main) main.style.display='none';
+  var target=document.getElementById(id);
+  if(target) target.style.display='block';
+  // Handle all page IDs - fix blank pages
+  if(id==='requests-page') renderRequestsSafe();
+  if(id==='staff-unavailable-page' || id==='unavail-page'){ renderUnavailCalendar(); renderMyRequests(); populateCorrectionDates(); populateCorrectionDropdown(); }
+  if(id==='hidden-staff-page'){ renderHiddenStaffFormGrid(); renderHiddenStaffList(); }
+  if(id==='public-holidays-page' || id==='public-holiday-page'){ try{ if(typeof renderPublicHolidayPage==='function'){ renderPublicHolidayPage(); } else { renderPHStaffSelect(); renderPHAllocList(); renderExistingPH(); } }catch(e){} }
+  if(id==='buddies-page'){ renderBuddiesToday(); }
+  if(id==='buddies-tomorrow-page'){ renderBuddiesTomorrow(); }
+  if(id==='my-schedule-page' || id==='mysched-page'){ populateMyScheduleFortnights(); renderMySchedule(); }
+  if(id==='account-page') renderAccountPage();
+  if(id==='account-mgmt-page') renderAccountMgmtPage();
+  if(id==='archive-page') renderArchive();
+  if(id==='options-page'){ try{ renderOptionsPage(); }catch(e){} }
+  if(id==='shift-offers-page'){ try{ renderShiftOffers(); }catch(e){} }
+  if(id==='today-workers-page'){ try{ renderBuddiesToday(); }catch(e){} }
+  if(id==='import-export-page'){ try{ if(typeof renderImportExportPage==='function') renderImportExportPage(); }catch(e){} }
+}
 function showMain(){hideAllPages(); var main=document.getElementById('repco-v65'); if(main){main.style.display='block'; main.classList.add('show');} renderRosterSafe();}
-async function populateFortnightSelect(){var sel=document.getElementById('fortnight-select'); var mySel=document.getElementById('mysched-fortnight'); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF).sort(); if(keys.length===0){var id=generateFortnightId(new Date()); if(!byF[id]){byF[id]={id:id,dates:getDatesForFortnight(id),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} keys=[id];} function fill(s){if(!s) return; s.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; s.appendChild(opt);});} fill(sel); fill(mySel); if(!currentFortnightId) currentFortnightId=keys[0]; if(sel) sel.value=currentFortnightId; if(mySel) mySel.value=currentFortnightId; updateFortnightInfo();}
+async function populateFortnightSelect(){var sel=document.getElementById('fortnight-select'); var mySel=document.getElementById('mysched-fortnight'); var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var keys=fns.map(function(f){return f.id;}).sort(); if(keys.length===0){var id=generateFortnightId(new Date()); if(!byF[id]){byF[id]={id:id,dates:getDatesForFortnight(id),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} keys=[id];} function fill(s){if(!s) return; s.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; s.appendChild(opt);});} fill(sel); fill(mySel); if(!currentFortnightId) currentFortnightId=keys[0]; if(sel) sel.value=currentFortnightId; if(mySel) mySel.value=currentFortnightId; updateFortnightInfo();}
 function onFortnightChange(){var sel=document.getElementById('fortnight-select'); if(sel&&sel.value){setSelectedFortnight(sel.value); renderRosterSafe(); updateFortnightInfo();}}
 function prevFortnight(){var dates=getDatesForFortnight(getSelectedFortnight()); if(!dates.length) return; var prev=new Date(new Date(dates[0]).getTime()-14*86400000); var newId=generateFortnightId(prev); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); if(!byF[newId]){byF[newId]={id:newId,dates:getDatesForFortnight(newId),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} setSelectedFortnight(newId); populateFortnightSelect(); renderRosterSafe(); updateFortnightInfo();}
 function nextFortnight(){var dates=getDatesForFortnight(getSelectedFortnight()); if(!dates.length) return; var next=new Date(new Date(dates[0]).getTime()+14*86400000); var newId=generateFortnightId(next); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); if(!byF[newId]){byF[newId]={id:newId,dates:getDatesForFortnight(newId),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} setSelectedFortnight(newId); populateFortnightSelect(); renderRosterSafe(); updateFortnightInfo();}
