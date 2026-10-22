@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V187_CLEAN_LOGIN";
+const BUILD_ID="20261022_V188_SYNTAX_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -4729,7 +4729,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   }
                 }catch(e){}
               }catch(e){}
-              console.log('V180: Green cleared - '+staff.firstName+' '+dateStr+' now '+actualShift+');
+              console.log('V180: Green cleared - '+staff.firstName+' '+dateStr+' now '+actualShift);
               try{ renderMySchedule(); }catch(e){}
             } else if(wasBackspaceRestore){
               // V139: Backspace restore - clear green even if no approved matched, and force supersede any approved for this date/staff
