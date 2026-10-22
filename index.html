@@ -1,16 +1,111 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>REPCO V216 — Clean</title>
-  <style>
-    :root { --bg:#fff; --fg:#111; }
-    body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>REPCO ROSTER V216 CLEAN - ALL FIXES - FINAL</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#F2F2F2;color:#111}
+#repco-v65{padding-top:120px;padding-bottom:40px;min-height:100vh}
+#global-header{position:fixed;top:0;left:0;right:0;z-index:100;background:#fff;border-bottom:4px solid #0a0a0a;padding:10px 14px;display:none;flex-direction:column;max-height:50vh;overflow-y:auto}
+#global-header.show{display:flex}.r-btns-consistent{display:flex;gap:8px;flex-wrap:wrap}.r-btn-consistent{border:none;border-radius:9999px;padding:8px 14px;font-weight:900;font-size:11px;background:#D9D9D9;color:#111;white-space:nowrap;cursor:pointer}
+.r-btn-consistent.active{background:#111;color:#fff}#btn-hidden{background:#FFEB3B!important;border:2px solid #111}#btn-public-holiday{background:#FFEB3B!important;border:2px solid #E30613}
+.full-page{display:none;padding:12px}.full-page.active{display:block}.r-table{width:100%;border-collapse:collapse;background:#fff}.r-table th,.r-table td{border:1px solid #111;padding:4px 6px;font-size:11px;text-align:center;min-width:72px}
+.r-table th.staff-col{min-width:140px;position:sticky;left:0;background:#fff;z-index:2}.r-table td.staff-col{position:sticky;left:0;background:#fff;text-align:left;font-weight:800;z-index:1}
+.day-yellow{background:#FFE082!important}.day-blue{background:#BBDEFB!important}.col-weekend{background:#E3F2FD!important}.day-ph{background:#FFEB3B!important;border:3px solid #E30613!important}
+.cell-na{background:#eee;color:#999}.cell-absent{background:#111!important;color:#fff!important}.cell-off{background:#D9D9D9!important}.cell-green{background:#A5D6A7!important}
+.r-table td.cell-g{background:#60A5FA!important;border:2px solid #111}.col-weekend.cell-g{background:#3B82F6!important;color:#fff!important}
+.admin-total-badge{display:inline-block;background:#111;color:#fff;padding:4px 10px;border-radius:999px;font-weight:900;font-size:12px;margin:6px 0}
+.fort-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.card{background:#fff;border:3px solid #111;border-radius:12px;padding:12px;margin:8px 0;font-weight:900}
+.card.yellow{background:#FFEB3B}.card.blue{background:#90CAF9}.login-wrap{position:relative;width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden}
+.corner{position:absolute;width:180px;height:180px}.corner-tl{top:-40px;left:-40px;background:#E30613;transform:skew(-12deg)}.corner-br{bottom:-40px;right:-40px;background:#111;transform:skew(-12deg)}
+.login-box{background:#fff;border:4px solid #111;padding:24px;border-radius:16px;z-index:5;min-width:300px}.login-box input{width:100%;padding:10px;margin:6px 0;border:2px solid #111;border-radius:8px;font-weight:700}
+.btn-black{background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 16px;font-weight:900;cursor:pointer}.hs-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.edit-input{width:100%;border:2px solid #111;text-align:center;font-weight:800;padding:2px}
+#toast-v141{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111;color:#fff;border-radius:9999px;padding:10px 18px;font-weight:900;display:none;z-index:10000002}#toast-v141.show{display:block}
+#custom-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000003;display:none;align-items:center;justify-content:center}#custom-modal.show{display:flex}#custom-modal-box{background:#fff;border:3px solid #111;border-radius:16px;padding:16px;max-width:420px;width:92%}
+@media(max-width:600px){#repco-v65{padding-top:170px}.r-btn-consistent{font-size:10px;padding:6px 10px}#global-header{max-height:60vh}}
+</style>
+<script>
+// V216 SINGLE EARLY STUB - NO DUPLICATES - FIXES YOUR SCREENSHOT
+window.renderAccountPage=window.renderAccountPage||function(){};
+window.renderAccountMgmtPage=window.renderAccountMgmtPage||function(){};
+window.showCustomPrompt=window.showCustomPrompt||function(t,b,cb){ var m=document.getElementById('custom-modal'); if(m){ document.getElementById('custom-modal-title').textContent=t; document.getElementById('custom-modal-body').innerHTML=b; m.classList.add('show'); document.getElementById('custom-modal-ok').onclick=function(){ m.classList.remove('show'); if(cb) cb(true); }; document.getElementById('custom-modal-cancel').onclick=function(){ m.classList.remove('show'); if(cb) cb(false); }; } };
+window.showCustomConfirm=window.showCustomConfirm||function(t,b,cb){ window.showCustomPrompt(t,b,cb); };
+window.toggleMobileMenu=window.toggleMobileMenu||function(){};
+window.doLogin=window.doLogin||function(){};
+window.showMain=window.showMain||function(){};
+window.openPage=window.openPage||function(id){ var el=document.getElementById(id); if(el){ el.classList.add('active'); el.style.display='block'; } };
+window.adminEditUser=window.adminEditUser||function(){};
+</script>
 </head>
 <body>
-  <!-- V216 CLEAN FINAL — all fixes applied -->
-  <main>REPCO V216 Content</main>
-</body>
-</html>
+<div id="global-header">
+<div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="font-weight:900;background:#E30613;color:#fff;padding:2px 8px">REPCO V216 CLEAN FINAL</div><div id="fortnight-label" style="font-weight:900;font-size:11px"></div></div>
+<div class="r-btns-consistent">
+<button id="btn-roster" class="r-btn-consistent active">ROSTER</button><button id="btn-requests" class="r-btn-consistent">REQUESTS</button><button id="btn-unavail" class="r-btn-consistent">STAFF UNAVAILABLE</button><button id="btn-hidden" class="r-btn-consistent">HIDDEN STAFF</button><button id="btn-public-holiday" class="r-btn-consistent">PUBLIC HOLIDAYS</button><button id="btn-today" class="r-btn-consistent">TODAY'S BUDDIES</button><button id="btn-tomorrow" class="r-btn-consistent">TOMORROW'S BUDDIES</button><button id="btn-mysched" class="r-btn-consistent">MY SCHEDULE</button><button id="btn-options" class="r-btn-consistent">OPTIONS</button><button id="btn-archive" class="r-btn-consistent">ARCHIVE</button><button id="btn-account" class="r-btn-consistent">ACCOUNT</button><button id="btn-logout" class="r-btn-consistent">LOG OUT</button><button id="undo-btn" class="r-btn-consistent">UNDO</button>
+</div>
+<div class="fort-nav"><button class="r-btn-consistent" onclick="prevFortnight()">◀ PREV</button><button class="r-btn-consistent" onclick="nextFortnight()">NEXT ▶</button><button class="r-btn-consistent" onclick="toggleTimeFormat()">12/24H</button><button id="btn-import" class="r-btn-consistent">IMPORT</button><button class="r-btn-consistent" onclick="exportCSV()">CSV</button><button id="delete-roster-btn" class="r-btn-consistent" style="background:#E30613;color:#fff" onclick="deleteCurrentRoster()">DELETE ROSTER</button><span id="user-badge" class="admin-total-badge"></span><span id="brisbane-time-v141" class="admin-total-badge" style="background:#fff;color:#111;border:2px solid #111"></span></div>
+</div>
+<div id="repco-v65">
+<div id="login-page" class="full-page active" style="display:block;padding:0"><div class="login-wrap"><div class="corner corner-tl"></div><div class="corner corner-br"></div><div class="login-box"><div style="font-weight:900;font-size:24px;background:#E30613;color:#fff;display:inline-block;padding:2px 12px">REPCO</div><h3>ROSTER LOGIN V216 CLEAN - ALL FIXES</h3><input id="login-user" placeholder="USERNAME"><input id="login-pass" type="password" placeholder="PASSWORD"><button class="btn-black" onclick="doLogin()" style="width:100%;margin-top:8px">SIGN IN</button><div id="login-err" style="color:#E30613;font-weight:900;font-size:12px;margin-top:8px"></div><div style="margin-top:10px;font-size:9px;opacity:.7">ALL FEATURES: G status, Requests resubmit allowed, Hidden Staff manual add + grid, Public Holidays auto OFF, Buddies, My Schedule, Import first col only, Live Sync, Refresh stays logged in - 0 async async</div></div></div></div>
+<div id="roster-page" class="full-page"><div id="roster-mount"></div></div>
+<div id="requests-page" class="full-page"><div class="card"><b>REQUESTS - Live Sync - Resubmit after denied ALLOWED (Daniel fix)</b></div><div id="requests-list"></div></div>
+<div id="unavail-page" class="full-page"><div class="card"><b>STAFF UNAVAILABLE - Request & Shift Correction</b></div><div id="unavail-list"></div></div>
+<div id="hidden-staff-page" class="full-page"><div class="card"><b>HIDDEN STAFF - Admin only - Excluded from totals</b></div><div class="card"><div style="font-weight:900;margin-bottom:8px">ADD HIDDEN STAFF MANUALLY</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="hs-first" placeholder="First Name" style="padding:8px;border:2px solid #111;border-radius:8px"><input id="hs-last" placeholder="Last Name" style="padding:8px;border:2px solid #111;border-radius:8px"><input id="hs-user" placeholder="Username" style="padding:8px;border:2px solid #111;border-radius:8px"><input id="hs-pass" placeholder="Password" style="padding:8px;border:2px solid #111;border-radius:8px"><select id="hs-type" style="padding:8px;border:2px solid #111;border-radius:8px"><option value="casual">Casual</option><option value="fulltime">Full Time</option></select></div><div style="margin-top:8px;font-weight:900;font-size:11px">ASSIGN SHIFTS FOR CURRENT FORTNIGHT (14 days, blank=OFF)</div><div id="hs-shifts-grid" class="hs-grid" style="margin-top:8px"></div><button onclick="addHiddenStaff()" style="margin-top:10px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">ADD HIDDEN STAFF + CREATE LOGIN</button></div><div id="hs-list"></div></div>
+<div id="public-holiday-page" class="full-page"><div id="public-holiday-inner"></div></div>
+<div id="buddies-today-page-v141" class="full-page"><div class="card">TODAY'S BUDDIES</div><div id="buddies-today-list"></div></div>
+<div id="buddies-tomorrow-page-v141" class="full-page"><div class="card">TOMORROW'S BUDDIES</div><div id="buddies-tomorrow-list"></div></div>
+<div id="mysched-page" class="full-page"><div class="card"><b>MY SCHEDULE - Live</b></div><div id="mysched-list"></div></div>
+<div id="options-page" class="full-page"><div class="card"><b>OPTIONS</b></div><div class="card"><b>IMPORT EXCEL - First col staff only, ignores stray names (V155 fix)</b><br><input id="excel-file-input" type="file" accept=".xlsx,.xls" style="margin-top:8px"><button onclick="importExcelFile()" style="margin-top:8px;background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900">IMPORT EXCEL</button><div id="import-status" style="margin-top:8px;font-size:11px"></div></div><div class="card"><b>EXPORT</b><br><button onclick="exportCSV()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900">EXPORT CSV</button></div></div>
+<div id="archive-page" class="full-page"><div class="card"><b>ARCHIVE</b></div><div id="archive-inner"></div></div>
+<div id="account-page" class="full-page"><div class="card"><b>ACCOUNT - Edit Username/Password</b></div><div id="account-inner"></div></div>
+<div id="account-mgmt-page" class="full-page"><div class="card"><b>ACCOUNT MANAGEMENT - All Users</b></div><div id="account-mgmt-inner"></div></div>
+</div>
+<div id="custom-modal"><div id="custom-modal-box"><div id="custom-modal-title" style="font-weight:900;margin-bottom:8px"></div><div id="custom-modal-body"></div><div style="display:flex;gap:8px;margin-top:12px"><button id="custom-modal-ok" style="flex:1;background:#111;color:#fff;border-radius:9999px;padding:8px;font-weight:900">OK</button><button id="custom-modal-cancel" style="flex:1;background:#fff;border:2px solid #111;border-radius:9999px;padding:8px;font-weight:900">CANCEL</button></div></div></div>
+<div id="toast-v141"></div>
+<script>
+// V216 CLEAN FINAL - ALL FIXES - SINGLE ASYNC - NO DUPLICATES
+const FIREBASE_DB_URL="https://repco-roster-default-rtdb.firebaseio.com";
+var firebaseConfig={apiKey:"AIzaSyD",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
+try{ if(!firebase.apps.length) firebase.initializeApp(firebaseConfig); var db=firebase.database(); }catch(e){ var db=null; }
+var MEMORY_STORE={};
+function safeGet(k){ try{ var v=localStorage.getItem(k); if(v!==null) return v; }catch(e){} return MEMORY_STORE[k]||''; }
+function safeSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} MEMORY_STORE[k]=v; }
+function safeGetJSON(k,d){ try{ var v=safeGet(k); if(!v) return d; return JSON.parse(v); }catch(e){ return d; } }
+function safeSetJSON(k,v){ safeSet(k, JSON.stringify(v)); }
+function toast(msg){ var el=document.getElementById('toast-v141'); if(!el) return; el.textContent=msg; el.classList.add('show'); setTimeout(function(){ el.classList.remove('show'); },2500); }
+function getAllState(){ var state={}; try{ ['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_shift_offers_v1','retail_roster_public_holidays_v1','retail_roster_hidden_staff_v1','retail_roster_hidden_v1'].forEach(function(k){ var v=safeGet(k); if(v) state[k]=v; }); state._ts=Date.now(); }catch(e){} return state; }
+var CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_shift_offers_v1','retail_roster_public_holidays_v1','retail_roster_hidden_staff_v1','retail_roster_hidden_v1','repco_notifications_v1'];
+function applyCloudState(state,isInitial){
+  try{
+    if(!state) return;
+    for(var k in state){
+      if(k.startsWith('_')) continue;
+      if(CLOUD_KEYS.indexOf(k)===-1) continue;
+      var cloudVal=state[k]; if(!cloudVal) continue;
+      var parsed=null; try{ parsed=typeof cloudVal==='string'?JSON.parse(cloudVal):cloudVal; }catch(e){ continue; }
+      if(k==='retail_roster_requests_v2'){
+        var localReqs=safeGetJSON('retail_roster_requests_v2',[]); var cloudReqs=Array.isArray(parsed)?parsed:[];
+        var merged=[]; var seen={}; var finalTsByDate={};
+        for(var i=0;i<cloudReqs.length;i++){ var cr=cloudReqs[i]; if(cr&&(cr.status==='denied'||cr.status==='approved'||cr.status==='rejected')){ var key=(cr.username||'').toLowerCase()+'|'+(cr.shiftDate||cr.shiftISO||cr.dates||''); var ts=cr.deniedTs||cr.approvedTs||cr.ts||0; if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts; } }
+        var all=cloudReqs.concat(localReqs);
+        for(var j=0;j<all.length;j++){ var r=all[j]; if(!r||!r.id) continue; if(seen[r.id]){ var ex=merged.find(function(x){return x.id===r.id}); if(ex&&ex.status==='pending'&&(r.status==='denied'||r.status==='approved')){ for(var mi=0;mi<merged.length;mi++){ if(merged[mi].id===r.id){ merged[mi]=r; break; } } } continue; }
+        if(r.status==='pending'){ var pkey=(r.username||'').toLowerCase()+'|'+(r.shiftDate||r.shiftISO||r.dates||''); var pts=r.ts||0; var fts=finalTsByDate[pkey]||0; if(pts<=fts&&fts>0) continue; }
+        seen[r.id]=true; merged.push(r);
+        }
+        safeSetJSON('retail_roster_requests_v2',merged); continue;
+      }
+      safeSet(k, typeof cloudVal==='string'?cloudVal:JSON.stringify(cloudVal));
+    }
+    if(isInitial){ try{ populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); renderRequests(); }catch(e){} } else { try{ renderRosterSafe(); applyRoleVisibility(); renderRequests(); }catch(e){} }
+  }catch(e){ console.error('applyCloudState',e); }
+}
+function cloudLoadAll(){
+  try{ if(db&&db.ref){ db.ref('repco_state').on('value',function(snap){ try{ var state=snap.val(); if(!state) return; var lts=parseInt(safeGet('repco_cloud_ts')||'0'); var cts=state._ts||0; if(cts>lts){ safeSet('repco_cloud_ts',String(cts)); applyCloudState(state,false); } }catch(e){} }); } }catch(e){}
+  setInterval(async function(){ try{ var rr=await fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store',mode:'cors'}); if(!rr.ok) return; var cs=await rr.json(); if(!cs||!cs._ts) return; var lts=parseInt(safeGet('repco_cloud_ts')||'0'); if(cs._ts>lts){ safeSet('repco_cloud_ts',String(cs._ts)); applyCloudState(cs,false); } }catch(e){} },1200);
+}
+function cloudSave(){ try{ var state=getAllState(); safeSet('repco_cloud_ts
