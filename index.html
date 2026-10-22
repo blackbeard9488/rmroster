@@ -7571,7 +7571,7 @@ function renderImportExportPage(){
 }
 
 function importExcelFile(file){
-  // V191 FIX: File input was not wired - now fixed in renderImportExportPage
+  // V168 - EXACT SPEC: Names A3 onwards, Dates B1,D1,F1,H1,J1,L1,N1,P1,R1,T1,V1,X1,Z1,AB1, ignore row 18
   if(!file){
     var fileInput=document.getElementById('excel-file-input');
     if(fileInput && fileInput.files && fileInput.files[0]) file=fileInput.files[0];
@@ -7582,49 +7582,62 @@ function importExcelFile(file){
     if(statusEl) statusEl.innerHTML='<span style="color:#E30613">❌ No file selected</span>';
     return;
   }
-  toast('Reading Excel: '+file.name+'...');
+  toast('Reading Excel: '+file.name+'... (A3 names, B1/D1/F1...AB1 dates, ignore row 18)');
   var statusEl=document.getElementById('import-status');
-  if(statusEl) statusEl.innerHTML='<span style="color:#111">⏳ Reading '+file.name+'...</span>';
+  if(statusEl) statusEl.innerHTML='<span style="color:#111">⏳ Reading '+file.name+' - using columns B,D,F,H,J,L,N,P,R,T,V,X,Z,AB...</span>';
 
   var reader=new FileReader();
   reader.onload=function(e){
     try{
       var data=new Uint8Array(e.target.result);
-      var workbook=XLSX.read(data,{type:'array'});
+      var workbook=XLSX.read(data,{type:'array', cellDates:true});
       var sheetName=workbook.SheetNames[0];
       var ws=workbook.Sheets[sheetName];
-      // Get as 2D array
-      var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
-      if(!rows || rows.length<3){ toast('Invalid Excel format'); return; }
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true, blankrows:false});
+      if(!rows || rows.length<3){ toast('Invalid Excel - need at least 3 rows'); return; }
       
-      // Row 1: dates from Column B every 2 columns (index 1,3,5...), ignore AD (index 29) and Row 18
+      // SPEC: Dates are in Row 1 (index 0) at EXACT columns: B1,D1,F1,H1,J1,L1,N1,P1,R1,T1,V1,X1,Z1,AB1
+      // That's indices: 1,3,5,7,9,11,13,15,17,19,21,23,25,27
+      var SPEC_DATE_COLS = [1,3,5,7,9,11,13,15,17,19,21,23,25,27];
       var dateRow=rows[0];
-      var dayRow=rows[1];
+      var dayRow=rows.length>1 ? rows[1] : [];
       var dates=[];
-      var dateCols=[]; // store column indices for dates
+      var dateColsUsed=[];
       
-      for(var c=1; c<dateRow.length; c+=2){
-        if(c===29){ continue; } // Ignore AD column (index 29)
+      console.log('V168 Import: dateRow length', dateRow.length, 'dayRow', dayRow);
+      
+      for(var di=0; di<SPEC_DATE_COLS.length; di++){
+        var c=SPEC_DATE_COLS[di];
+        if(c>=dateRow.length) continue;
         var dateVal=dateRow[c];
-        if(!dateVal) continue;
-        // Parse date
-        var parsedDate=parseDM(String(dateVal));
-        if(!parsedDate) {
-          // Try Excel date number
+        if(!dateVal || String(dateVal).trim()==='') continue;
+        // Skip TOTAL column - if value contains TOTAL
+        var upVal=String(dateVal).toUpperCase();
+        if(upVal.includes('TOTAL')) continue;
+        
+        var parsedDate=null;
+        // Handle Excel date as Date object (cellDates:true)
+        if(dateVal instanceof Date){
+          parsedDate=dateVal;
+        } else if(typeof dateVal==='number' && dateVal>30000){
+          // Excel serial
           try{
-            var excelDate=parseFloat(dateVal);
-            if(!isNaN(excelDate) && excelDate>30000){
-              var d=new Date((excelDate-25569)*86400*1000);
-              parsedDate=d;
-            }
-          }catch(e){}
+            parsedDate=new Date((dateVal-25569)*86400*1000);
+          }catch(ex){}
+        } else {
+          // String parse
+          parsedDate=parseDM(String(dateVal));
+          if(!parsedDate){
+            // Try direct Date parse
+            var tryD=new Date(String(dateVal));
+            if(!isNaN(tryD.getTime())) parsedDate=tryD;
+          }
         }
-        if(parsedDate){
-          var dayName=dayRow[c]||dayRow[c+1]||'';
-          // Clean day name
+        
+        if(parsedDate && !isNaN(parsedDate.getTime())){
+          var dayName=dayRow[c]||'';
           dayName=String(dayName).toUpperCase().trim().substring(0,3);
           if(['MON','TUE','WED','THU','FRI','SAT','SUN'].indexOf(dayName)===-1){
-            // Try to get day from date
             var dayNames=['SUN','MON','TUE','WED','THU','FRI','SAT'];
             dayName=dayNames[parsedDate.getDay()];
           }
@@ -7632,28 +7645,30 @@ function importExcelFile(file){
           var mm=String(parsedDate.getMonth()+1).padStart(2,'0');
           var yyyy=parsedDate.getFullYear();
           var iso=yyyy+'-'+mm+'-'+String(parsedDate.getDate()).padStart(2,'0');
-          dates.push({date:dd+'/'+mm, day:dayName, iso:iso, fullDate:parsedDate});
-          dateCols.push(c);
-          if(dates.length>=14) break; // Max 14 days
+          dates.push({date:dd+'/'+mm, day:dayName, iso:iso, fullDate:parsedDate, col:c});
+          dateColsUsed.push(c);
+          console.log('V168 Found date at col', c, ':', iso, dayName);
         }
       }
       
-      if(dates.length===0){ toast('No dates found in Row 1 from Column B every 2 cols'); return; }
+      if(dates.length===0){ 
+        toast('No dates found at B1,D1,F1,H1,J1,L1,N1,P1,R1,T1,V1,X1,Z1,AB1 - check Row 1'); 
+        if(statusEl) statusEl.innerHTML='<span style="color:#E30613">❌ No dates at B,D,F,H,J,L,N,P,R,T,V,X,Z,AB row 1. Found: '+(dateRow.join(', '))+'</span>';
+        return; 
+      }
       
-      // Parse staff rows: Column A names, from Row 3 onwards, ignore Row 18 (index 17)
+      // SPEC: Names in Column A starting from A3 (index 2), ignore Row 18 (index 17)
       var staff=[];
       for(var r=2; r<rows.length; r++){
-        if(r===17){ continue; } // Ignore Row 18 (index 17)
+        if(r===17){ console.log('V168 Skipping row 18'); continue; } // Ignore row 18
         var row=rows[r];
         if(!row) continue;
         var name=row[0];
         if(!name || String(name).trim()==='') continue;
         var nameStr=String(name).trim();
-        // Skip header rows or totals
-        if(nameStr.toUpperCase().includes('TOTAL') || nameStr.toUpperCase().includes('STAFF') || nameStr.toUpperCase().includes('NAME')) continue;
+        if(nameStr.toUpperCase().includes('TOTAL') || nameStr.toUpperCase()==='NAME' || nameStr.toUpperCase().includes('STAFF')) continue;
         
         var firstName='', lastName='';
-        // Parse LAST, First or First Last
         if(nameStr.includes(',')){
           var parts=nameStr.split(',');
           lastName=parts[0].trim();
@@ -7669,38 +7684,39 @@ function importExcelFile(file){
           }
         }
         
-        // Determine employment type: only 8 full-time unless admin changes
         var upperLast=lastName.toUpperCase();
-        var isFullTime=['BLAIK','CLIST','CULLING','DIXON','DUFFIELD','DUNN','PIPER','SANDER'].indexOf(upperLast)!==-1;
-        var empType=isFullTime?'fulltime':'casual';
-        
-        // Check if already exists with different type (admin changed)
-        var existingType=null;
+        // Default casual unless admin changed before
+        var empType='casual';
+        // Keep existing if found
         try{
-          var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
-          if(fns && fns.length>0){
-            var curFn=getCurrentFortnight();
-            if(curFn){
-              var existing=curFn.staff.find(s=>s.lastName.toUpperCase()===upperLast && s.firstName.toLowerCase()===firstName.toLowerCase());
-              if(existing) existingType=existing.employmentType;
+          var fnsCheck=safeGetJSON('retail_roster_byFortnight_v1',[]); 
+          if(fnsCheck && !Array.isArray(fnsCheck) && typeof fnsCheck==='object'){ fnsCheck = Object.values(fnsCheck).filter(function(v){ return v && (v.dates || v.id); }); }
+          if(fnsCheck && fnsCheck.length>0){
+            for(var fi=0; fi<fnsCheck.length; fi++){
+              var fn=fnsCheck[fi];
+              if(!fn.staff) continue;
+              var existing=fn.staff.find(function(s){ return s.lastName && s.lastName.toUpperCase()===upperLast && s.firstName && s.firstName.toLowerCase()===firstName.toLowerCase(); });
+              if(existing && existing.employmentType){ empType=existing.employmentType; break; }
             }
           }
         }catch(e){}
-        if(existingType) empType=existingType;
         
         var shifts=[];
-        for(var di=0; di<dateCols.length; di++){
-          var c=dateCols[di];
-          if(c===29) continue;
+        for(var di=0; di<dateColsUsed.length; di++){
+          var c=dateColsUsed[di];
           var start=row[c]||'';
           var end=row[c+1]||'';
           var shiftStr='';
           if(start && end){
             var sStr=String(start).trim();
             var eStr=String(end).trim();
-            // Handle Excel time numbers
             var fmtTime=function(v){
               if(v===undefined||v===null||v==='') return '';
+              if(v instanceof Date){
+                var hh=String(v.getHours()).padStart(2,'0');
+                var mm=String(v.getMinutes()).padStart(2,'0');
+                return hh+':'+mm;
+              }
               if(typeof v==='number'){
                 var total=Math.round(v*24*60);
                 var hh=Math.floor(total/60)%24;
@@ -7708,14 +7724,15 @@ function importExcelFile(file){
                 return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
               }
               var str=String(v).trim();
-              // If already HH:MM format, return as is
-              if(str.match(/\d{1,2}:\d{2}/)) return str;
+              var m=str.match(/(\d{1,2}):(\d{2})/);
+              if(m) return String(parseInt(m[1])).padStart(2,'0')+':'+m[2];
+              if(str.toUpperCase()==='OFF' || str==='') return '';
               return str;
             };
             sStr=fmtTime(start);
             eStr=fmtTime(end);
             if(sStr && eStr){
-              shiftStr=sStr+'-'+eStr;
+              shiftStr=sStr+' - '+eStr;
             } else if(sStr){
               shiftStr=sStr;
             }
@@ -7724,217 +7741,107 @@ function importExcelFile(file){
           shifts.push(shiftStr);
         }
         
-        // Pad to 14 if needed
-        while(shifts.length<14) shifts.push('OFF');
-        if(shifts.length>14) shifts=shifts.slice(0,14);
+        while(shifts.length<dates.length) shifts.push('OFF');
+        if(shifts.length>dates.length) shifts=shifts.slice(0,dates.length);
         
-        staff.push({firstName:firstName, lastName:lastName, role:'staff', employmentType:empType, shifts:shifts, originalShifts:{}, absentApproved:{}, cellGreen:{}, unavailable:Array(dates.length).fill(false)});
+        staff.push({firstName:firstName, lastName:lastName, name:nameStr, role:'staff', employmentType:empType, shifts:shifts, originalShifts:{}, absentApproved:{}, cellGreen:{}, unavailable:Array(dates.length).fill(false)});
       }
       
-      if(staff.length===0){ toast('No staff found in Column A'); return; }
+      if(staff.length===0){ toast('No staff found in Column A from A3 onwards (ignoring row 18)'); return; }
       
-      // Now handle update current if differences found that admin hasn't adjusted OR create next/new roster
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
-      var curFn=getCurrentFortnight();
-      var matchingFn=null;
-      // V191: Find matching fortnight by dates - if date doesn't exist, will add new roster (never overwrite)
+      // ASSIGN FORTNIGHT PERIOD PER DATES ON EXCEL
+      // Create fortnight id from first to last date
+      var firstDate=dates[0];
+      var lastDate=dates[dates.length-1];
+      var fnId=firstDate.iso+'_to_'+lastDate.iso;
+      var fnLabel=firstDate.date+' - '+lastDate.date+' ('+firstDate.iso+' to '+lastDate.iso+')';
+      
+      console.log('V168 Fortnight assigned:', fnId, fnLabel, 'dates:', dates.length, 'staff:', staff.length);
+      
+      // Check if fortnight already exists
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); 
+      if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
+      if(!Array.isArray(fns)) fns=[];
+      
+      var existingIdx=-1;
       for(var fi=0; fi<fns.length; fi++){
         var fn=fns[fi];
         if(!fn.dates) continue;
-        var matchCount=0;
-        for(var di=0; di<dates.length && di<fn.dates.length; di++){
-          if(fn.dates[di] && fn.dates[di].iso && dates[di].iso && fn.dates[di].iso===dates[di].iso) matchCount++;
-          else if(fn.dates[di] && fn.dates[di].date===dates[di].date) matchCount++;
-        }
-        if(matchCount>=7){
-          matchingFn=fn;
-          break;
-        }
+        // Match by first date
+        if(fn.dates[0] && fn.dates[0].iso===firstDate.iso) { existingIdx=fi; break; }
+        if(fn.id===fnId) { existingIdx=fi; break; }
       }
-      console.log('V191 Import: matchingFn found?', !!matchingFn, 'dates', dates.map(function(d){return d.date;}).join(', '));
       
-            if(matchingFn){
-        // V191: Update ONLY where admin has NOT adjusted - NEVER overwrite admin changes on website
-        var updated=0;
-        var skippedAdmin=0;
-        var skippedSame=0;
+      if(existingIdx!==-1){
+        // Update existing but preserve admin edits
+        var existingFn=fns[existingIdx];
+        var updated=0, preserved=0;
+        // Update dates to match excel (fortnight period per excel)
+        existingFn.dates=dates;
+        existingFn.label=fnLabel;
         for(var si=0; si<staff.length; si++){
-          var imported=staff[si];
-          var existing=null;
-          for(var es=0; es<matchingFn.staff.length; es++){
-            var s=matchingFn.staff[es];
-            if(s.lastName.toUpperCase()===imported.lastName.toUpperCase() && s.firstName.toLowerCase()===imported.firstName.toLowerCase()){
-              existing=s; break;
+          var imp=staff[si];
+          var exist=existingFn.staff.find(function(s){ return s.lastName.toUpperCase()===imp.lastName.toUpperCase() && s.firstName.toLowerCase()===imp.firstName.toLowerCase(); });
+          if(exist){
+            for(var di=0; di<imp.shifts.length && di<exist.shifts.length; di++){
+              var adminEdited=false;
+              if(exist.originalShifts && (exist.originalShifts[di]!==undefined || exist.originalShifts[String(di)]!==undefined)) adminEdited=true;
+              if(exist.cellGreen && exist.cellGreen[di]) adminEdited=true;
+              if(exist.absentApproved && exist.absentApproved[di]) adminEdited=true;
+              if(exist.pendingOffers && exist.pendingOffers[di]) adminEdited=true;
+              if(!adminEdited){
+                if(exist.shifts[di]!==imp.shifts[di]){ exist.shifts[di]=imp.shifts[di]; updated++; }
+              } else { preserved++; }
             }
-          }
-          if(existing){
-            for(var di=0; di<imported.shifts.length && di<existing.shifts.length; di++){
-              var impShift=imported.shifts[di]||'OFF';
-              var curShift=existing.shifts[di]||'OFF';
-              // Admin changed if originalShifts has entry, or cellGreen, or absentApproved, or pendingOffers
-              var adminEdited = false;
-              if(existing.originalShifts && (existing.originalShifts[di]!==undefined || existing.originalShifts[String(di)]!==undefined)) adminEdited=true;
-              if(existing.cellGreen && existing.cellGreen[di]) adminEdited=true;
-              if(existing.absentApproved && existing.absentApproved[di]) adminEdited=true;
-              if(existing.pendingOffers && existing.pendingOffers[di]) adminEdited=true;
-              if(existing.unavailable && existing.unavailable[di]) adminEdited=true;
-              if(impShift!==curShift){
-                if(!adminEdited){
-                  if(!existing.originalShifts) existing.originalShifts={};
-                  existing.shifts[di]=impShift;
-                  updated++;
-                  console.log('V191: Updating', existing.firstName, existing.lastName, 'day', di, curShift, '->', impShift, 'adminEdited', adminEdited);
-                } else {
-                  skippedAdmin++;
-                  console.log('V191: SKIPPED admin-edited', existing.firstName, existing.lastName, 'day', di, curShift, 'would be', impShift);
-                }
-              } else {
-                skippedSame++;
-              }
-            }
+          } else {
+            existingFn.staff.push(imp);
+            updated++;
           }
         }
         safeSetJSON('retail_roster_byFortnight_v1',fns);
-        var msg='V191: Import complete - Updated '+updated+' shifts (where admin had NOT edited). Preserved '+skippedAdmin+' admin changes. '+staff.length+' staff.';
+        safeSet('retail_roster_currentFortnightId',existingFn.id);
+        var msg='✅ Updated fortnight '+fnLabel+' - '+updated+' shifts updated, '+preserved+' admin edits preserved, '+staff.length+' staff';
         toast(msg);
-        var statusEl=document.getElementById('import-status');
-        if(statusEl) statusEl.innerHTML='<span style="color:green">✅ '+msg+'</span>';
-        populateFortnightSelect();
-        renderRosterSafe();
-        try{ debouncedCloudSave(); }catch(e){ console.log('V191 cloud save error', e); }
-        try{
-          var state=getAllState(); state._ts=Date.now();
-          if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state);
-        }catch(e){}
+        if(statusEl) statusEl.innerHTML='<span style="color:green">'+msg+'<br>Dates from B1,D1,F1,H1,J1,L1,N1,P1,R1,T1,V1,X1,Z1,AB1 assigned to '+fnId+'</span>';
       } else {
-        // Create next/new roster option - V203: fallback if showCustomConfirm not defined
-        var _confirmFn = (typeof showCustomConfirm==='function') ? showCustomConfirm : (typeof window.showCustomConfirm==='function' ? window.showCustomConfirm : null);
-        if(!_confirmFn){
-          // Fallback to native confirm
-          var ok = confirm('Create New Roster?\nFound '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.\n\nOK = Create NEW roster\nCancel = Update CURRENT roster');
-          (function(ok){
-          var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns2 && !Array.isArray(fns2) && typeof fns2==='object'){ fns2 = Object.values(fns2).filter(function(v){ return v && (v.dates || v.id); }); }
-          if(ok){
-            var newFn={
-              id:'fn_'+Date.now(),
-              label:'14 Days - '+dates[0].date+' - '+dates[dates.length-1].date,
-              dates:dates,
-              staff:staff
-            };
-            fns2.push(newFn);
-            safeSetJSON('retail_roster_byFortnight_v1',fns2);
-            safeSet('retail_roster_currentFortnightId',newFn.id);
-            toast('Created new roster: '+newFn.label);
-            populateFortnightSelect();
-            renderRosterSafe();
-            try{ debouncedCloudSave(); }catch(e){}
-          } else {
-            var cur=getCurrentFortnight();
-            if(cur){
-              // Update current preserving admin edits
-              var fns3=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns3 && !Array.isArray(fns3) && typeof fns3==='object'){ fns3 = Object.values(fns3).filter(function(v){ return v && (v.dates || v.id); }); }
-              var curIdx=fns3.findIndex(function(f){return f.id===cur.id;});
-              if(curIdx!==-1){
-                // Merge logic - preserve admin edits
-                for(var si=0; si<staff.length; si++){
-                  var imp=staff[si];
-                  var exist=fns3[curIdx].staff.find(function(s){return s.lastName.toUpperCase()===imp.lastName.toUpperCase() && s.firstName.toLowerCase()===imp.firstName.toLowerCase();});
-                  if(exist){
-                    // Only update if not admin edited
-                    for(var di=0; di<imp.shifts.length && di<exist.shifts.length; di++){
-                      var adminEdited=false;
-                      if(exist.originalShifts && (exist.originalShifts[di]!==undefined)) adminEdited=true;
-                      if(exist.cellGreen && exist.cellGreen[di]) adminEdited=true;
-                      if(exist.absentApproved && exist.absentApproved[di]) adminEdited=true;
-                      if(exist.pendingOffers && exist.pendingOffers[di]) adminEdited=true;
-                      if(!adminEdited){
-                        exist.shifts[di]=imp.shifts[di];
-                      }
-                    }
-                  } else {
-                    fns3[curIdx].staff.push(imp);
-                  }
-                }
-                safeSetJSON('retail_roster_byFortnight_v1',fns3);
-                toast('Updated current roster preserving admin edits');
-                populateFortnightSelect();
-                renderRosterSafe();
-                try{ debouncedCloudSave(); }catch(e){}
-              }
-            }
-          }
-          })(ok);
-          return;
-        }
-        _confirmFn('Create New Roster?', 'Found '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.<br><br>Create as new roster or update current?<br><br>Click OK to create NEW roster, Cancel to update CURRENT roster.', function(ok){
-          var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns2 && !Array.isArray(fns2) && typeof fns2==='object'){ fns2 = Object.values(fns2).filter(function(v){ return v && (v.dates || v.id); }); }
-          if(ok){
-            // Create new
-            var newFn={
-              id:'fn_'+Date.now(),
-              label:'14 Days - '+dates[0].date+' - '+dates[dates.length-1].date,
-              dates:dates,
-              staff:staff
-            };
-            fns2.push(newFn);
-            safeSetJSON('retail_roster_byFortnight_v1',fns2);
-            safeSet('retail_roster_currentFortnightId',newFn.id);
-            toast('Created new roster: '+newFn.label);
-          } else {
-            // V191: Update current but NEVER overwrite admin changes - preserves website edits
-            var cur=getCurrentFortnight();
-            if(cur){
-              // Only update dates if current has no admin edits, otherwise keep existing dates and just merge new staff
-              var hasAdminEdits=false;
-              for(var si=0; si<cur.staff.length; si++){
-                var s=cur.staff[si];
-                if(s.originalShifts && Object.keys(s.originalShifts).length>0){ hasAdminEdits=true; break; }
-                if(s.cellGreen && Object.keys(s.cellGreen).length>0){ hasAdminEdits=true; break; }
-                if(s.pendingOffers && Object.keys(s.pendingOffers).length>0){ hasAdminEdits=true; break; }
-              }
-              if(!hasAdminEdits){
-                cur.dates=dates;
-              }
-              for(var si=0; si<staff.length; si++){
-                var imp=staff[si];
-                var exist=null;
-                for(var es=0; es<cur.staff.length; es++){
-                  if(cur.staff[es].lastName.toUpperCase()===imp.lastName.toUpperCase() && cur.staff[es].firstName.toLowerCase()===imp.firstName.toLowerCase()){
-                    exist=cur.staff[es]; break;
-                  }
-                }
-                if(exist){
-                  for(var di=0; di<imp.shifts.length && di<exist.shifts.length; di++){
-                    var adminEdited=false;
-                    if(exist.originalShifts && (exist.originalShifts[di]!==undefined || exist.originalShifts[String(di)]!==undefined)) adminEdited=true;
-                    if(exist.cellGreen && exist.cellGreen[di]) adminEdited=true;
-                    if(exist.absentApproved && exist.absentApproved[di]) adminEdited=true;
-                    if(exist.pendingOffers && exist.pendingOffers[di]) adminEdited=true;
-                    if(!adminEdited){
-                      exist.shifts[di]=imp.shifts[di];
-                    }
-                  }
-                } else {
-                  cur.staff.push(imp);
-                }
-              }
-              safeSetJSON('retail_roster_byFortnight_v1',fns2);
-              toast('Updated current roster with '+staff.length+' staff - admin changes preserved');
-              var statusEl=document.getElementById('import-status');
-              if(statusEl) statusEl.innerHTML='<span style="color:green">✅ Updated current roster, preserved admin edits</span>';
-            }
-          }
-          populateFortnightSelect();
-          renderRosterSafe();
-          try{ debouncedCloudSave(); }catch(e){}
-        });
+        // Create NEW fortnight assigned to these dates
+        var newFn={
+          id:fnId,
+          label:fnLabel,
+          dates:dates,
+          staff:staff,
+          createdAt:Date.now()
+        };
+        fns.push(newFn);
+        safeSetJSON('retail_roster_byFortnight_v1',fns);
+        safeSet('retail_roster_currentFortnightId',newFn.id);
+        var msg='✅ Created NEW fortnight '+fnLabel+' with '+staff.length+' staff - assigned per excel dates B1...AB1';
+        toast(msg);
+        if(statusEl) statusEl.innerHTML='<span style="color:green">'+msg+'<br>Fortnight period: '+firstDate.iso+' to '+lastDate.iso+' (14 cols B,D,F...AB)</span>';
       }
+      
+      populateFortnightSelect();
+      renderRosterSafe();
+      try{ 
+        var sel=document.getElementById('fortnight-select');
+        if(sel) sel.value=fnId;
+        debouncedCloudSave(); 
+        var state=getAllState(); state._ts=Date.now();
+        if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state);
+      }catch(e){ console.log('cloud save error', e); }
       
     }catch(err){
       console.error(err);
       toast('Excel import error: '+err.message);
+      var statusEl=document.getElementById('import-status');
+      if(statusEl) statusEl.innerHTML='<span style="color:#E30613">❌ Error: '+err.message+'</span>';
     }
   };
+  reader.readAsArrayBuffer(file);
+}
+
+
+function triggerImport(){
   reader.readAsArrayBuffer(file);
 }
 
@@ -7946,36 +7853,29 @@ function triggerImport(){
 function generatePasswordFromName(firstName, lastName, existingPasswords){
   if(!firstName) return 'password';
   var base = firstName.trim();
-  // Capitalize first letter, keep rest as is? Spec says first name as password
-  // We'll use firstName exactly as stored (e.g., Michael)
-  var pwd = base;
   var lowerMap = {};
-  existingPasswords.forEach(function(p){ lowerMap[p.toLowerCase()]=true; });
-  if(!lowerMap[pwd.toLowerCase()]){
-    return pwd;
+  existingPasswords.forEach(function(p){ if(p) lowerMap[p.toLowerCase()]=true; });
+  if(!lowerMap[base.toLowerCase()]){
+    return base;
   }
-  // Duplicate first name found, add last name initial
   if(lastName && lastName.trim()!==''){
     var initial = lastName.trim()[0].toUpperCase();
     var withInitial = base + initial;
     if(!lowerMap[withInitial.toLowerCase()]){
       return withInitial;
     }
-    // If still duplicate (e.g., two Michael B), add full last initial + number
     var i=2;
     while(lowerMap[(withInitial+String(i)).toLowerCase()]){
       i++;
     }
     return withInitial+String(i);
   }
-  // No last name, add number
   var i=2;
-  while(lowerMap[(pwd+String(i)).toLowerCase()]){
+  while(lowerMap[(base+String(i)).toLowerCase()]){
     i++;
   }
-  return pwd+String(i);
+  return base+String(i);
 }
-
 function getAllExistingPasswords(users){
   var arr=[];
   if(users) users.forEach(function(u){ if(u.password) arr.push(u.password); });
@@ -8005,7 +7905,6 @@ function renderAccountMgmtPage(){
   }catch(e){ console.error('get fortnight error in account mgmt', e); }
   if(!cur && fns.length>0) cur=fns[0];
   
-  // FIX V168: List ALL staff found on roster including but not duplicating hidden staff
   let allRosterStaffMap={};
   let hiddenStaff=[];
   try{ 
@@ -8013,7 +7912,6 @@ function renderAccountMgmtPage(){
     if(!Array.isArray(hiddenStaff)) hiddenStaff=[];
   }catch(e){ hiddenStaff=[]; }
   try{
-    // Gather from ALL fortnights to get complete staff list
     for(var fi=0; fi<fns.length; fi++){
       var fn=fns[fi];
       if(!fn.staff) continue;
@@ -8035,7 +7933,6 @@ function renderAccountMgmtPage(){
         if(fn.id && allRosterStaffMap[key].foundIn.indexOf(fn.id)===-1) allRosterStaffMap[key].foundIn.push(fn.id);
       }
     }
-    // Also include current
     if(cur && cur.staff){
       for(var si=0; si<cur.staff.length; si++){
         var s=cur.staff[si];
@@ -8055,7 +7952,6 @@ function renderAccountMgmtPage(){
     }
   }catch(e){ console.log('Roster staff gather error', e); }
   
-  // Add hidden staff but don't duplicate
   try{
     if(hiddenStaff.length===0){
       var oldHidden = safeGetJSON('retail_roster_hidden_v1',[]) || [];
@@ -8085,7 +7981,6 @@ function renderAccountMgmtPage(){
           foundIn: ['hidden']
         };
       } else {
-        // Mark as also hidden but keep
         allRosterStaffMap[key].isHidden=true;
       }
     }
@@ -8095,7 +7990,6 @@ function renderAccountMgmtPage(){
     return (a.lastName||'').localeCompare(b.lastName||'') || (a.firstName||'').localeCompare(b.firstName||'');
   });
   
-  // Auto-create missing user accounts from roster - password = firstName unless duplicate then + lastname initial
   try{
     var existingUsernames = {};
     users.forEach(function(u){ if(u.username) existingUsernames[u.username.toLowerCase()]=true; });
@@ -8108,14 +8002,13 @@ function renderAccountMgmtPage(){
       if(s.firstName==='Michael' && s.lastName.toUpperCase()==='BLAIK') baseUsername='michaelb';
       if(s.firstName==='Michael' && s.lastName.toUpperCase()==='EVANS') baseUsername='michaele';
       if(existingUsernames[baseUsername]) return;
-      // Generate password per spec: firstName unless duplicate then + last initial
       var pwd = generatePasswordFromName(s.firstName, s.lastName, existingPwds);
       existingPwds.push(pwd);
       toCreate.push({username: baseUsername, firstName: s.firstName, lastName: s.lastName, role: 'staff', employmentType: s.employmentType||'casual', password: pwd});
       existingUsernames[baseUsername]=true;
     });
     if(toCreate.length>0){
-      console.log('V168: Auto-creating', toCreate.length, 'missing users from roster with firstName passwords');
+      console.log('V170: Auto-creating', toCreate.length, 'missing users with firstName passwords');
       toCreate.forEach(function(nu){
         users.push({username: nu.username, password: nu.password, firstName: nu.firstName, lastName: nu.lastName, role: nu.role||'staff', employmentType: nu.employmentType||'casual'});
       });
@@ -8123,11 +8016,11 @@ function renderAccountMgmtPage(){
     }
   }catch(e){ console.error('Auto-create users error', e); }
   
-  let html='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🔑 BULK PASSWORD RESET</div><div style="font-size:10px;margin-bottom:8px">Set all employee passwords to their first name (e.g., Chris -> Chris). Hidden staff and both Michaels excluded. Admin/manager/master excluded.</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div>';
-  html+='<div class="card" style="background:#fff;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🧹 FIX DUPLICATES</div><div style="font-size:10px;margin-bottom:8px">If you deleted a duplicate and it came back, click this to remove duplicate staff (same name) from ALL rosters.</div><button onclick="deduplicateAllRosters(true)" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">REMOVE DUPLICATE STAFF - ALL ROSTERS</button></div>';
-  html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL STAFF FROM ROSTER (including hidden, deduped): '+allRosterStaff.length+' - from '+fns.length+' fortnights + '+hiddenStaff.length+' hidden</div><div style="font-size:9px;color:#666;margin-bottom:8px">This lists EVERY staff found in ANY roster (A3 onwards) plus hidden staff, without duplicates. Blank separator rows and Row 18 already ignored on import.</div><div style="max-height:200px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:8px;margin-bottom:12px">';
+  let html='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">\uD83D\uDD11 BULK PASSWORD RESET - FirstName (+ Last initial if duplicate)</div><div style="font-size:10px;margin-bottom:8px">Set all employee passwords to their first name. If duplicate first name (e.g., 2x Michael) then FirstName + Last initial (MichaelB, MichaelE).</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME (+INITIAL IF DUPLICATE)</button></div>';
+  html+='<div class="card" style="background:#fff;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">\uD83E\uDDF9 FIX DUPLICATES</div><div style="font-size:10px;margin-bottom:8px">Remove duplicate staff (same name) from ALL rosters.</div><button onclick="deduplicateAllRosters(true)" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">REMOVE DUPLICATE STAFF - ALL ROSTERS</button></div>';
+  html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL STAFF FROM ROSTER (including hidden, deduped): '+allRosterStaff.length+' - from '+fns.length+' fortnights + '+hiddenStaff.length+' hidden</div><div style="font-size:9px;color:#666;margin-bottom:8px">Lists EVERY staff found in ANY roster (A3 onwards) plus hidden staff, without duplicates. Blank rows and Row 18 ignored on import.</div><div style="max-height:200px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:8px;margin-bottom:12px">';
   if(allRosterStaff.length===0){
-    html+='<div style="font-size:11px;color:#E30613">No roster staff found - upload an Excel first (B1,D1,F1...AB1 dates, A3 names)</div>';
+    html+='<div style="font-size:11px;color:#E30613">No roster staff found - upload Excel first (B1,D1,F1...AB1 dates, A3 names, Row18 ignored)</div>';
   } else {
     allRosterStaff.forEach(function(s){
       var hiddenBadge=s.isHidden?'<span style="background:#90CAF9;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;margin-left:4px">HIDDEN</span>':'';
@@ -8137,11 +8030,10 @@ function renderAccountMgmtPage(){
   html+='</div></div>';
   html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS - Linked to roster ('+users.length+' users, '+allRosterStaff.length+' roster unique + '+hiddenStaff.length+' hidden)</div><div id="admin-user-list-all">';
   
-  html+=users.map((u,i)=>{
+  html+=users.map(function(u,i){
     var rosterLink='Not linked';
     var rosterFound=false;
     var isHiddenUser=false;
-    // Check in allRosterStaff
     if(allRosterStaff && allRosterStaff.length>0){
       var found=allRosterStaff.find(function(s){
         if(!s.firstName) return false;
@@ -8160,12 +8052,11 @@ function renderAccountMgmtPage(){
       }
     }
     var badge=rosterFound?'<span style="background:'+(isHiddenUser?'#90CAF9':'#B6F7C5')+';color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;font-weight:900">LINKED: '+rosterLink+'</span>':'<span style="background:#FFEB3B;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px">NOT LINKED: '+rosterLink+'</span>';
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:8px"><div><b>'+u.username+'</b> ('+u.role+(isHiddenUser?' - hidden':'')+')<br><small>'+(u.firstName||'')+' '+(u.lastName||'')+'</small> '+badge+'</div><div style="display:flex;gap:4px"><button onclick="adminEditUser('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">EDIT</button><button onclick="adminDelUser('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">DEL</button></div></div>';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:8px"><div><b>'+u.username+'</b> ('+u.role+(isHiddenUser?' - hidden':'')+')<br><small>'+(u.firstName||'')+' '+(u.lastName||'')+' | pwd: '+(u.password||'')+'</small> '+badge+'</div><div style="display:flex;gap:4px"><button onclick="adminEditUser('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">EDIT</button><button onclick="adminDelUser('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:11px;font-weight:900">DEL</button></div></div>';
   }).join(''); 
   html+='</div>'; 
-  html+='<div style="margin-top:16px;font-weight:900">ADD NEW USER - Fix for Michaels: use first/last to link</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><input id="new-user-name" placeholder="Username e.g. michaelb" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-pass" placeholder="Password" type="password" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-first" placeholder="First Name e.g. Michael" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-last" placeholder="Last Name e.g. BLAIK" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><select id="new-user-role" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option><option value="master">master</option></select><button onclick="adminAddUserMgmt()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ADD USER</button></div>'; 
-  html+='<div style="margin-top:8px;font-size:10px;color:#666">Tip: For Michael Blaik use username michaelb + First: Michael Last: BLAIK. For Michael Evans use michaele + First: Michael Last: EVANS. This links them to rostered name.</div>';
-  html+='<div class="card" style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div></div>'; 
+  html+='<div style="margin-top:16px;font-weight:900">ADD NEW USER</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><input id="new-user-name" placeholder="Username e.g. michaelb" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-pass" placeholder="Password" type="password" style="flex:1;min-width:120px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-first" placeholder="First Name" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><input id="new-user-last" placeholder="Last Name" style="flex:1;min-width:100px;padding:10px;border-radius:9999px;border:2px solid #111"><select id="new-user-role" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option><option value="master">master</option></select><button onclick="adminAddUserMgmt()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ADD USER</button></div>'; 
+  html+='<div class="card" style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">\u2190 BACK TO ROSTER</button></div></div>'; 
   el.innerHTML=html; 
   }catch(err){
     console.error('renderAccountMgmtPage error', err);
@@ -8295,81 +8186,61 @@ function adminEditUser(idx){
 
 function adminSetAllPasswordsToFirstname(){
   try{
-    showCustomConfirm('Set all passwords to firstname?', '<div style="font-size:11px">This will set every employee password to their <b>firstname</b> (e.g., Chris -> Chris, Daniel -> Daniel).<br><br>If duplicate first name found, will use <b>FirstName + LastName initial</b> (e.g., Michael + B = MichaelB).<br><br><b>Excluded:</b><br>- Hidden staff (in hidden staff list)<br>- Both Michaels handled as duplicate (MichaelB, MichaelE)<br>- Admin/manager/master accounts (admin, manager, master, Chris)<br><br>Are you sure?</div>', function(ok){
+    showCustomConfirm('Set all passwords to firstname?', '<div style="font-size:11px">Set every employee password to <b>firstname</b>. If duplicate first name, use <b>FirstName + Last initial</b> (MichaelB, MichaelE).<br><br>Excluded: admin, manager, master, Chris<br>Are you sure?</div>', function(ok){
       if(!ok) return;
       var users=safeGetJSON('retail_roster_users_v1',[]);
-      var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]);
+      var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[])||[];
       var hiddenUsernames={};
       for(var hi=0;hi<hidden.length;hi++){
         if(hidden[hi] && hidden[hi].username) hiddenUsernames[hidden[hi].username.toLowerCase()]=true;
       }
-      var excludedUsernames=['admin','manager','master','christopher.culling.3','chris'];
-      var changed=0;
-      // Build list of passwords to avoid duplicates
-      var usedPasswords=[];
-      // First pass: keep excluded as is
-      // Second pass: assign per spec with duplicate check
+      var excluded=['admin','manager','master','chris'];
       var firstNameCounts={};
-      // Count first names
       users.forEach(function(u){
         if(!u.firstName) return;
+        var uname=(u.username||'').toLowerCase();
+        if(excluded.indexOf(uname)!==-1) return;
+        if(hiddenUsernames[uname]) return;
         var fn=u.firstName.toLowerCase();
-        if(excludedUsernames.indexOf((u.username||'').toLowerCase())!==-1) return;
-        if(hiddenUsernames[(u.username||'').toLowerCase()]) return;
-        if(['michaelb','michaele'].indexOf((u.username||'').toLowerCase())!==-1) {
-          // Keep as is for count but handle separately
-        }
-        if(!firstNameCounts[fn]) firstNameCounts[fn]=[];
-        firstNameCounts[fn].push(u);
+        if(!firstNameCounts[fn]) firstNameCounts[fn]=0;
+        firstNameCounts[fn]++;
       });
-      // Now assign
+      var used=[];
+      var changed=0;
       for(var i=0;i<users.length;i++){
         var u=users[i];
-        if(!u.username) continue;
-        var unameLower=u.username.toLowerCase();
-        if(excludedUsernames.indexOf(unameLower)!==-1) continue;
-        if(hiddenUsernames[unameLower]) continue;
-        if(['admin','manager','master'].indexOf(u.role)!==-1 && ['michaelb','michaele'].indexOf(unameLower)===-1){
-          // Allow staff only, but if role is manager/admin with username chris keep excluded
-          if(unameLower==='chris' || unameLower==='manager' || unameLower==='admin' || unameLower==='master') continue;
-        }
-        if(!u.firstName) continue;
+        if(!u.username || !u.firstName) continue;
+        var uname=(u.username||'').toLowerCase();
+        if(excluded.indexOf(uname)!==-1) continue;
+        if(hiddenUsernames[uname]) continue;
         var fnLower=u.firstName.toLowerCase();
         var newPwd='';
-        if(firstNameCounts[fnLower] && firstNameCounts[fnLower].length>1){
-          // Duplicate first name -> firstName + last initial
-          var initial=(u.lastName||'').trim().charAt(0).toUpperCase()||'';
+        if(firstNameCounts[fnLower] && firstNameCounts[fnLower]>1){
+          var initial=(u.lastName||'').charAt(0).toUpperCase();
           newPwd=u.firstName+initial;
         } else {
           newPwd=u.firstName;
         }
-        // Ensure unique among already assigned
-        var basePwd=newPwd;
-        var counter=2;
-        while(usedPasswords.indexOf(newPwd.toLowerCase())!==-1){
-          newPwd=basePwd+counter;
-          counter++;
+        var base=newPwd;
+        var c=2;
+        while(used.indexOf(newPwd.toLowerCase())!==-1){
+          newPwd=base+c;
+          c++;
         }
-        usedPasswords.push(newPwd.toLowerCase());
-        if(u.password!==newPwd){
-          u.password=newPwd;
-          changed++;
-        }
+        used.push(newPwd.toLowerCase());
+        if(u.password!==newPwd){ u.password=newPwd; changed++; }
       }
       safeSetJSON('retail_roster_users_v1',users);
-      toast('Set '+changed+' passwords to firstName (+ last initial for duplicates)');
+      toast('Set '+changed+' passwords: firstName (+last initial if duplicate)');
       renderAccountMgmtPage();
-      setTimeout(function(){
-        try{
-          var state=getAllState(); state._ts=Date.now();
-          if(typeof db!=='undefined' && db && db.ref){
-            db.ref('repco_state').set(state);
-          }
-        }catch(e){}
-      },500);
+      try{
+        var state=getAllState(); state._ts=Date.now();
+        if(typeof db!=='undefined' && db && db.ref){ db.ref('repco_state').set(state); }
+      }catch(e){}
     });
   }catch(e){ console.error('adminSetAllPasswords error', e); toast('Error: '+e.message); }
 }
+
 
 
 function adminDelUser(idx){ 
@@ -12898,47 +12769,6 @@ function populateMyScheduleFortnights(){var sel=document.getElementById('mysched
 function renderMySchedule(){var el=document.getElementById('my-schedule-list'); if(!el) return; var sel=document.getElementById('mysched-fortnight'); var fnId=(sel&&sel.value)||getSelectedFortnight(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[fnId]; if(!cur){el.innerHTML='<div class="small">No roster</div>'; return;} var username=(safeGet('repco_username','')||'').toLowerCase(); var staff=(cur.staff||[]).find(function(s){return (s.username||'').toLowerCase()===username||s.name.toLowerCase()===username;}); if(!staff){el.innerHTML='<div class="small">No schedule for '+username+' - My Schedule Live find by username</div>'; return;} var dates=getDatesForFortnight(fnId); var html=''; dates.forEach(function(iso,idx){var sh=(staff.shifts&&staff.shifts[idx]!==undefined)?staff.shifts[idx]:((staff.shifts&&staff.shifts[iso])||'OFF'); html+='<div class="list-item"><b>'+getDDMM(iso)+'</b> '+sh+'</div>';}); el.innerHTML=html;}
 function renderAccountPage(){var user=window.currentUser||{username:safeGet('repco_username','')}; if(!user) return; var uEl=document.getElementById('acc-user'); if(uEl) uEl.value=user.username||'';}
 function saveAccount(){var newUser=document.getElementById('acc-user').value.trim(); var newPass=document.getElementById('acc-pass').value.trim(); var users=safeGetJSON('retail_roster_users_v1',[]); var cur=window.currentUser; if(!cur){toast('No current user'); return;} var idx=users.findIndex(function(u){return u.username===cur.username;}); if(idx===-1){toast('User not found'); return;} if(newUser){if(users.find(function(u){return u.username===newUser&&u.username!==cur.username;})){toast('Username exists'); return;} users[idx].username=newUser; safeSet('repco_username',newUser);} if(newPass) users[idx].password=newPass; safeSetJSON('retail_roster_users_v1',users); window.currentUser=users[idx]; safeSetJSON('repco_currentUser',users[idx]); renderAccountPage(); toast('Account saved'); cloudSave();}
-
-function generatePasswordFromName(firstName, lastName, existingPasswords){
-  if(!firstName) return 'password';
-  var base = firstName.trim();
-  // Capitalize first letter, keep rest as is? Spec says first name as password
-  // We'll use firstName exactly as stored (e.g., Michael)
-  var pwd = base;
-  var lowerMap = {};
-  existingPasswords.forEach(function(p){ lowerMap[p.toLowerCase()]=true; });
-  if(!lowerMap[pwd.toLowerCase()]){
-    return pwd;
-  }
-  // Duplicate first name found, add last name initial
-  if(lastName && lastName.trim()!==''){
-    var initial = lastName.trim()[0].toUpperCase();
-    var withInitial = base + initial;
-    if(!lowerMap[withInitial.toLowerCase()]){
-      return withInitial;
-    }
-    // If still duplicate (e.g., two Michael B), add full last initial + number
-    var i=2;
-    while(lowerMap[(withInitial+String(i)).toLowerCase()]){
-      i++;
-    }
-    return withInitial+String(i);
-  }
-  // No last name, add number
-  var i=2;
-  while(lowerMap[(pwd+String(i)).toLowerCase()]){
-    i++;
-  }
-  return pwd+String(i);
-}
-
-function getAllExistingPasswords(users){
-  var arr=[];
-  if(users) users.forEach(function(u){ if(u.password) arr.push(u.password); });
-  return arr;
-}
-
-
 function renderAccountMgmtPage(){var el=document.getElementById('account-mgmt-list'); if(!el) return; var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)||users.length===0){el.innerHTML='<div class="small">No users</div>'; return;} var html='<table style="width:100%"><tr><th>Username</th><th>Role</th><th>Type</th><th>Actions</th></tr>'; users.forEach(function(u){html+='<tr><td>'+u.username+'</td><td>'+(u.role||'')+'</td><td>'+(u.employmentType||'')+'</td><td><button class="btn-grey" onclick="adminEditUser(\''+u.username+'\')">Edit</button> <button class="btn-grey" onclick="deleteUser(\''+u.username+'\')">Delete</button></td></tr>';}); html+='</table>'; el.innerHTML=html;}
 function addNewUser(){var u=prompt('Username:',''); if(!u) return; var p=prompt('Password:',''); if(!p) return; var users=safeGetJSON('retail_roster_users_v1',[]); if(users.find(function(x){return x.username===u;})){toast('Username exists'); return;} users.push({username:u,password:p,role:'staff',displayName:u,employmentType:'casual'}); safeSetJSON('retail_roster_users_v1',users); renderAccountMgmtPage(); cloudSave(); toast('User added');}
 function adminEditUser(username){var users=safeGetJSON('retail_roster_users_v1',[]); var u=users.find(function(x){return x.username===username;}); if(!u) return; var nu=prompt('New username:',u.username); if(nu) u.username=nu; var np=prompt('New password blank keep:',''); if(np) u.password=np; var nr=prompt('Role staff/manager/admin:',u.role||'staff'); if(nr) u.role=nr; var ne=prompt('Employment Type fulltime/casual:',u.employmentType||'casual'); if(ne) u.employmentType=ne; safeSetJSON('retail_roster_users_v1',users); renderAccountMgmtPage(); cloudSave(); toast('User updated custom modal Employment Type');}
@@ -13021,7 +12851,9 @@ function applyRoleVisibility(role){
   console.log('Role visibility applied - role:', r, 'isMgr:', isMgr);
 }
 function hideAllPages(){document.querySelectorAll('.full-page').forEach(function(el){el.style.display='none';});}
-function showPage(id){hideAllPages(); var main=document.getElementById('repco-v65'); if(main) main.style.display='none'; var target=document.getElementById(id); if(target) target.style.display='block'; if(id==='requests-page') renderRequestsSafe(); if(id==='staff-unavailable-page'){renderUnavailCalendar(); renderMyRequests(); populateCorrectionDates(); populateCorrectionDropdown();} if(id==='hidden-staff-page'){renderHiddenStaffFormGrid(); renderHiddenStaffList();} if(id==='public-holidays-page'){renderPHStaffSelect(); renderPHAllocList(); renderExistingPH();} if(id==='buddies-page'){renderBuddiesToday();} if(id==='buddies-tomorrow-page'){renderBuddiesTomorrow();} if(id==='my-schedule-page'){populateMyScheduleFortnights(); renderMySchedule();} if(id==='account-page') renderAccountPage(); if(id==='account-mgmt-page') renderAccountMgmtPage(); if(id==='archive-page') renderArchive();}
+function showPage(id){hideAllPages(); var main=document.getElementById('repco-v65'); if(main) main.style.display='none'; var target=document.getElementById(id); if(target) target.style.display='block'; if(id==='requests-page') renderRequestsSafe(); if(id==='staff-unavailable-page'){renderUnavailCalendar(); renderMyRequests(); populateCorrectionDates(); populateCorrectionDropdown();} if(id==='hidden-staff-page'){renderHiddenStaffFormGrid(); renderHiddenStaffList();} if(id==='public-holidays-page' || id==='public-holiday-page'){ 
+      try{ if(typeof renderPublicHolidayPage==='function'){ renderPublicHolidayPage(); } else { renderPHStaffSelect(); renderPHAllocList(); renderExistingPH(); } }catch(e){ try{ renderPublicHolidayPage(); }catch(e2){} }
+    } if(id==='buddies-page'){renderBuddiesToday();} if(id==='buddies-tomorrow-page'){renderBuddiesTomorrow();} if(id==='my-schedule-page'){populateMyScheduleFortnights(); renderMySchedule();} if(id==='account-page') renderAccountPage(); if(id==='account-mgmt-page') renderAccountMgmtPage(); if(id==='archive-page') renderArchive();}
 function showMain(){hideAllPages(); var main=document.getElementById('repco-v65'); if(main){main.style.display='block'; main.classList.add('show');} renderRosterSafe();}
 async function populateFortnightSelect(){var sel=document.getElementById('fortnight-select'); var mySel=document.getElementById('mysched-fortnight'); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF).sort(); if(keys.length===0){var id=generateFortnightId(new Date()); if(!byF[id]){byF[id]={id:id,dates:getDatesForFortnight(id),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} keys=[id];} function fill(s){if(!s) return; s.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; s.appendChild(opt);});} fill(sel); fill(mySel); if(!currentFortnightId) currentFortnightId=keys[0]; if(sel) sel.value=currentFortnightId; if(mySel) mySel.value=currentFortnightId; updateFortnightInfo();}
 function onFortnightChange(){var sel=document.getElementById('fortnight-select'); if(sel&&sel.value){setSelectedFortnight(sel.value); renderRosterSafe(); updateFortnightInfo();}}
