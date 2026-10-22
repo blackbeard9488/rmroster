@@ -799,7 +799,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V204_CLOSED_YELLOW_FIX";
+const BUILD_ID="20261022_V207_COUNTDOWN_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -3547,7 +3547,30 @@ function renderRosterSafe(){
           }
         } else if(st.shopClosed && st.shopClosed[idx]) {
           cls='cell-closed';
-          txt='CLOSED';
+          // V205: Show original shift time with C tag, same as AB, and remember AB status
+          try{
+            var origForC = (st.originalShifts && st.originalShifts[idx]) ? st.originalShifts[idx] : null;
+            var wasABForC = st.absentApproved && st.absentApproved[idx];
+            var cleanOrigForC = origForC ? String(origForC).replace(/\s*CLOSED$/i,'').replace(/\s*CLOSE$/i,'').replace(/\s*AB$/i,'').trim() : '';
+            // If no original, try current shift without CLOSED
+            if(!cleanOrigForC || cleanOrigForC.toUpperCase()==='OFF' || cleanOrigForC.toUpperCase()==='CLOSED'){
+              var curForC = (st.shifts && st.shifts[idx]) ? st.shifts[idx] : '';
+              // cur might be CLOSED, so use originalShifts if available
+              if(origForC) cleanOrigForC = String(origForC).replace(/\s*CLOSED$/i,'').replace(/\s*CLOSE$/i,'').replace(/\s*AB$/i,'').trim();
+            }
+            if(cleanOrigForC && cleanOrigForC.toUpperCase()!=='OFF' && cleanOrigForC.toUpperCase()!=='CLOSED' && cleanOrigForC!==''){
+              if(wasABForC){
+                txt=fmt(cleanOrigForC)+' AB C';
+              } else {
+                txt=fmt(cleanOrigForC)+' C';
+              }
+            } else {
+              // No original time, just show CLOSED
+              txt='CLOSED';
+            }
+          }catch(e){
+            txt='CLOSED';
+          }
         } else if((disp||'').toUpperCase().trim()==='CLOSED' || (disp||'').toUpperCase().trim()==='CLOSE' || (disp||'').toUpperCase().trim()==='SHOP CLOSED') {
           cls='cell-closed';
           txt='CLOSED';
@@ -4694,19 +4717,35 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   }
                   rs.shifts[colIdx]=origToRestore;
                   rs.shopClosed[colIdx]=false;
-                  if(rs.absentApproved) rs.absentApproved[colIdx]=false;
+                  // V205: Restore AB status - if it was AB before CLOSED, keep absentApproved true
+                  // Check if original had AB or if absentApproved was preserved
+                  // absentApproved was preserved during CLOSED, so keep it as is - don't clear
+                  // If no AB, ensure it's false
+                  var wasABBefore = rs.absentApproved && rs.absentApproved[colIdx];
+                  if(!wasABBefore){
+                    // Check if original shift string had AB
+                    if(origToRestore && String(origToRestore).toUpperCase().includes('AB')){
+                      // Keep as is - will be handled by render as AB
+                    } else {
+                      // Ensure AB flag is false if not AB before
+                      if(rs.absentApproved) rs.absentApproved[colIdx]=false;
+                    }
+                  }
                   // Clean originalShifts if it was just CLOSED placeholder
                   if(rs.originalShifts && rs.originalShifts[colIdx] && String(rs.originalShifts[colIdx]).toUpperCase()==='OFF'){
                     try{ delete rs.originalShifts[colIdx]; }catch(e){}
                   }
                   revertedCount++;
                 } else if(rs.shifts && String(rs.shifts[colIdx]||'').toUpperCase().includes('CLOSED')){
-                  // Also revert any shift that is CLOSED even if flag missing
                   var orig2 = (rs.originalShifts && rs.originalShifts[colIdx]) ? rs.originalShifts[colIdx] : 'OFF';
                   if(String(orig2).toUpperCase().includes('CLOSED')) orig2='OFF';
                   rs.shifts[colIdx]=orig2;
                   if(rs.shopClosed) rs.shopClosed[colIdx]=false;
-                  if(rs.absentApproved) rs.absentApproved[colIdx]=false;
+                  // V205: Don't clear AB blindly
+                  var wasAB2 = rs.absentApproved && rs.absentApproved[colIdx];
+                  if(!wasAB2 && (!orig2 || !String(orig2).toUpperCase().includes('AB'))){
+                    if(rs.absentApproved) rs.absentApproved[colIdx]=false;
+                  }
                   revertedCount++;
                 }
               }
@@ -4791,7 +4830,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 cs.shifts[colIdx]='CLOSED';
                 if(cs.cellGreen) cs.cellGreen[colIdx]=false;
                 if(cs.cellG) cs.cellG[colIdx]=false;
-                if(cs.absentApproved) cs.absentApproved[colIdx]=false;
+                // V205: Preserve AB status when setting CLOSED - do NOT clear absentApproved
+                // if(cs.absentApproved) cs.absentApproved[colIdx]=false; // REMOVED - remember AB
                 if(cs.unavailable) cs.unavailable[colIdx]=false;
                 // Clear pending
                 if(cs.pendingOffers && cs.pendingOffers[colIdx]){
@@ -4849,7 +4889,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             }catch(e){ console.log('V201 whole day close error', e); }
             if(staff.cellGreen) staff.cellGreen[colIdx]=false;
             if(staff.cellG) staff.cellG[colIdx]=false;
-            if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+            // V205: Preserve AB status - do NOT clear absentApproved when setting CLOSED
+            // if(staff.absentApproved) staff.absentApproved[colIdx]=false; // REMOVED
             if(staff.unavailable) staff.unavailable[colIdx]=false;
             // V198: CLOSED must NEVER be pending - clear any pending flags
             window._pendingNewShiftForOffer=null;
@@ -7154,7 +7195,61 @@ function showMain(){
 function parseDM(str){str=str.trim(); if(!str) return null; let m=str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1])); m=str.match(/^(\d{1,2})\/(\d{1,2})$/); if(m){ let y=new Date().getFullYear(); return new Date(y, parseInt(m[2])-1, parseInt(m[1])); } m=str.match(/^(\d{4})-(\d{2})-(\d{2})$/); if(m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])); return null;}
 function formatDDMM(date){const dd=String(date.getDate()).padStart(2,'0'); const mm=String(date.getMonth()+1).padStart(2,'0'); return dd+'/'+mm;}
 function expandDateRange(startStr, endStr){let s=parseDM(startStr); let e=parseDM(endStr); if(!s||!e) return []; if(e < s){let tmp=s; s=e; e=tmp;} let min=new Date(2026,0,1); let max=new Date(2040,0,1); if(s < min) s=min; if(e > max) e=max; let out=[]; let cur=new Date(s); while(cur <= e){ out.push(formatDDMM(cur)); cur.setDate(cur.getDate()+1); if(out.length>500) break; } return out;}
-function parseShiftRange(s){if(!s) return null; let up=s.toUpperCase().trim(); if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED',''].includes(up)) return null; let m=s.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/); if(!m) return null; let start=parseInt(m[1])*60+parseInt(m[2]); let end=parseInt(m[3])*60+parseInt(m[4]); if(end<start) end+=1440; return {start,end,raw:s};}
+function parseShiftRange(s){
+  if(!s) return null;
+  var up=s.toUpperCase().trim();
+  if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED','C',''].includes(up)) return null;
+  // V205: Clean trailing tags AB, C, AB C, CLOSED etc for parsing
+  var clean=s.trim();
+  // Remove trailing tags like AB, C, AB C, CLOSED (case insensitive)
+  clean=clean.replace(/\s+AB\s*C\s*$/i,'').replace(/\s+C\s*AB\s*$/i,'').replace(/\s+AB$/i,'').replace(/\s+C$/i,'').replace(/\s*CLOSED$/i,'').replace(/\s*CLOSE$/i,'').trim();
+  // Also handle case where shift itself is like "CLOSED" or "AB"
+  var upClean=clean.toUpperCase().trim();
+  if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED','C',''].includes(upClean)) return null;
+  // Try match with optional AM/PM: 8:00AM-4:00PM or 8:00-16:00
+  var m=clean.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?\s*-\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if(!m){
+    // Fallback simple HH:MM-HH:MM
+    m=clean.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+    if(!m) return null;
+    var start=parseInt(m[1])*60+parseInt(m[2]);
+    var end=parseInt(m[3])*60+parseInt(m[4]);
+    if(end<start) end+=1440;
+    return {start:start,end:end,raw:s};
+  }
+  // Parse with AM/PM support
+  var sh=parseInt(m[1]), sm=parseInt(m[2]), eh=parseInt(m[4]), em=parseInt(m[5]);
+  var sAP=m[3] ? m[3].toUpperCase() : null;
+  var eAP=m[6] ? m[6].toUpperCase() : null;
+  // Convert to 24h
+  function to24(h, ap){
+    if(!ap) return h;
+    if(ap==='AM'){
+      if(h===12) return 0;
+      return h;
+    } else {
+      if(h===12) return 12;
+      return h+12;
+    }
+  }
+  var startH=to24(sh, sAP);
+  var endH=to24(eh, eAP);
+  // If only one AM/PM provided, assume same for both? Common case: 8:00AM-4:00PM has both, but handle
+  // If start has no AP but end does, infer
+  if(!sAP && eAP){
+    // If end is PM and start hour <12 and end hour converted is PM, keep start as AM if start < end raw?
+    // Simple: if start 8 and end 4PM, start should be AM
+    if(eAP==='PM' && sh<12 && eh<12){
+      // start likely AM
+      sAP='AM';
+      startH=to24(sh, 'AM');
+    }
+  }
+  var start=startH*60+sm;
+  var end=endH*60+em;
+  if(end<start) end+=1440;
+  return {start:start,end:end,raw:s};
+}
 
 
 function mapUsernameToStaffKey(username){
@@ -9905,7 +10000,27 @@ function exportCSV(){
         // Parse shift into start/end
         var start='', end='';
         if(up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED' || isClosed){
-          start='CLOSED'; end='CLOSED';
+          // V205: Show original time with C tag, same as AB
+          try{
+            var cleanOrigExcel = (orig||'').replace(/\s*CLOSED$/i,'').replace(/\s*CLOSE$/i,'').replace(/\s*AB$/i,'').trim();
+            if(cleanOrigExcel && cleanOrigExcel.toUpperCase()!=='OFF' && cleanOrigExcel.toUpperCase()!=='CLOSED'){
+              var m=cleanOrigExcel.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+              if(m){
+                var wasABExcel = isAbsent;
+                if(wasABExcel){
+                  start=m[1]; end=m[2]+' AB C';
+                } else {
+                  start=m[1]; end=m[2]+' C';
+                }
+              } else {
+                start=cleanOrigExcel; end='C';
+              }
+            } else {
+              start='CLOSED'; end='CLOSED';
+            }
+          }catch(e){
+            start='CLOSED'; end='CLOSED';
+          }
         } else if(up==='AB' || up==='ABSENT' || up.indexOf(' AB')!==-1 || isAbsent){
           // Show original time + AB
           var clean=sh.replace(/\s*AB$/i,'').trim();
@@ -10841,8 +10956,34 @@ function renderMySchedule(){
       for(var i=0;i<fn.dates.length;i++){
         var d=fn.dates[i];
         var sh=(staffInFn.shifts && staffInFn.shifts[i]!=null) ? staffInFn.shifts[i] : 'OFF';
+        // V205: If shift is CLOSED/AB with original, use original for My Schedule display (show time with C/AB tag)
+        var origForMySched = staffInFn.originalShifts && staffInFn.originalShifts[i] ? staffInFn.originalShifts[i] : null;
+        var shopClosedForMySched = staffInFn.shopClosed && staffInFn.shopClosed[i];
+        var absentForMySched = staffInFn.absentApproved && staffInFn.absentApproved[i];
+        if((shopClosedForMySched || String(sh).toUpperCase().includes('CLOSED') || String(sh).toUpperCase().trim().endsWith(' C') || absentForMySched || String(sh).toUpperCase().includes(' AB')) && origForMySched){
+          // Use original for parsing but keep sh as original+C/AB for display? Actually keep original for parsing time, display will add tag later
+          // For My Schedule, we want to show original time with C/AB tag, so use original for time calculation
+          // But keep sh as is for badge logic? We'll set sh to original for parsing, and handle tag in display
+          // Actually let's keep sh as original + tag for display, but parse from original
+          // So if sh is CLOSED or pure C, use original
+          var upSh=String(sh).toUpperCase().trim();
+          if(upSh==='CLOSED' || upSh==='CLOSE' || upSh==='SHOP CLOSED' || upSh==='C' || upSh==='AB' || upSh==='ABSENT'){
+            sh=origForMySched;
+          } else if(upSh.indexOf('CLOSED')!==-1 && !origForMySched){
+            // CLOSED with no original, keep as is (will be handled as CLOSED)
+          }
+        }
         var up=String(sh).toUpperCase().trim();
-        var isOff=['OFF','NA','AB','ABSENT',''].indexOf(up)!==-1 || up==='';
+                var up=String(sh).toUpperCase().trim();
+        // V205: AB and CLOSED are NOT OFF - they have original time with tag, show them in My Schedule
+        var isOff=['OFF','NA','ABSENT',''].indexOf(up)!==-1 || up==='' || up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED' || up==='C' || up==='AB';
+        // But if it has time + AB or time + C, it's not OFF (e.g., "8:00-16:00 AB" or "8:00-16:00 C")
+        if(up.indexOf(':')!==-1 && (up.indexOf('AB')!==-1 || up.indexOf(' C')!==-1 || up.indexOf('CLOSED')!==-1)){
+          // Has time component, not purely OFF
+          if(up.match(/\d{1,2}:\d{2}/)){
+            isOff=false;
+          }
+        }
         // CRITICAL FIX V113: If shift is OFF but has a request (approved/pending), still include it so Approved shows
         var hasReq=false;
         if(isOff){
@@ -10966,32 +11107,77 @@ function renderMySchedule(){
         }
       }catch(e){}
       var candidatesForTime=[];
-      for(var fi=0;fi<fnsForTime.length;fi++){
-        var fn=fnsForTime[fi];
-        if(!fn.dates || !fn.staff) continue;
-        var myStaffInFn=null;
-        for(var si=0;si<fn.staff.length;si++){
-          var s=fn.staff[si];
-          if(myForTime && s.firstName===myForTime.firstName && s.lastName===myForTime.lastName){
-            myStaffInFn=s; break;
+      // V206: Use allShifts if available (already filtered and parsed), otherwise rebuild from fnsForTime
+      // allShifts is built earlier and contains parsed shifts for this user across all fortnights
+      try{
+        if(typeof allShifts!=='undefined' && allShifts.length>0){
+          for(var ai=0; ai<allShifts.length; ai++){
+            var as=allShifts[ai];
+            if(!as || !as.date) continue;
+            var shiftStr=as.shift||'';
+            var up=String(shiftStr).toUpperCase().trim();
+            // Skip pure AB/CLOSED for countdown - show next valid shift
+            var isPureAB = up==='AB' || up==='ABSENT' || up==='C' || up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED' || up==='' || up==='OFF' || up==='NA';
+            var hasAB = up.indexOf(' AB')!==-1 || up.indexOf('AB C')!==-1;
+            var hasClosed = up.indexOf('CLOSED')!==-1 || up.trim().endsWith(' C');
+            // For countdown, skip any AB or CLOSED (even with time, we want next valid shift)
+            if(isPureAB || hasAB || hasClosed) continue;
+            var parsed=as.parsed || parseShiftRange(shiftStr);
+            if(!parsed) continue;
+            var iso=as.iso || as.date.iso;
+            if(!iso) continue;
+            var startT=new Date(iso);
+            if(isNaN(startT.getTime())) continue;
+            startT.setHours(Math.floor(parsed.start/60), parsed.start%60, 0, 0);
+            var endT=new Date(iso);
+            endT.setHours(Math.floor(parsed.end/60), parsed.end%60, 0, 0);
+            if(endT<=startT) endT.setDate(endT.getDate()+1);
+            candidatesForTime.push({start:startT, end:endT, date:as.date, shift:shiftStr, parsed:parsed, fn:as.fortnight});
           }
         }
-        if(!myStaffInFn) continue;
-        for(var di=0;di<fn.dates.length;di++){
-          var d=fn.dates[di];
-          var shiftStr=myStaffInFn.shifts && myStaffInFn.shifts[di]!=null ? myStaffInFn.shifts[di] : 'OFF';
-          var up=String(shiftStr).toUpperCase().trim();
-          if(['OFF','NA','AB','ABSENT','CLOSED','CLOSE','SHOP CLOSED',''].indexOf(up)!==-1 || up==='' || up.indexOf('CLOSED')!==-1 || up.indexOf('AB')!==-1) continue; // V192: AB and CLOSED excluded from active countdown - show next shift
-          var parsed=parseShiftRange(shiftStr);
-          if(!parsed) continue;
-          var iso=d.iso;
-          if(!iso) continue;
-          var startT=new Date(iso);
-          startT.setHours(Math.floor(parsed.start/60), parsed.start%60, 0, 0);
-          var endT=new Date(iso);
-          endT.setHours(Math.floor(parsed.end/60), parsed.end%60, 0, 0);
-          if(endT<=startT) endT.setDate(endT.getDate()+1);
-          candidatesForTime.push({start:startT, end:endT, date:d, shift:shiftStr, parsed:parsed, fn:fn});
+      }catch(e){ console.log('V206 candidates from allShifts error', e); }
+      // Fallback: rebuild from fnsForTime if allShifts gave no candidates (e.g., all upcoming are AB/C and we skipped them, or allShifts empty)
+      if(candidatesForTime.length===0){
+        for(var fi=0;fi<fnsForTime.length;fi++){
+          var fn=fnsForTime[fi];
+          if(!fn.dates || !fn.staff) continue;
+          var myStaffInFn=null;
+          for(var si=0;si<fn.staff.length;si++){
+            var s=fn.staff[si];
+            if(myForTime){
+              // Robust match: firstName must match, lastName if available
+              var firstMatch = s.firstName && myForTime.firstName && s.firstName.toLowerCase()===myForTime.firstName.toLowerCase();
+              var lastMatch = true;
+              if(myForTime.lastName && myForTime.lastName.trim()!==''){
+                lastMatch = s.lastName && s.lastName.toLowerCase()===myForTime.lastName.toLowerCase();
+              }
+              if(firstMatch && lastMatch){
+                myStaffInFn=s; break;
+              }
+            }
+          }
+          if(!myStaffInFn) continue;
+          for(var di=0;di<fn.dates.length;di++){
+            var d=fn.dates[di];
+            var shiftStr=myStaffInFn.shifts && myStaffInFn.shifts[di]!=null ? myStaffInFn.shifts[di] : 'OFF';
+            var up=String(shiftStr).toUpperCase().trim();
+            // V206: Skip OFF/NA and AB/C for countdown
+            if(['OFF','NA',''].indexOf(up)!==-1) continue;
+            if(up==='AB' || up==='ABSENT' || up==='C' || up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED') continue;
+            if(up.indexOf(' AB')!==-1 || up.indexOf('AB C')!==-1) continue;
+            if(up.indexOf('CLOSED')!==-1 || up.trim().endsWith(' C')) continue;
+            var parsed=parseShiftRange(shiftStr);
+            if(!parsed) continue;
+            var iso=d.iso;
+            if(!iso) continue;
+            var startT=new Date(iso);
+            if(isNaN(startT.getTime())) continue;
+            startT.setHours(Math.floor(parsed.start/60), parsed.start%60, 0, 0);
+            var endT=new Date(iso);
+            endT.setHours(Math.floor(parsed.end/60), parsed.end%60, 0, 0);
+            if(endT<=startT) endT.setDate(endT.getDate()+1);
+            candidatesForTime.push({start:startT, end:endT, date:d, shift:shiftStr, parsed:parsed, fn:fn});
+          }
         }
       }
       candidatesForTime.sort(function(a,b){ return a.start - b.start; });
@@ -11247,7 +11433,21 @@ function renderMySchedule(){
       htmlStr+='<div class="card">No upcoming shifts - All caught up!</div>';
     }
     htmlStr+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%;font-size:11px">BACK TO ROSTER</button></div>';
-        if(typeof timePanelHtml!=='undefined' && timePanelHtml) htmlStr=timePanelHtml+htmlStr;
+    if(typeof timePanelHtml!=='undefined' && timePanelHtml && timePanelHtml!=='') {
+      htmlStr=timePanelHtml+htmlStr;
+    } else {
+      // Fallback countdown if timePanelHtml empty but we have upcoming
+      try{
+        if(typeof candidatesForTime!=='undefined' && candidatesForTime.length>0){
+          var fallbackShift=candidatesForTime[0];
+          if(fallbackShift){
+            var fbDate=fallbackShift.date;
+            var fbShift=fallbackShift.shift;
+            htmlStr='<div class="card" style="background:#111;color:#fff;border:3px solid #E30613;padding:12px"><div style="font-weight:900;font-size:11px;color:#FFEB3B">TIME TILL NEXT SHIFT</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+fbDate.day+' '+fbDate.date+' - '+fbShift+'</div><div style="font-size:11px;color:#B6F7C5">Check roster for time</div></div>'+htmlStr;
+          }
+        }
+      }catch(e){}
+    }
         // FIX: Show PAST shifts of same fortnight at very bottom in order with G and AB status
     if(typeof pastShifts!=='undefined' && pastShifts.length>0){
       htmlStr+='<div class="card" style="background:#111;color:#fff;font-weight:900;margin-top:12px">PAST SHIFTS ('+pastShifts.length+') - SAME FORTNIGHT</div>';
