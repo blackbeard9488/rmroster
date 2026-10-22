@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V172_YELLOW_SHOW_TIME_PERSIST_LOGIN";
+const BUILD_ID="20261022_V174_BACKSPACE_CANCEL_YELLOW_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -4029,17 +4029,32 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             
             if(hasPendingForThisCell){
               var newCleanCancel = (actualShift||'').toString().trim().toUpperCase();
-              // V173: Backspace/reset means actualShift is OFF or empty - ALWAYS cancel if pending exists and admin is clearing
+              // V174: Backspace/reset means actualShift is OFF or empty - ALWAYS cancel if pending exists and admin is clearing
+              // FIX: When roster is yellow, current is OFF but pending exists - backspace should ALWAYS cancel
               var isBackspaceOrReset = (newCleanCancel==='' || newCleanCancel==='OFF' || newCleanCancel==='-' || newCleanCancel==='0' || newCleanCancel==='BACKSPACE' || newCleanCancel==='RESET' || newCleanCancel==='CLEAR');
-              // Also cancel if admin types different time than pending offer
+              // Also cancel if admin types different time than pending offer - but for yellow cell, even OFF->OFF is cancel
               var isChangingTime = (newCleanCancel!=='' && newCleanCancel!=='OFF' && newCleanCancel!==pendingNewShiftForCancel.toUpperCase());
+              // V174: CRITICAL - if cell has pending and admin edits it (any edit), cancel pending - backspace is OFF->OFF but should still cancel
+              var isAnyEditOnPendingCell = hasPendingForThisCell; // Any edit on yellow cell = cancel
               
-              console.log('V173: Cancel check - hasPending', hasPendingForThisCell, 'newClean', newCleanCancel, 'pendingNew', pendingNewShiftForCancel, 'isBackspace', isBackspaceOrReset, 'isChanging', isChangingTime, 'current', current, 'actual', actualShift);
+              console.log('V174: Cancel check - hasPending', hasPendingForThisCell, 'newClean', newCleanCancel, 'pendingNew', pendingNewShiftForCancel, 'isBackspace', isBackspaceOrReset, 'isChanging', isChangingTime, 'current', current, 'actual', actualShift, 'anyEdit', isAnyEditOnPendingCell);
               
-              if(isBackspaceOrReset || isChangingTime){
-                console.log('V173: CANCELLING pending offer - admin backspaced/reset yellow cell', staff.firstName, dateISOForCancel, 'pending was', pendingNewShiftForCancel, '->', actualShift);
+              if(isBackspaceOrReset || isChangingTime || isAnyEditOnPendingCell){
+                console.log('V174: CANCELLING pending offer - admin edited yellow cell', staff.firstName, dateISOForCancel, 'pending was', pendingNewShiftForCancel, '->', actualShift);
+                // V174: Immediately clear from current in-memory roster too, not just fns
+                try{
+                  if(staff.pendingOffers && staff.pendingOffers[colIdx]){
+                    delete staff.pendingOffers[colIdx];
+                    if(Object.keys(staff.pendingOffers).length===0) delete staff.pendingOffers;
+                    console.log('V174: Cleared pendingOffers from current staff object', staff.firstName, colIdx);
+                  }
+                  if(cur && cur.staff && cur.staff[rowIdx] && cur.staff[rowIdx].pendingOffers && cur.staff[rowIdx].pendingOffers[colIdx]){
+                    delete cur.staff[rowIdx].pendingOffers[colIdx];
+                    if(Object.keys(cur.staff[rowIdx].pendingOffers).length===0) delete cur.staff[rowIdx].pendingOffers;
+                  }
+                }catch(e){ console.log('V174 clear current pending error', e); }
                 if(typeof cancelPendingOffersForCell==='function'){
-                  cancelPendingOffersForCell(staffUsernameForCancel, dateISOForCancel, 'Admin backspaced/reset yellow cell '+pendingNewShiftForCancel+' -> '+actualShift);
+                  cancelPendingOffersForCell(staffUsernameForCancel, dateISOForCancel, 'Admin edited yellow cell '+pendingNewShiftForCancel+' -> '+actualShift);
                 } else {
                   // Fallback inline cancel if function not available
                   try{
@@ -4105,8 +4120,10 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             }
           }catch(notifErr){ console.log('Shift notification error', notifErr); }
           
-          // INSTANT LIVE SAVE - Push AB change to all users immediately
+          // V174 FIX: INSTANT LIVE SAVE - Push change to all users, but use FRESH fns after cancel to avoid restoring pending marker
           try{
+            // Re-fetch fns to get cancelled state, not stale closure variable
+            var freshFns = safeGetJSON('retail_roster_byFortnight_v1',[]);
             var state=getAllState();
             state._ts=Date.now();
             if(typeof db!=='undefined' && db && db.ref){
@@ -4115,9 +4132,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             } else {
               fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
             }
-            // Also push roster directly
-            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors',cache:'no-store'}).catch(function(){});
-          }catch(e){ console.error('Live save AB error', e); }
+            // Also push roster directly - use freshFns that has cancelled marker cleared
+            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(freshFns),mode:'cors',cache:'no-store'}).catch(function(){});
+          }catch(e){ console.error('V174 Live save error', e); }
           try{ if(typeof BroadcastChannel!=='undefined'){ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'roster_update', ts:Date.now()}); } }catch(e){}
 
           
@@ -5068,25 +5085,59 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     }
     safeSetJSON('repco_notifications_v1', remainingNotifs);
     
-    // Remove pendingOffers marker from roster
+    // V174: Remove pendingOffers marker from roster - ALL fortnights, and clear shifts to OFF
     try{
       var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
       for(var fi=0; fi<fns.length; fi++){
         var fn = fns[fi];
         if(!fn.dates || !fn.staff) continue;
-        var dIdx = fn.dates.findIndex(function(d){ return d.iso===dateISO; });
+        var dIdx = fn.dates.findIndex(function(d){ return d.iso===dateISO || d.date===dateISO; });
+        if(dIdx===-1){
+          // Try substring match
+          for(var di=0; di<fn.dates.length; di++){
+            if(fn.dates[di].iso && dateISO && fn.dates[di].iso.substring(0,10)===dateISO.substring(0,10)){
+              dIdx=di; break;
+            }
+          }
+        }
         if(dIdx===-1) continue;
         for(var si=0; si<fn.staff.length; si++){
           var st = fn.staff[si];
           if(st.username && st.username.toLowerCase()===targetUsername.toLowerCase()){
             if(st.pendingOffers && st.pendingOffers[dIdx]){
+              console.log('V174: Clearing pending marker from roster', st.username, dIdx);
               delete st.pendingOffers[dIdx];
+              if(st.pendingOffers && Object.keys(st.pendingOffers).length===0) delete st.pendingOffers;
+            }
+            // Ensure shift is OFF, not pending newShift
+            if(st.shifts && st.shifts[dIdx]){
+              var curShift = st.shifts[dIdx];
+              // If current shift matches any cancelled offer newShift, set to OFF
+              for(var cc=0; cc<cancelled.length; cc++){
+                if(curShift===cancelled[cc].newShift){
+                  console.log('V174: Resetting shift from', curShift, 'to OFF after cancel');
+                  st.shifts[dIdx]='OFF';
+                  break;
+                }
+              }
             }
           }
         }
       }
       safeSetJSON('retail_roster_byFortnight_v1', fns);
-    }catch(e){ console.log('V169 cancel roster marker error', e); }
+      // Also clear from current in-memory cur if it exists
+      try{
+        if(typeof cur!=='undefined' && cur && cur.staff){
+          for(var si=0; si<cur.staff.length; si++){
+            if(cur.staff[si].username && cur.staff[si].username.toLowerCase()===targetUsername.toLowerCase()){
+              if(cur.staff[si].pendingOffers && cur.staff[si].pendingOffers[dIdx]){
+                delete cur.staff[si].pendingOffers[dIdx];
+              }
+            }
+          }
+        }
+      }catch(e){}
+    }catch(e){ console.log('V174 cancel roster marker error', e); }
     
     // Push to Firebase to delete from employee phone instantly
     try{
