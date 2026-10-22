@@ -1,72 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<script>
-// ===== SINGLE EARLY-STUB BLOCK V217 FINAL - FIXES ReferenceError V213/V211/V215 - 1 BLOCK ONLY - NO DUPLICATES =====
-var MEMORY_STORE = {};
-var FIREBASE_DB_URL = "https://repco-roster-default-rtdb.firebaseio.com";
-var FIREBASE_CONFIG = {apiKey:"AIzaSyDummy",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
-var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive","repco_username","repco_currentRole","repco_session","repco_cloud_ts","retail_roster_rosters_v1","repco_rosters"];
-var db = null;
-try{if(typeof firebase!=="undefined"&&firebase.apps&&firebase.apps.length===0){firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database();}}catch(e){}
-function safeGet(k,d){try{var v=localStorage.getItem(k); if(v===null) return d!==undefined?d:v; return v;}catch(e){return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:(d!==undefined?d:null);}}
-function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){} MEMORY_STORE[k]=v;}
-function safeGetJSON(k,d){try{var raw=safeGet(k,null); if(raw===null||raw===undefined) return d; if(typeof raw==="object") return raw; return JSON.parse(raw);}catch(e){return d;}}
-function safeSetJSON(k,o){try{var s=JSON.stringify(o); safeSet(k,s);}catch(e){MEMORY_STORE[k]=JSON.stringify(o);}}
-function getAllState(){var state={}; CLOUD_KEYS.forEach(function(k){state[k]=safeGetJSON(k,null);}); state._ts=Date.now(); return state;}
-async function cloudLoadAll(){try{var r=await fetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){var data=await r.json(); if(data&&data._ts){var lt=parseInt(safeGet("repco_cloud_ts","0")||"0"); if(data._ts>lt){Object.keys(data).forEach(function(k){if(k==="_ts") return; safeSetJSON(k,data[k]);}); safeSet("repco_cloud_ts",String(data._ts)); try{renderAllSafe();}catch(e){}}}} var r2=await fetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{cache:"no-store"}); if(r2.ok){var d2=await r2.json(); if(Array.isArray(d2)) safeSetJSON("retail_roster_requests_v2",d2);} }catch(e){}}
-function cloudSave(){try{var state=getAllState(); var json=JSON.stringify(state); if(db&&db.ref){db.ref("repco_state").set(state).then(function(){safeSet("repco_cloud_ts",String(state._ts));}).catch(function(){fetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});});}else{fetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});} try{var reqs=safeGetJSON("retail_roster_requests_v2",[]); fetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(reqs)}).catch(function(){});}catch(e){}}catch(e){}}
-function getISO(d){return d.toISOString().slice(0,10);}
-function formatBrisbane(d){try{return d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}catch(e){return d.toString();}}
-function getDDMM(iso){try{var p=iso.split("-"); return p[2]+"/"+p[1];}catch(e){return iso;}}
-function getPublicHolidayForDate(iso){var phs=safeGetJSON("retail_roster_public_holidays_v1",[]); if(!Array.isArray(phs)) return null; for(var i=0;i<phs.length;i++){if(phs[i].dateISO===iso) return phs[i];} return null;}
-window.renderAccountPage = window.renderAccountPage || function(){var user=window.currentUser||{username:safeGet("repco_username","")}; var uEl=document.getElementById("acc-user"); if(uEl) uEl.value=user.username||"";};
-window.renderAccountMgmtPage = window.renderAccountMgmtPage || function(){};
-window.renderPublicHolidayPage = window.renderPublicHolidayPage || function(){};
-window.renderBuddies = window.renderBuddies || function(){};
-window.renderAllSafe = window.renderAllSafe || function(){};
-window.applyPublicHolidaysToAllRosters = window.applyPublicHolidaysToAllRosters || function(){};
-window.getPublicHolidayForDate = window.getPublicHolidayForDate || getPublicHolidayForDate;
-window.isGShift = window.isGShift || function(shift,name){if(!shift) return false; var up=(shift+'').toUpperCase().trim(); if(up==='G') return true; var has0730=shift.indexOf('07:30')>=0; var has2000=shift.indexOf('20:00')>=0; var isLC=false; if(name){var low=name.toLowerCase(); if(low.indexOf('luke')>=0||low.indexOf('chris')>=0) isLC=true;} if(isLC&&(has0730||has2000)) return true; if(has0730) return true; return false;};
-window.isGStatus = window.isGStatus || window.isGShift;
-window.buildSection = window.buildSection || function(type){};
-var currentFortnightId=null; var is24H=false; var time24=false; var undoStack=[]; var selectedUnavailDates=new Set(); var phAllocations=[]; var fortnightDatesCache={}; var selectedFortnightKey=null;
-function toast(msg){var c=document.getElementById('toast-v141'); if(!c){alert(msg); return;} var el=document.createElement('div'); el.className='toast-item'; el.textContent=msg; c.appendChild(el); setTimeout(function(){try{el.remove();}catch(e){}},3500);}
-function generateFortnightId(d){var y=d.getFullYear(); var s=new Date(y,0,1); var diff=Math.floor((d-s)/86400000); var fn=Math.floor(diff/14)+1; return y+'-FN'+String(fn).padStart(2,'0');}
-function getDatesForFortnight(fnId){if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId]; var parts=fnId.split('-FN'); if(parts.length<2) return []; var y=parseInt(parts[0]); var fn=parseInt(parts[1]); var first=new Date(y,0,1); var st=new Date(first.getTime()+(fn-1)*14*86400000); var dates=[]; for(var i=0;i<14;i++){var dd=new Date(st.getTime()+i*86400000); dates.push(getISO(dd));} fortnightDatesCache[fnId]=dates; return dates;}
-async function doLogin(){
-  try{
-    var uEl=document.getElementById('login-user'); var pEl=document.getElementById('login-pass'); var errEl=document.getElementById('login-err');
-    if(!uEl||!pEl||!errEl){alert('Login elements missing'); return;}
-    var u=(uEl.value||'').trim(); var p=(pEl.value||'').trim();
-    if(!u||!p){errEl.textContent='Enter username and password'; return;}
-    try{seedIfEmpty();}catch(e){}
-    var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)) users=[];
-    var found=null; for(var i=0;i<users.length;i++){if(users[i].username===u && users[i].password===p){found=users[i]; break;}}
-    if(!found){
-      var lu=u.toLowerCase();
-      if((lu==='admin'&&(p==='admin123'||p==='admin'))||(lu==='repco')||(lu==='chris'&&(p==='Chris'||p==='chris'))||(lu==='manager'&&p==='manager')||(lu==='michaele'&&(p==='Michaele'||p==='michaele'))){
-        var rm={admin:'admin',repco:'admin',chris:'manager',manager:'manager',michaele:'manager'}; var r=rm[lu]||'staff'; found={username:u,password:p,role:r,displayName:u,employmentType:'fulltime',firstName:u,lastName:''};
-      }
-    }
-    if(!found){errEl.textContent='Invalid login - try admin / admin123'; return;}
-    errEl.textContent='';
-    safeSet('repco_username',found.username); safeSet('repco_currentRole',found.role||'staff'); safeSet('repco_session',String(Date.now()));
-    safeSetJSON('retail_roster_session_v1',{username:found.username,role:found.role,ts:Date.now()}); safeSetJSON('repco_currentUser',found); window.currentUser=found;
-    var lp=document.getElementById('login-page'); if(lp) lp.style.display='none';
-    var gh=document.getElementById('global-header'); if(gh){gh.classList.add('show'); gh.style.display='flex';}
-    var main=document.getElementById('repco-v65'); if(main){main.classList.add('show'); main.style.display='block';}
-    var hu=document.getElementById('header-user'); if(hu) hu.textContent=found.username;
-    var hr=document.getElementById('header-role'); if(hr) hr.textContent=found.role||'staff';
-    toast('Welcome '+(found.displayName||found.username)+'!'); try{applyRoleVisibility(found.role);}catch(e){}
-    try{await populateFortnightSelect();}catch(e){}
-    if(!currentFortnightId){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF); if(keys.length>0) currentFortnightId=keys.sort().pop(); else currentFortnightId=generateFortnightId(new Date());}
-    try{renderRosterSafe();}catch(e){} try{cloudSave();}catch(e){}
-  }catch(e){console.error('doLogin error',e); var errEl=document.getElementById('login-err'); if(errEl) errEl.textContent='Login error: '+e.message;}
-}
-window.doLogin = doLogin;
-function doLoginSync(){return doLogin();}
-</script>
+
 <link rel="icon" href="data:image/x-icon;,">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
@@ -751,11 +686,108 @@ body:not(.is-admin) .daily-total-casual {
 
 
 
+
+
+
+
+
+
 <script>
 
-const BUILD_ID="20261022_V207_COUNTDOWN_FIX";
-let currentHtmlHash=null;
-let currentBuildId=BUILD_ID;
+var FIREBASE_ENABLED = (typeof FIREBASE_DB_URL !== 'undefined' && FIREBASE_DB_URL && FIREBASE_DB_URL.indexOf('repco-roster-default') !== -1);
+var FIREBASE_404_COUNT = 0;
+var _origFetch = window.fetch.bind(window);
+function safeCloudFetch(url, opts){
+  if(!FIREBASE_ENABLED) return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
+  if(url.indexOf('repco-roster-default-rtdb') !== -1 && FIREBASE_404_COUNT > 3){
+    return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
+  }
+  return _origFetch(url, opts).then(function(r){
+    if(!r.ok && r.status===404 && url.indexOf('repco_state')!==-1){
+      FIREBASE_404_COUNT++;
+      return {ok:false, status:404, json:function(){return Promise.resolve(null)}};
+    }
+    return r;
+  }).catch(function(e){ return {ok:false, status:404, json:function(){return Promise.resolve(null)}}; });
+}
+window.addEventListener('error', function(e){
+  if(e.message && e.message.indexOf('message channel closed')!==-1){ e.preventDefault(); }
+});
+window.addEventListener('unhandledrejection', function(e){
+  if(e.reason && e.reason.message && e.reason.message.indexOf('message channel closed')!==-1){ e.preventDefault(); }
+});
+
+
+// ===== SINGLE EARLY-STUB BLOCK V217 FINAL - FIXES ReferenceError V213/V211/V215 - 1 BLOCK ONLY - NO DUPLICATES =====
+var MEMORY_STORE = {};
+var FIREBASE_DB_URL = "https://repco-roster-default-rtdb.firebaseio.com";
+var FIREBASE_CONFIG = {apiKey:"AIzaSyDummy",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
+var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive","repco_username","repco_currentRole","repco_session","repco_cloud_ts","retail_roster_rosters_v1","repco_rosters"];
+var db = null;
+try{if(typeof firebase!=="undefined"&&firebase.apps&&firebase.apps.length===0){firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database();}}catch(e){}
+function safeGet(k,d){try{var v=localStorage.getItem(k); if(v===null) return d!==undefined?d:v; return v;}catch(e){return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:(d!==undefined?d:null);}}
+function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){} MEMORY_STORE[k]=v;}
+function safeGetJSON(k,d){try{var raw=safeGet(k,null); if(raw===null||raw===undefined) return d; if(typeof raw==="object") return raw; return JSON.parse(raw);}catch(e){return d;}}
+function safeSetJSON(k,o){try{var s=JSON.stringify(o); safeSet(k,s);}catch(e){MEMORY_STORE[k]=JSON.stringify(o);}}
+function getAllState(){var state={}; CLOUD_KEYS.forEach(function(k){state[k]=safeGetJSON(k,null);}); state._ts=Date.now(); return state;}
+async function cloudLoadAll(){try{var r=await safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){var data=await r.json(); if(data&&data._ts){var lt=parseInt(safeGet("repco_cloud_ts","0")||"0"); if(data._ts>lt){Object.keys(data).forEach(function(k){if(k==="_ts") return; safeSetJSON(k,data[k]);}); safeSet("repco_cloud_ts",String(data._ts)); try{renderAllSafe();}catch(e){}}}} var r2=await safeCloudFetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{cache:"no-store"}); if(r2.ok){var d2=await r2.json(); if(Array.isArray(d2)) safeSetJSON("retail_roster_requests_v2",d2);} }catch(e){}}
+function cloudSave(){try{var state=getAllState(); var json=JSON.stringify(state); if(db&&db.ref){db.ref("repco_state").set(state).then(function(){safeSet("repco_cloud_ts",String(state._ts));}).catch(function(){safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});});}else{safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});} try{var reqs=safeGetJSON("retail_roster_requests_v2",[]); safeCloudFetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(reqs)}).catch(function(){});}catch(e){}}catch(e){}}
+function getISO(d){return d.toISOString().slice(0,10);}
+function formatBrisbane(d){try{return d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}catch(e){return d.toString();}}
+function getDDMM(iso){try{var p=iso.split("-"); return p[2]+"/"+p[1];}catch(e){return iso;}}
+function getPublicHolidayForDate(iso){var phs=safeGetJSON("retail_roster_public_holidays_v1",[]); if(!Array.isArray(phs)) return null; for(var i=0;i<phs.length;i++){if(phs[i].dateISO===iso) return phs[i];} return null;}
+window.renderAccountPage = window.renderAccountPage || function(){var user=window.currentUser||{username:safeGet("repco_username","")}; var uEl=document.getElementById("acc-user"); if(uEl) uEl.value=user.username||"";};
+window.renderAccountMgmtPage = window.renderAccountMgmtPage || function(){};
+window.renderPublicHolidayPage = window.renderPublicHolidayPage || function(){};
+window.renderBuddies = window.renderBuddies || function(){};
+window.renderAllSafe = window.renderAllSafe || function(){};
+window.applyPublicHolidaysToAllRosters = window.applyPublicHolidaysToAllRosters || function(){};
+window.getPublicHolidayForDate = window.getPublicHolidayForDate || getPublicHolidayForDate;
+window.isGShift = window.isGShift || function(shift,name){if(!shift) return false; var up=(shift+'').toUpperCase().trim(); if(up==='G') return true; var has0730=shift.indexOf('07:30')>=0; var has2000=shift.indexOf('20:00')>=0; var isLC=false; if(name){var low=name.toLowerCase(); if(low.indexOf('luke')>=0||low.indexOf('chris')>=0) isLC=true;} if(isLC&&(has0730||has2000)) return true; if(has0730) return true; return false;};
+window.isGStatus = window.isGStatus || window.isGShift;
+window.buildSection = window.buildSection || function(type){};
+var currentFortnightId=null; var is24H=false; var time24=false; var undoStack=[]; var selectedUnavailDates=new Set(); var phAllocations=[]; var fortnightDatesCache={}; var selectedFortnightKey=null;
+function toast(msg){var c=document.getElementById('toast-v141'); if(!c){alert(msg); return;} var el=document.createElement('div'); el.className='toast-item'; el.textContent=msg; c.appendChild(el); setTimeout(function(){try{el.remove();}catch(e){}},3500);}
+function generateFortnightId(d){var y=d.getFullYear(); var s=new Date(y,0,1); var diff=Math.floor((d-s)/86400000); var fn=Math.floor(diff/14)+1; return y+'-FN'+String(fn).padStart(2,'0');}
+function getDatesForFortnight(fnId){if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId]; var parts=fnId.split('-FN'); if(parts.length<2) return []; var y=parseInt(parts[0]); var fn=parseInt(parts[1]); var first=new Date(y,0,1); var st=new Date(first.getTime()+(fn-1)*14*86400000); var dates=[]; for(var i=0;i<14;i++){var dd=new Date(st.getTime()+i*86400000); dates.push(getISO(dd));} fortnightDatesCache[fnId]=dates; return dates;}
+async function doLogin(){
+  try{
+    var uEl=document.getElementById('login-user'); var pEl=document.getElementById('login-pass'); var errEl=document.getElementById('login-err');
+    if(!uEl||!pEl||!errEl){alert('Login elements missing'); return;}
+    var u=(uEl.value||'').trim(); var p=(pEl.value||'').trim();
+    if(!u||!p){errEl.textContent='Enter username and password'; return;}
+    try{seedIfEmpty();}catch(e){}
+    var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)) users=[];
+    var found=null; for(var i=0;i<users.length;i++){if(users[i].username===u && users[i].password===p){found=users[i]; break;}}
+    if(!found){
+      var lu=u.toLowerCase();
+      if((lu==='admin'&&(p==='admin123'||p==='admin'))||(lu==='repco')||(lu==='chris'&&(p==='Chris'||p==='chris'))||(lu==='manager'&&p==='manager')||(lu==='michaele'&&(p==='Michaele'||p==='michaele'))){
+        var rm={admin:'admin',repco:'admin',chris:'manager',manager:'manager',michaele:'manager'}; var r=rm[lu]||'staff'; found={username:u,password:p,role:r,displayName:u,employmentType:'fulltime',firstName:u,lastName:''};
+      }
+    }
+    if(!found){errEl.textContent='Invalid login - try admin / admin123'; return;}
+    errEl.textContent='';
+    safeSet('repco_username',found.username); safeSet('repco_currentRole',found.role||'staff'); safeSet('repco_session',String(Date.now()));
+    safeSetJSON('retail_roster_session_v1',{username:found.username,role:found.role,ts:Date.now()}); safeSetJSON('repco_currentUser',found); window.currentUser=found;
+    var lp=document.getElementById('login-page'); if(lp) lp.style.display='none';
+    var gh=document.getElementById('global-header'); if(gh){gh.classList.add('show'); gh.style.display='flex';}
+    var main=document.getElementById('repco-v65'); if(main){main.classList.add('show'); main.style.display='block';}
+    var hu=document.getElementById('header-user'); if(hu) hu.textContent=found.username;
+    var hr=document.getElementById('header-role'); if(hr) hr.textContent=found.role||'staff';
+    toast('Welcome '+(found.displayName||found.username)+'!'); try{applyRoleVisibility(found.role);}catch(e){}
+    try{await populateFortnightSelect();}catch(e){}
+    if(!currentFortnightId){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF); if(keys.length>0) currentFortnightId=keys.sort().pop(); else currentFortnightId=generateFortnightId(new Date());}
+    try{renderRosterSafe();}catch(e){} try{cloudSave();}catch(e){}
+  }catch(e){console.error('doLogin error',e); var errEl=document.getElementById('login-err'); if(errEl) errEl.textContent='Login error: '+e.message;}
+}
+window.doLogin = doLogin;
+function doLoginSync(){return doLogin();}
+
+
+
+var BUILD_ID="20261022_V207_COUNTDOWN_FIX";
+var currentHtmlHash=null;
+var currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
 async function checkForIndexUpdate(isInitial){
   try{
@@ -839,7 +871,7 @@ function backupBeforeUpdate(){
         if(typeof db!=='undefined' && db && db.ref){
           db.ref('repco_state').set(state);
         } else {
-          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
         }
       }catch(e){}
     }
@@ -861,7 +893,7 @@ function recoverDataAfterUpdate(){
     }
     if(isEmpty){
       // Try cloud
-      fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ return r.json(); }).then(function(cloudFns){
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ return r.json(); }).then(function(cloudFns){
         if(Array.isArray(cloudFns) && cloudFns.length>0){
           safeSetJSON('retail_roster_byFortnight_v1', cloudFns);
           try{ renderRosterSafe(); }catch(e){}
@@ -919,7 +951,7 @@ function getISO(){
 
 
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
-window.MEMORY_STORE = window.MEMORY_STORE || {}; var MEMORY_STORE = window.MEMORY_STORE;
+window.MEMORY_STORE = window.MEMORY_STORE || {}; MEMORY_STORE = window.MEMORY_STORE;
 function safeGet(k){try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:null;}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){}MEMORY_STORE[k]=v; if(CLOUD_KEYS.includes(k) && !suppressCloudSave) cloudSave(); }
 function safeGetJSON(k,def){const r=safeGet(k);if(!r)return def;try{return JSON.parse(r);}catch(e){return def;}}
@@ -929,9 +961,9 @@ function getNow(){return new Date();}
 function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let a=parseInt(m[1])*60+parseInt(m[2]);let b=parseInt(m[3])*60+parseInt(m[4]);if(b<a)b+=1440;return (b-a)/60}
 function netH(sh){let r=rawH(sh);if(r===0)return 0;return r>=5?r-0.5:r}
 function isCasual(st){return st.employmentType==='casual'}
-const FIREBASE_DB_URL="https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
-const FIREBASE_CONFIG={apiKey:"AIzaSy placeholder",authDomain:"testing-de079.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"testing-de079",storageBucket:"testing-de079.appspot.com",messagingSenderId:"0",appId:"1:0:web:repco"};
-let db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); }catch(e){ db=null; }
+FIREBASE_DB_URL="https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
+FIREBASE_CONFIG={apiKey:"AIzaSy placeholder",authDomain:"testing-de079.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"testing-de079",storageBucket:"testing-de079.appspot.com",messagingSenderId:"0",appId:"1:0:web:repco"};
+db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); }catch(e){ db=null; }
 
 
 // === PHONE NOTIFICATIONS OUTSIDE BROWSER: serviceWorker, PushManager, Notification + FCM ready ===
@@ -1108,7 +1140,7 @@ async function enablePhoneNotifications(isSilent) {
             if (db && db.ref) {
               db.ref('fcm_tokens/' + username).set(tokenData);
             } else {
-              fetch(FIREBASE_DB_URL + '/fcm_tokens/' + username + '.json', {
+              safeCloudFetch(FIREBASE_DB_URL + '/fcm_tokens/' + username + '.json', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(tokenData)
@@ -1218,7 +1250,7 @@ async function subscribeWebPush() {
       if (db && db.ref) {
         db.ref('webpush_subscriptions/' + username).set(subData);
       } else {
-        fetch(FIREBASE_DB_URL + '/webpush_subscriptions/' + username + '.json', {
+        safeCloudFetch(FIREBASE_DB_URL + '/webpush_subscriptions/' + username + '.json', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(subData)
@@ -1505,7 +1537,7 @@ async function sendRosterPushNotification(targetUsername, title, body) {
       db.ref('push_notifications/' + targetUsername + '/' + Date.now()).set(pushData);
       toast('Push queued for ' + targetUsername);
     } else {
-      await fetch(FIREBASE_DB_URL + '/push_notifications/' + targetUsername + '/' + Date.now() + '.json', {
+      await safeCloudFetch(FIREBASE_DB_URL + '/push_notifications/' + targetUsername + '/' + Date.now() + '.json', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pushData)
@@ -1548,7 +1580,7 @@ setInterval(async function() {
     }
     if (Notification.permission !== 'granted') return;
     
-    const resp = await fetch(FIREBASE_DB_URL + '/push_notifications/' + username + '.json?_t=' + Date.now(), { cache: 'no-store', mode: 'cors' });
+    const resp = await safeCloudFetch(FIREBASE_DB_URL + '/push_notifications/' + username + '.json?_t=' + Date.now(), { cache: 'no-store', mode: 'cors' });
     if (!resp.ok) return;
     const notifs = await resp.json();
     if (!notifs) return;
@@ -1572,7 +1604,7 @@ setInterval(async function() {
     // Clean old after 1 hour
     setTimeout(async () => {
       try {
-        await fetch(FIREBASE_DB_URL + '/push_notifications/' + username + '/' + latestKey + '.json', { method: 'DELETE' });
+        await safeCloudFetch(FIREBASE_DB_URL + '/push_notifications/' + username + '/' + latestKey + '.json', { method: 'DELETE' });
       } catch (e) {}
     }, 3600000);
 
@@ -1582,7 +1614,7 @@ setInterval(async function() {
 }, 5000); // Check every 5 seconds for new pushes
 
 // === END PHONE NOTIFICATIONS ===
-const CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','maintenance_mode','repco_maintenance_first_v1','retail_roster_hidden_staff_v1','retail_roster_public_holidays_v1','retail_roster_shift_offers_v1','repco_notifications_v1'];
+CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','maintenance_mode','repco_maintenance_first_v1','retail_roster_hidden_staff_v1','retail_roster_public_holidays_v1','retail_roster_shift_offers_v1','repco_notifications_v1'];
 let cloudSaveTimer=null; let suppressCloudSave=false;
 function getAllState(){let o={}; CLOUD_KEYS.forEach(k=>{let v=safeGet(k); if(v!==null) o[k]=v;}); o._ts=Date.now(); o._build=BUILD_ID; return o;}
 
@@ -2062,7 +2094,7 @@ async function cloudLoad(){
   // Poll Firebase REST as fallback (cors + no-cors) - for when SDK blocked
   setInterval(async function(){
     try{
-      var rr=await fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudState=await rr.json();
       if(!cloudState || !cloudState._ts) return;
@@ -2085,7 +2117,7 @@ async function cloudLoad(){
   // Also pending should NEVER show posted on roster until accepted
   setInterval(async function(){
     try{
-      var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudOffers=await rr.json();
       if(!Array.isArray(cloudOffers)) return;
@@ -2187,7 +2219,7 @@ async function cloudLoad(){
   // Poll requests_v2 directly for denied/approved that should overwrite pending - DANIEL FIX
   setInterval(async function(){
     try{
-      var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudReqs2=await rr.json();
       if(!Array.isArray(cloudReqs2)) return;
@@ -2215,7 +2247,7 @@ async function cloudLoad(){
   // V120: Poll roster directly every 1s for instant My Schedule update - FIXED V163: Preserve hidden staff
   setInterval(async function(){
     try{
-      var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudFns=await rr.json();
       if(!Array.isArray(cloudFns) || cloudFns.length===0) return;
@@ -2718,10 +2750,10 @@ function populateFortnightSelect(){
               safeSet('repco_cloud_ts', String(state._ts));
               console.log('LIVE SAVE: AB/G edit synced instantly');
             } else {
-              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); });
+              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); });
             }
             // Also push roster directly for redundancy
-            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors',cache:'no-store'}).catch(function(){});
+            safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors',cache:'no-store'}).catch(function(){});
           }catch(e){ console.error('Live save error', e); }
           // Broadcast to other tabs
           try{ if(typeof BroadcastChannel!=='undefined'){ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'roster_update', ts:Date.now()}); } }catch(e){}
@@ -2913,7 +2945,7 @@ function deduplicateAllRosters(showToast){
       try{
         var state=getAllState();
         if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state);
-        else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }catch(e){}
       if(showToast){
         var msg='';
@@ -3084,8 +3116,8 @@ function deleteCurrentRoster(){
             db.ref('repco_state').set(state).then(function(){ console.log('Delete synced via SDK'); toast('Deleted '+deleted.label+' - live on all devices'); });
             db.ref('retail_roster_byFortnight_v1').set(fns);
           }
-          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
-          fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(){ console.log('Roster delete pushed via REST'); }).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(){ console.log('Roster delete pushed via REST'); }).catch(function(){});
         }catch(e){ console.error('Delete sync error', e); }
       }catch(e){ console.error('delete error', e); toast('Delete failed: '+e.message); }
     });
@@ -3136,7 +3168,7 @@ function renderRosterSafe(){
       console.log('V204 MAIN: Cleaned', _startupOffers.length-_cleaned.length, 'invalid CLOSED pending offers');
       try{
         if(typeof FIREBASE_DB_URL!=='undefined'){
-          fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(_cleaned),mode:'cors'}).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(_cleaned),mode:'cors'}).catch(function(){});
         }
       }catch(e){}
     }
@@ -3669,7 +3701,7 @@ function saveStaffName(globalIdx){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state).then(function(){ toast('Name updated to '+formattedLast+', '+formattedFirst+' - LIVE'); });
       } else {
-        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
         toast('Name updated to '+formattedLast+', '+formattedFirst+' - synced');
       }
     }catch(e){}
@@ -3756,7 +3788,7 @@ function deleteStaffFromRoster(globalIdx, fromAll){
             if(typeof db!=='undefined' && db){
               db.ref('repco_state').set(state);
             } else {
-              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
             }
           }catch(e){}
           toast('DELETED '+staffName+' from ALL '+deletedCount+' rosters - LIVE synced to all devices');
@@ -3773,7 +3805,7 @@ function deleteStaffFromRoster(globalIdx, fromAll){
             try{
               var state=getAllState();
               if(typeof db!=='undefined' && db) db.ref('repco_state').set(state);
-              else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+              else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
             }catch(e){}
             toast('Deleted '+staffName+' from '+fn.label+' - LIVE synced');
           }
@@ -4266,9 +4298,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 var finalOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
                 var finalNotifs = safeGetJSON('repco_notifications_v1',[]);
                 if(typeof FIREBASE_DB_URL!=='undefined'){
-                  fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalFns),mode:'cors',cache:'no-store'}).catch(function(){});
-                  fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalOffers),mode:'cors',cache:'no-store'}).catch(function(){});
-                  fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalNotifs),mode:'cors',cache:'no-store'}).catch(function(){});
+                  safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalFns),mode:'cors',cache:'no-store'}).catch(function(){});
+                  safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalOffers),mode:'cors',cache:'no-store'}).catch(function(){});
+                  safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalNotifs),mode:'cors',cache:'no-store'}).catch(function(){});
                 }
                 if(window.db){
                   try{ window.db.ref('retail_roster_byFortnight_v1').set(finalFns); }catch(e){}
@@ -4581,7 +4613,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 // Push to Firebase
                 try{
                   if(typeof FIREBASE_DB_URL!=='undefined'){
-                    fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(filteredNotifs),mode:'cors'}).catch(function(){});
+                    safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(filteredNotifs),mode:'cors'}).catch(function(){});
                   }
                   if(window.db){
                     try{ window.db.ref('repco_notifications_v1').set(filteredNotifs); }catch(e){}
@@ -4681,7 +4713,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   // Push to Firebase
                   try{
                     if(typeof FIREBASE_DB_URL!=='undefined'){
-                      fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cleaned),mode:'cors'}).catch(function(){});
+                      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cleaned),mode:'cors'}).catch(function(){});
                     }
                     if(window.db){
                       try{ window.db.ref('retail_roster_shift_offers_v1').set(cleaned); }catch(e){}
@@ -4744,7 +4776,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               safeSetJSON('repco_notifications_v1', notifsClosed);
               try{
                 if(typeof FIREBASE_DB_URL!=='undefined'){
-                  fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(notifsClosed),mode:'cors'}).catch(function(){});
+                  safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(notifsClosed),mode:'cors'}).catch(function(){});
                 }
                 if(window.db){
                   try{ window.db.ref('repco_notifications_v1').set(notifsClosed); }catch(e){}
@@ -4977,10 +5009,10 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               db.ref('repco_state').set(state);
               safeSet('repco_cloud_ts', String(state._ts));
             } else {
-              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
+              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
             }
             // Also push roster directly - use freshFns that has cancelled marker cleared
-            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(freshFns),mode:'cors',cache:'no-store'}).catch(function(){});
+            safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(freshFns),mode:'cors',cache:'no-store'}).catch(function(){});
           }catch(e){ console.error('V174 Live save error', e); }
           try{ if(typeof BroadcastChannel!=='undefined'){ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'roster_update', ts:Date.now()}); } }catch(e){}
 
@@ -5092,9 +5124,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 state2._ts=Date.now();
                 safeSet('repco_cloud_ts', String(state2._ts));
                 if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state2);
-                else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state2)});
-                fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqs),mode:'cors'}).catch(function(){});
-                try{ fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){}); }catch(e){}
+                else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state2)});
+                safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqs),mode:'cors'}).catch(function(){});
+                try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){}); }catch(e){}
                 try{
                   if(typeof BroadcastChannel!=='undefined'){
                     var bc2=new BroadcastChannel('repco_roster_sync');
@@ -5153,7 +5185,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 }
                 if(forceMatched.length>0){
                   safeSetJSON('retail_roster_requests_v2', allReqsForce);
-                  try{ fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForce),mode:'cors'}).catch(function(){}); }catch(e){}
+                  try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForce),mode:'cors'}).catch(function(){}); }catch(e){}
                   console.log('V139: Force superseded on backspace', forceMatched.join(','));
                 }
               }catch(e){ console.log('V139 force supersede error', e); }
@@ -5237,16 +5269,16 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             if(typeof db!=='undefined' && db && db.ref){
               db.ref('repco_state').set(state);
             } else {
-              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
-                fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
+              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
+                safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
               });
             }
             // Push roster separately for direct polling - with fallback
             try{
-              fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(res){
+              safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(res){
                 if(!res.ok) throw new Error('cors failed');
               }).catch(function(){
-                fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
+                safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
               });
             }catch(e){}
             // V135: Force My Schedule live update on employee devices - push roster + requests and broadcast
@@ -5254,8 +5286,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               // Push roster separately again with no-cors fallback for reliability
               setTimeout(function(){
                 try{
-                  fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){
-                    fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
+                  safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){
+                    safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
                   });
                 }catch(e){}
               }, 300);
@@ -5748,14 +5780,14 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       // ALWAYS push to Firebase via multiple methods for instant delivery
       if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
         // 1. Direct REST to notifications
-        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V167: Pushed to Firebase notifications/'+targetUsername); }).catch(function(e){ console.log('V167 Firebase notif push fail', e); });
+        safeCloudFetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V167: Pushed to Firebase notifications/'+targetUsername); }).catch(function(e){ console.log('V167 Firebase notif push fail', e); });
         // 2. To repco_notifications_v1 global
-        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
         // 3. To push_notifications with unique key
         var uniqueKey = Date.now() + '_' + Math.random().toString(36).substr(2,5);
-        fetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+uniqueKey+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title: notif.title, body: notif.message, data: notif, timestamp: Date.now(), from: notif.from, type: notif.type, force: true}),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+uniqueKey+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title: notif.title, body: notif.message, data: notif, timestamp: Date.now(), from: notif.from, type: notif.type, force: true}),mode:'cors'}).catch(function(){});
         // 4. To push_queue for FCM
-        fetch(FIREBASE_DB_URL+'/push_queue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to: targetUsername, title: notif.title, body: notif.message, data: notif, ts: Date.now(), force: true}),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/push_queue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to: targetUsername, title: notif.title, body: notif.message, data: notif, ts: Date.now(), force: true}),mode:'cors'}).catch(function(){});
       }
       if(window.db){
         try{
@@ -5817,8 +5849,8 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
           
           // Push offer to Firebase for instant sync - MULTIPLE METHODS
           if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
-            fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).then(function(){ console.log('V167: Offers pushed via REST'); }).catch(function(e){ console.log('V167 offers REST fail', e); });
-            fetch(FIREBASE_DB_URL+'/shift_offers/'+targetUsername.toLowerCase()+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(offer),mode:'cors'}).catch(function(){});
+            safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).then(function(){ console.log('V167: Offers pushed via REST'); }).catch(function(e){ console.log('V167 offers REST fail', e); });
+            safeCloudFetch(FIREBASE_DB_URL+'/shift_offers/'+targetUsername.toLowerCase()+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(offer),mode:'cors'}).catch(function(){});
           }
           if(window.db){
             try{ window.db.ref('retail_roster_shift_offers_v1').set(offers).then(function(){ console.log('V167: Offers set via SDK'); }); }catch(e){ console.log('V167 offers SDK set fail', e); }
@@ -6141,8 +6173,8 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     // Push to Firebase to delete from employee phone instantly
     try{
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updatedOffers),mode:'cors'}).catch(function(){});
-        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(remainingNotifs),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updatedOffers),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(remainingNotifs),mode:'cors'}).catch(function(){});
         // Also push cancellation to employee's notification channel
         for(var ci=0; ci<cancelled.length; ci++){
           var canc = cancelled[ci];
@@ -6158,7 +6190,7 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
             read: false,
             cancelledOfferId: canc.id
           };
-          fetch(FIREBASE_DB_URL+'/notifications/'+canc.targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cancelNotif),mode:'cors'}).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/notifications/'+canc.targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cancelNotif),mode:'cors'}).catch(function(){});
         }
       }
       if(window.db){
@@ -6326,14 +6358,14 @@ function acceptShiftOffer(offerId){
         notifs.push(adminNotif);
         safeSetJSON('repco_notifications_v1', notifs);
         if(typeof FIREBASE_DB_URL!=='undefined'){
-          fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
         }
         if(window.db){
           try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
         }
       }
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
       }
       if(window.db){
         try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
@@ -6563,8 +6595,8 @@ function sendApprovalNotification(employeeName, type, details, fullRequest){
       // FIXED V164: Instant Firebase sync + FCM push for iPhone locked screen
       if(typeof FIREBASE_DB_URL!=='undefined'){
         // Push notification directly to Firebase REST for instant sync
-        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
-        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V164: Notif pushed to Firebase for', targetUsername); }).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V164: Notif pushed to Firebase for', targetUsername); }).catch(function(){});
       }
       if(window.db){
         try{
@@ -6809,7 +6841,7 @@ function forceRefreshCurrentData(){
     // Always check for new index.html version first
     checkForIndexUpdate(false);
     // Fetch latest Firebase state
-    fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('state fail'); return r.json(); }).then(function(state){
+    safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('state fail'); return r.json(); }).then(function(state){
       if(state && state._ts){
         var localTs=parseInt(safeGet('repco_cloud_ts')||'0');
         if(state._ts>localTs){
@@ -6819,7 +6851,7 @@ function forceRefreshCurrentData(){
       }
     }).catch(function(){});
     // Fetch roster directly
-    fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('roster fail'); return r.json(); }).then(function(cloudFns){
+    safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('roster fail'); return r.json(); }).then(function(cloudFns){
       if(Array.isArray(cloudFns) && cloudFns.length>0){
         try{ filterDeletedStaffFromCloud(cloudFns); }catch(e){}
         var localFns=safeGetJSON('retail_roster_byFortnight_v1',[]);
@@ -6830,7 +6862,7 @@ function forceRefreshCurrentData(){
       }
     }).catch(function(){});
     // Fetch requests
-    fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('req fail'); return r.json(); }).then(function(cloudReqs){
+    safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('req fail'); return r.json(); }).then(function(cloudReqs){
       if(Array.isArray(cloudReqs)){
         var localReqs=safeGetJSON('retail_roster_requests_v2',[]);
         // Simple merge - if cloud has newer approved/denied/superseded, update local
@@ -7253,7 +7285,7 @@ function toggleMaintenanceFromOptions(){
   try{
     var state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
     if(db) db.ref('repco_state').set(state).then(function(){ toast('Maintenance '+(next?'ON':'OFF')+' - live on all devices'); });
-    else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+    else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
   }catch(e){}
   checkMaintenance();
 }
@@ -8268,7 +8300,7 @@ function openCreatePublicHolidayModal(editId){
           if(state && typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state).then(function(){ toast('Public holiday synced LIVE - unlisted staff now OFF'); });
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }catch(e){}
       },500);
@@ -8390,7 +8422,7 @@ function deletePublicHoliday(id){
           if(state && typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state);
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }catch(e){}
       },500);
@@ -8718,16 +8750,16 @@ function addHiddenStaff(){
       if(state && typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state).then(function(){ console.log('Hidden staff synced LIVE via repco_state'); });
       } else if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
       // FIXED V163: Also push hidden staff directly to Firebase for redundancy (ensures live/permanent)
       var hiddenForDirect = safeGetJSON('retail_roster_hidden_staff_v1',[]);
       var usersForDirect = safeGetJSON('retail_roster_users_v1',[]);
       var fnsForDirect = safeGetJSON('retail_roster_byFortnight_v1',[]);
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hiddenForDirect),mode:'cors'}).then(function(){ console.log('Hidden staff direct sync OK'); }).catch(function(e){ console.log('Hidden direct sync fail', e); });
-        fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fnsForDirect),mode:'cors'}).catch(function(){});
-        fetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(usersForDirect),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hiddenForDirect),mode:'cors'}).then(function(){ console.log('Hidden staff direct sync OK'); }).catch(function(e){ console.log('Hidden direct sync fail', e); });
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fnsForDirect),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(usersForDirect),mode:'cors'}).catch(function(){});
         if(typeof db!=='undefined' && db && db.ref){
           try{ db.ref('retail_roster_hidden_staff_v1').set(hiddenForDirect); }catch(e){}
           try{ db.ref('retail_roster_byFortnight_v1').set(fnsForDirect); }catch(e){}
@@ -8857,10 +8889,10 @@ function saveHiddenStaffEdit(idx){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state);
       } else if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
-      fetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hidden),mode:'cors'}).catch(function(){});
-      fetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(users),mode:'cors'}).catch(function(){});
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hidden),mode:'cors'}).catch(function(){});
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(users),mode:'cors'}).catch(function(){});
     }catch(e){}
   }catch(e){ console.error(e); toast('Error: '+e.message); }
 }
@@ -8873,7 +8905,7 @@ function cloudSave(){
   cloudSaveTimer=setTimeout(async()=>{
     try{
       let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
-      if(db) await db.ref('repco_state').set(state); else await fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+      if(db) await db.ref('repco_state').set(state); else await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
     }catch(e){ console.log("cloudSave",e); }
   },600);
 }
@@ -8884,7 +8916,7 @@ function debouncedCloudSave(){
   debouncedCloudSaveTimer=setTimeout(async()=>{
     try{
       let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
-      if(db) await db.ref('repco_state').set(state); else await fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+      if(db) await db.ref('repco_state').set(state); else await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       console.log('Debounced cloud save done');
     }catch(e){ console.log("debouncedCloudSave",e); }
   },600);
@@ -8980,7 +9012,7 @@ function submitUnavail(){
           if(typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state).then(function(){ toast('Synced - admin notified'); });
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }
       }catch(e){}
@@ -9154,23 +9186,23 @@ function approveReq(idx){
           console.log('Approve synced via SDK');
         }).catch(function(e){
           console.log('SDK sync failed, trying REST', e.message);
-          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
         });
       } else {
-        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
-          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
+          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
         });
       }
       // Also save requests and roster separately for direct polling
       var allStr=JSON.stringify(all);
       var fnsStr=JSON.stringify(fns);
-      fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'cors'}).then(function(){
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'cors'}).then(function(){
         console.log('Requests synced via REST');
       }).catch(function(){
-        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'no-cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'no-cors'}).catch(function(){});
       });
-      fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){
-        fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'no-cors'}).catch(function(){});
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'no-cors'}).catch(function(){});
       });
     }catch(e){ console.error('Approve sync error', e); }
     
@@ -9251,9 +9283,9 @@ function denyReq(idx){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state);
       } else {
-        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
-      fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
     }catch(e){ console.error(e); }
     renderRequests(); 
     try{ renderMySchedule(); }catch(e){}
@@ -9380,7 +9412,7 @@ function renderRequestsPage(){
   setTimeout(()=>{ initUnavailCalendar(); }, 100);
 }
 
-let selectedUnavailDates=[];
+selectedUnavailDates=[];
 function initUnavailCalendar(){
   let cal=document.getElementById('unavail-calendar');
   if(!cal) return;
@@ -9534,7 +9566,7 @@ function submitUnavailability(){
           if(typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state).then(function(){ console.log('Unavailability synced to cloud'); toast('Synced to cloud - admin will be notified'); });
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }
       }catch(e){ console.error('Cloud sync error', e); }
@@ -9590,7 +9622,7 @@ function submitShiftCorrection(){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state);
       } else {
-        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
     }catch(e){}
   },500);
@@ -9605,7 +9637,7 @@ function dismissDenialReq(idx){
       all[idx].readByAdmin=true;
       safeSetJSON('retail_roster_requests_v2', all);
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
       }
       if(window.db){
         try{ window.db.ref('retail_roster_requests_v2').set(all); }catch(e){}
@@ -9665,8 +9697,8 @@ function reOfferShift(idx){
     safeSetJSON('retail_roster_requests_v2', all);
     
     if(typeof FIREBASE_DB_URL!=='undefined'){
-      fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
-      fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
     }
     if(window.db){
       try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
@@ -9704,7 +9736,7 @@ function toggleMaintenance(){
   try{
     var state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
     if(db) db.ref('repco_state').set(state).then(function(){ toast('Maintenance '+(next?'ON':'OFF')+' - live on all devices'); }).catch(function(e){ console.log('cloudSave',e); });
-    else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+    else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
   }catch(e){ console.log('toggleMaintenance cloudSave', e); }
   checkMaintenance();
 }
@@ -10212,7 +10244,7 @@ function updateMyScheduleCard_ORIG(){
     let card=document.getElementById('my-schedule-card');
     if(!my || !card){ if(card) card.style.display='none'; return; }
     let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    fns.sort(function(a,b){ let da=a.dates[0]&&a.dates[0].iso||''; let db=b.dates[0]&&b.dates[0].iso||''; return da.localeCompare(db); });
+    fns.sort(function(a,b){ let da=a.dates[0]&&a.dates[0].iso||''; db=b.dates[0]&&b.dates[0].iso||''; return da.localeCompare(db); });
     let now=new Date();
     let candidates=[];
     for(let fi=0;fi<fns.length;fi++){
@@ -10527,7 +10559,7 @@ function renderMySchedule(){
           }catch(e){ console.error('overwrite error', e); }
         }
         // Only sync from requests_v2 - removed legacy denied_requests.json which caused approve->denied bug
-        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
+        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
           if(!res.ok) throw new Error('cors failed '+res.status);
           return res.json();
         }).then(function(cloudReqs){
@@ -10537,7 +10569,7 @@ function renderMySchedule(){
           console.log('requests_v2 sync failed', e.message);
         });
         // Also check repco_state for requests
-        fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
+        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
           if(!res.ok) throw new Error('repco_state failed');
           return res.json();
         }).then(function(state){
@@ -11138,7 +11170,7 @@ function renderMySchedule(){
                 allReqsForFixCurr[fixIdxCurr].supersededTs=Date.now();
                 allReqsForFixCurr[fixIdxCurr].supersededNote='Auto-superseded current: Admin edited roster from '+reqData.newShift+' to '+currentShift.shift+' after approval';
                 safeSetJSON('retail_roster_requests_v2', allReqsForFixCurr);
-                try{ fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixCurr),mode:'cors'}).catch(function(){}); }catch(e){}
+                try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixCurr),mode:'cors'}).catch(function(){}); }catch(e){}
               }
             }catch(e){}
             htmlStr+='<div class="card" style="background:#111;color:#fff;border:3px solid #E30613;cursor:pointer" onclick="requestShiftCorrectionFromSchedule('+currentShift.idx+', \''+currentShift.date.date+' '+currentShift.date.day+'\', \''+String(currentShift.shift).replace(/'/g, '')+ '\')"><div style="font-weight:900;font-size:12px;color:#FFEB3B">CURRENT SHIFT - UPDATED BY ADMIN</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+phCurrIcon+currentShift.date.day+' '+currentShift.date.date+(phCurr?' 🎉':'')+' - '+fmt(currentShift.shift)+phCurrBadge+'</div><div style="font-size:11px">Your approved request ('+fmt(reqData.newShift)+') was overridden by admin<br>Now: <b>'+fmt(currentShift.shift)+'</b></div></div>';
@@ -11215,7 +11247,7 @@ function renderMySchedule(){
                   allReqsForFixU[fixIdxU].supersededTs=Date.now();
                   allReqsForFixU[fixIdxU].supersededNote='Auto-superseded in upcoming: Admin edited roster from '+reqU.newShift+' to '+u.shift+' after approval';
                   safeSetJSON('retail_roster_requests_v2', allReqsForFixU);
-                  try{ fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixU),mode:'cors'}).catch(function(){}); }catch(e){}
+                  try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixU),mode:'cors'}).catch(function(){}); }catch(e){}
                 }
               }catch(e){}
               htmlStr+='<div class="card" style="background:#111;color:#fff;border:2px solid #E30613;cursor:pointer" onclick="requestShiftCorrectionFromSchedule('+u.idx+', \''+u.date.date+' '+u.date.day+'\', \''+String(u.shift).replace(/'/g, '')+ '\')"><b>'+u.date.day+' '+u.date.date+'</b> - <b>'+fmt(u.shift)+'</b><br><span style="background:#FFEB3B;color:#111;border-radius:9999px;padding:2px 6px;font-size:9px;font-weight:900">UPDATED BY ADMIN</span><br><small>Was approved '+fmt(reqU.newShift)+', now '+fmt(u.shift)+'</small></div>';
@@ -11973,8 +12005,8 @@ function deleteRequest(idx){
             db.ref('retail_roster_requests_v2').set(JSON.stringify(reqs));
           }
           // Direct REST push for instant sync
-          fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(reqs),mode:'cors'}).then(function(){ console.log('Deleted request synced LIVE', delId); }).catch(function(){});
-          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(reqs),mode:'cors'}).then(function(){ console.log('Deleted request synced LIVE', delId); }).catch(function(){});
+          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
           // Broadcast deletion
           try{
             if(typeof BroadcastChannel!=='undefined'){
@@ -12373,9 +12405,8 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 
 
 }
-</script>
 
-<script>
+
 // PATCH ensures all critical missing functions present
 function buildSection(type){try{var tid='table-'+type; if(type==='fulltime') tid='table-fulltime'; if(type==='casual') tid='table-casual'; if(type==='hidden') tid='table-hidden'; renderTableForType(type,tid);}catch(e){}}
 function isGShift(shift,name){if(!shift) return false; var up=(shift+'').toUpperCase().trim(); if(up==='G') return true; var has0730=shift.indexOf('07:30')>=0; var has2000=shift.indexOf('20:00')>=0; var isLC=false; if(name){var low=name.toLowerCase(); if(low.indexOf('luke')>=0||low.indexOf('chris')>=0) isLC=true;} if(isLC&&(has0730||has2000)) return true; if(has0730) return true; return false;}
@@ -12415,7 +12446,7 @@ function deleteRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]);
   }catch(e){}
   setInterval(async function(){
     try{
-      var r1=await fetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
+      var r1=await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
       if(r1.ok){
         var data=await r1.json();
         if(data&&data._ts){
@@ -12486,93 +12517,9 @@ function deleteRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]);
 })();
 
 
-;(function setupLiveSync(){
-  try{
-    if(db&&db.ref){
-      db.ref('repco_state').on('value',function(snap){
-        var val=snap.val();
-        if(!val) return;
-        var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
-        var rt=val._ts||0;
-        if(rt>lt){
-          Object.keys(val).forEach(function(k){if(k.indexOf('_')===0) return; safeSetJSON(k,val[k]);});
-          safeSet('repco_cloud_ts',String(rt));
-          try{renderRosterSafe(); renderRequestsSafe();}catch(e){}
-        }
-      });
-    }
-  }catch(e){}
-  setInterval(async function(){
-    try{
-      var r1=await fetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
-      if(r1.ok){
-        var data=await r1.json();
-        if(data&&data._ts){
-          var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
-          if(data._ts>lt){
-            var cloudReqs=data['retail_roster_requests_v2']||[];
-            var localReqs=safeGetJSON('retail_roster_requests_v2',[]);
-            var finalTsByDate={};
-            var merged=cloudReqs.concat(localReqs);
-            merged.forEach(function(r){
-              if(r.status==='approved'||r.status==='denied'){
-                var dates=r.dates||[r.dateLabel||r.shiftDate||''];
-                dates.forEach(function(d){
-                  var key=(r.username||'')+'|'+d;
-                  var ts=r.deniedTs||r.approvedTs||r.ts||0;
-                  if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;
-                });
-              }
-            });
-            var seen={};
-            var filtered=[];
-            merged.forEach(function(r){
-              var id=r.id;
-              if(!seen[id]){
-                seen[id]=r; filtered.push(r);
-              }else{
-                if(r.status==='pending'&& (seen[id].status==='denied'||seen[id].status==='approved')){
-                  var pts=r.ts||0; var fts=0;
-                  var dates=r.dates||[r.dateLabel||r.shiftDate||''];
-                  for(var i=0;i<dates.length;i++){
-                    var k=(r.username||'')+'|'+dates[i];
-                    if(finalTsByDate[k]&&finalTsByDate[k]>fts) fts=finalTsByDate[k];
-                  }
-                  if(pts>fts){
-                    seen[id]=r;
-                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
-                  }
-                }else{
-                  if(r.status!=='pending'){
-                    seen[id]=r;
-                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
-                  }
-                }
-              }
-            });
-            var finalFiltered=[];
-            filtered.forEach(function(x){
-              if(x.status!=='pending'){finalFiltered.push(x); return;}
-              var dates=x.dates||[x.dateLabel||x.shiftDate||''];
-              var isOld=false;
-              for(var i=0;i<dates.length;i++){
-                var k=(x.username||'')+'|'+dates[i];
-                var fts=finalTsByDate[k]||0;
-                var pts=x.ts||0;
-                if(fts>0&&pts<=fts){isOld=true; break;}
-              }
-              if(!isOld) finalFiltered.push(x);
-            });
-            Object.keys(data).forEach(function(k){if(k.indexOf('_')!==0&&k!=='retail_roster_requests_v2') safeSetJSON(k,data[k]);});
-            safeSetJSON('retail_roster_requests_v2',finalFiltered);
-            safeSet('repco_cloud_ts',String(data._ts));
-            renderRosterSafe(); renderRequestsSafe(); updateRequestsBadge();
-          }
-        }
-      }
-    }catch(e){}
-  },1200);
-})();
+;
+// REMOVED duplicate setupLiveSync
+
 
 function renderUnavailCalendar(){var el=document.getElementById('unavail-calendar'); if(!el) return; var dates=getDatesForFortnight(getSelectedFortnight()||generateFortnightId(new Date())); var html=''; dates.forEach(function(iso){var sel=selectedUnavailDates.has(iso)?'selected':''; html+='<div class="cal-day '+sel+'" onclick="toggleUnavailDate(\''+iso+'\')">'+getDDMM(iso)+'</div>';}); el.innerHTML=html; updateSelectedUnavailDisplay();}
 function toggleUnavailDate(iso){if(selectedUnavailDates.has(iso)) selectedUnavailDates.delete(iso); else selectedUnavailDates.add(iso); renderUnavailCalendar();}
@@ -12650,15 +12597,34 @@ function nextFortnight(){var dates=getDatesForFortnight(getSelectedFortnight());
 function updateFortnightInfo(){var el=document.getElementById('fortnight-info'); if(!el) return; var dates=getDatesForFortnight(getSelectedFortnight()||''); if(dates.length){el.textContent=dates[0]+' to '+dates[13]+' - brisbane-time-v141 Australia Brisbane every 1s';} else {el.textContent=getSelectedFortnight()||'';}}
 function autoRestoreSession(){try{var repcoUsername=safeGet('repco_username','')||''; var repcoRole=safeGet('repco_currentRole','')||''; var sess=safeGetJSON('retail_roster_session_v1',null)||safeGetJSON('repco_currentUser',null); if(repcoUsername){var users=safeGetJSON('retail_roster_users_v1',[]); var user=users.find(function(u){return u.username===repcoUsername;})||sess||{username:repcoUsername,role:repcoRole||'staff'}; if(user){window.currentUser=user; var lp=document.getElementById('login-page'); if(lp) lp.style.display='none'; var gh=document.getElementById('global-header'); if(gh){gh.classList.add('show'); gh.style.display='flex';} var main=document.getElementById('repco-v65'); if(main){main.classList.add('show'); main.style.display='block';} var hu=document.getElementById('header-user'); if(hu) hu.textContent=user.username; var hr=document.getElementById('header-role'); if(hr) hr.textContent=user.role||'staff'; applyRoleVisibility(user.role||repcoRole); setTimeout(function(){populateFortnightSelect(); renderRosterSafe();},100); return true;}}}catch(e){} return false;}
 document.addEventListener('DOMContentLoaded', function(){seedIfEmpty(); populateFortnightSelect(); var restored=autoRestoreSession(); if(!restored){var lp=document.getElementById('login-page'); if(lp) lp.style.display='flex';} var uEl=document.getElementById('login-user'); if(uEl) uEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); } }); var pEl=document.getElementById('login-pass'); if(pEl) pEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); } }); if(!safeGet('repco_welcomed','')){setTimeout(function(){ if(window.currentUser) toast('Welcome back! Welcome once'); safeSet('repco_welcomed','1'); },800);} updateBrisbaneTime();});
-</script>
 
-<script>
+
 setTimeout(function(){
   var s1=document.createElement('script'); s1.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js';
   s1.onload=function(){var s2=document.createElement('script'); s2.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js'; s2.onload=function(){try{if(typeof firebase!=='undefined'&&!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); console.log('Firebase loaded');}catch(e){}}; document.head.appendChild(s2);};
   document.head.appendChild(s1);
   var s3=document.createElement('script'); s3.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; document.head.appendChild(s3);
 },1200);
+
+</script>
+
+<script>
+setTimeout(function(){
+  try{
+    if(typeof firebase==='undefined'){
+      var s1=document.createElement('script'); s1.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js';
+      s1.onload=function(){
+        var s2=document.createElement('script'); s2.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js';
+        s2.onload=function(){try{if(typeof firebase!=='undefined'&&!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database();}catch(e){}};
+        document.head.appendChild(s2);
+      };
+      document.head.appendChild(s1);
+    }
+    if(typeof XLSX==='undefined'){
+      var s3=document.createElement('script'); s3.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; document.head.appendChild(s3);
+    }
+  }catch(e){}
+},1500);
 </script>
 
 </body>
