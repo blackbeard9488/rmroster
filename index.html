@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V174_BACKSPACE_CANCEL_YELLOW_FIX";
+const BUILD_ID="20261022_V175_BACKSPACE_EARLY_CANCEL_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -3734,11 +3734,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
         if(isSaving) return;
         isSaving=true;
         if(draftSaveTimeout) clearTimeout(draftSaveTimeout);
-        // V134: Immediately clear editing flag and remove input to allow renderRosterSafe to proceed
         try{ _rosterEditActive=false; }catch(e){}
         try{
           if(input && input.parentNode){
-            // Temporarily show saving state
             el.textContent='...';
           }
         }catch(e){}
@@ -3749,6 +3747,113 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             else val=String(val);
           }
           var newVal=val.trim();
+          
+          // V175 CRITICAL FIX: If this cell is yellow pending, ANY backspace/reset MUST cancel pending BEFORE other logic
+          try{
+            var isEmptyForCancel = (!newVal || newVal.trim()==='' || newVal.toUpperCase()==='OFF' || newVal==='-' || newVal==='0');
+            if(isEmptyForCancel){
+              // Check if this cell has pending offer - check all sources
+              var dateISOForEarlyCancel = cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso || '') : '';
+              var usernameForEarlyCancel = (staff.username||'').toLowerCase() || (staff.firstName||'').toLowerCase();
+              var hasPendingEarly = false;
+              var pendingOffersEarly = safeGetJSON('retail_roster_shift_offers_v1',[]);
+              // Check global offers
+              for(var pe=0; pe<pendingOffersEarly.length; pe++){
+                var poe = pendingOffersEarly[pe];
+                if(poe && poe.status==='pending' && poe.targetUsername===usernameForEarlyCancel && poe.date===dateISOForEarlyCancel){
+                  hasPendingEarly=true; break;
+                }
+              }
+              // Check fns
+              if(!hasPendingEarly){
+                try{
+                  var fnsEarly = safeGetJSON('retail_roster_byFortnight_v1',[]);
+                  for(var fe=0; fe<fnsEarly.length; fe++){
+                    var fnE = fnsEarly[fe];
+                    if(!fnE.dates || !fnE.staff) continue;
+                    var dIdxE = fnE.dates.findIndex(function(d){ return d.iso===dateISOForEarlyCancel; });
+                    if(dIdxE===-1) continue;
+                    for(var se=0; se<fnE.staff.length; se++){
+                      if(fnE.staff[se].username && fnE.staff[se].username.toLowerCase()===usernameForEarlyCancel){
+                        if(fnE.staff[se].pendingOffers && fnE.staff[se].pendingOffers[dIdxE] && fnE.staff[se].pendingOffers[dIdxE].status==='pending'){
+                          hasPendingEarly=true; break;
+                        }
+                      }
+                    }
+                    if(hasPendingEarly) break;
+                  }
+                }catch(e){}
+              }
+              // Check cur staff marker (fns marker synced to cur on render? but check)
+              if(!hasPendingEarly && staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
+                hasPendingEarly=true;
+              }
+              if(hasPendingEarly){
+                console.log('V175: EARLY CANCEL - backspace on yellow cell detected BEFORE save, cancelling pending', staff.firstName, dateISOForEarlyCancel);
+                // Cancel immediately
+                if(typeof cancelPendingOffersForCell==='function'){
+                  cancelPendingOffersForCell(usernameForEarlyCancel, dateISOForEarlyCancel, 'Admin backspaced yellow cell - early cancel');
+                }
+                // Also clear from current objects immediately
+                try{
+                  if(staff.pendingOffers && staff.pendingOffers[colIdx]) delete staff.pendingOffers[colIdx];
+                  if(cur && cur.staff && cur.staff[rowIdx] && cur.staff[rowIdx].pendingOffers && cur.staff[rowIdx].pendingOffers[colIdx]){
+                    delete cur.staff[rowIdx].pendingOffers[colIdx];
+                  }
+                  // Clear from fns
+                  var fnsClearEarly = safeGetJSON('retail_roster_byFortnight_v1',[]);
+                  for(var fce=0; fce<fnsClearEarly.length; fce++){
+                    var fnce = fnsClearEarly[fce];
+                    if(!fnce.dates || !fnce.staff) continue;
+                    var dIdxCE = fnce.dates.findIndex(function(d){ return d.iso===dateISOForEarlyCancel; });
+                    if(dIdxCE===-1) continue;
+                    for(var sce=0; sce<fnce.staff.length; sce++){
+                      if(fnce.staff[sce].username && fnce.staff[sce].username.toLowerCase()===usernameForEarlyCancel){
+                        if(fnce.staff[sce].pendingOffers && fnce.staff[sce].pendingOffers[dIdxCE]){
+                          delete fnce.staff[sce].pendingOffers[dIdxCE];
+                        }
+                        fnce.staff[sce].shifts[dIdxCE]='OFF';
+                      }
+                    }
+                  }
+                  safeSetJSON('retail_roster_byFortnight_v1', fnsClearEarly);
+                  // Clear temp pending flags to prevent recreation
+                  window._pendingNewShiftForOffer=null;
+                  window._pendingOldShiftForOffer=null;
+                  safeSetJSON('retail_roster_shift_offers_v1', safeGetJSON('retail_roster_shift_offers_v1',[]).filter(function(o){ 
+                    return !(o.status==='pending' && o.targetUsername===usernameForEarlyCancel && o.date===dateISOForEarlyCancel);
+                  }).map(function(o){ 
+                    if(o.targetUsername===usernameForEarlyCancel && o.date===dateISOForEarlyCancel && o.status==='pending'){ o.status='cancelled'; } 
+                    return o; 
+                  }));
+                  // Actually need to keep cancelled, not filter out
+                  var offersAfterEarly = safeGetJSON('retail_roster_shift_offers_v1',[]);
+                  for(var oae=0; oae<offersAfterEarly.length; oae++){
+                    if(offersAfterEarly[oae].targetUsername===usernameForEarlyCancel && offersAfterEarly[oae].date===dateISOForEarlyCancel && offersAfterEarly[oae].status==='pending'){
+                      offersAfterEarly[oae].status='cancelled';
+                      offersAfterEarly[oae].cancelledTs=Date.now();
+                    }
+                  }
+                  safeSetJSON('retail_roster_shift_offers_v1', offersAfterEarly);
+                }catch(e){ console.log('V175 early clear error', e); }
+                // Force roster OFF and render
+                try{
+                  staff.shifts[colIdx]='OFF';
+                  if(cur && cur.staff && cur.staff[rowIdx]) cur.staff[rowIdx].shifts[colIdx]='OFF';
+                }catch(e){}
+                try{ renderRosterSafe(); }catch(e){}
+                try{ updateShiftOffersBadge(); }catch(e){}
+                try{ renderShiftOffers(); }catch(e){}
+                // Skip rest of save - already handled
+                el.textContent='';
+                isSaving=false;
+                try{ _rosterEditActive=false; }catch(e){}
+                toast('Pending shift cancelled - cell reset to OFF');
+                return;
+              }
+            }
+          }catch(e){ console.log('V175 early cancel check error', e); }
+          
           var wasBackspaceRestore=false;
           // If empty / backspaced, restore original shift (including for approved unavailability OFF/UA/AB)
           if(!newVal){
