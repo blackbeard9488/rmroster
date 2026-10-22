@@ -25,6 +25,18 @@
       "purpose": "any maskable"
     },
     {
+      "src": "/rmroster/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/rmroster/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/rmroster/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
@@ -33,6 +45,12 @@
     {
       "src": "/rmroster/icon-1024.png",
       "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/rmroster/Logo.png",
+      "sizes": "2000x2000",
       "type": "image/png",
       "purpose": "any"
     }

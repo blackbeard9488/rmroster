@@ -1,6 +1,36 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true
+    "notifications": {
+      ".read": true,
+      ".write": true
+    },
+    "push_notifications": {
+      ".read": true,
+      ".write": true
+    },
+    "push_queue": {
+      ".read": true,
+      ".write": true
+    },
+    "repco_notifications_v1": {
+      ".read": true,
+      ".write": true
+    },
+    "repco_state": {
+      ".read": true,
+      ".write": true
+    },
+    "retail_roster_byFortnight_v1": {
+      ".read": true,
+      ".write": true
+    },
+    "retail_roster_hidden_staff_v1": {
+      ".read": true,
+      ".write": true
+    },
+    "retail_roster_users_v1": {
+      ".read": true,
+      ".write": true
+    }
   }
 }
