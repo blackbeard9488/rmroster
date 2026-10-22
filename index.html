@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V176_BACKSPACE_CANCEL_FIXED";
+const BUILD_ID="20261022_V177_YELLOW_CLICK_CANCEL";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -3679,6 +3679,115 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
     }
     doEditCell();
     function doEditCell(){
+      // V177 FIX: If cell is yellow pending (01:00-02:00 ⏳), clicking it should directly cancel pending - no need to backspace
+      try{
+        var pendingCheckDateISO = cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso || cur.dates[colIdx].date || '') : '';
+        var pendingCheckUsername = (staff.username||'').toLowerCase() || (staff.firstName||'').toLowerCase();
+        var isYellowPending = false;
+        var yellowPendingOffer = null;
+        // Check staff.pendingOffers marker
+        if(staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
+          isYellowPending = true;
+          yellowPendingOffer = staff.pendingOffers[colIdx];
+        }
+        // Check fns
+        if(!isYellowPending){
+          try{
+            var fnsCheck = safeGetJSON('retail_roster_byFortnight_v1',[]);
+            for(var fc=0; fc<fnsCheck.length; fc++){
+              var fnC = fnsCheck[fc];
+              if(!fnC.dates || !fnC.staff) continue;
+              var dIdxC = fnC.dates.findIndex(function(d){ return d.iso===pendingCheckDateISO || d.date===pendingCheckDateISO; });
+              if(dIdxC===-1) continue;
+              for(var sc=0; sc<fnC.staff.length; sc++){
+                if(fnC.staff[sc].username && fnC.staff[sc].username.toLowerCase()===pendingCheckUsername){
+                  if(fnC.staff[sc].pendingOffers && fnC.staff[sc].pendingOffers[dIdxC] && fnC.staff[sc].pendingOffers[dIdxC].status==='pending'){
+                    isYellowPending = true;
+                    yellowPendingOffer = fnC.staff[sc].pendingOffers[dIdxC];
+                    break;
+                  }
+                }
+              }
+              if(isYellowPending) break;
+            }
+          }catch(e){}
+        }
+        // Check global offers
+        if(!isYellowPending){
+          try{
+            var offersCheck = safeGetJSON('retail_roster_shift_offers_v1',[]);
+            for(var oc=0; oc<offersCheck.length; oc++){
+              var oC = offersCheck[oc];
+              if(oC && oC.status==='pending'){
+                var uM = oC.targetUsername && oC.targetUsername.toLowerCase()===pendingCheckUsername;
+                var dM = oC.date===pendingCheckDateISO || (oC.date && pendingCheckDateISO && oC.date.substring(0,10)===pendingCheckDateISO.substring(0,10));
+                if(uM && dM){ isYellowPending=true; yellowPendingOffer=oC; break; }
+              }
+            }
+          }catch(e){}
+        }
+        // Also check visual class
+        if(!isYellowPending && el && el.className && el.className.indexOf('cell-pending')!==-1){
+          isYellowPending = true;
+        }
+        if(isYellowPending){
+          console.log('V177: Yellow pending cell clicked - showing cancel dialog for', staff.firstName, pendingCheckDateISO, yellowPendingOffer?yellowPendingOffer.newShift:'?');
+          var pendingTime = yellowPendingOffer ? (yellowPendingOffer.newShift||'') : (el.textContent||'').replace('⏳','').trim();
+          // Show confirm to cancel
+          if(typeof showCustomConfirm==='function'){
+            showCustomConfirm('Cancel Pending Shift?', '<div style="font-size:13px;text-align:center;padding:10px">This cell is pending: <b>'+pendingTime+'</b><br><br>For '+staff.firstName+' '+staff.lastName+' on '+(cur.dates[colIdx].day+' '+cur.dates[colIdx].date)+'<br><br>Do you want to <b>CANCEL</b> this pending offer?<br><br><span style="color:#666;font-size:11px">Clicking YES will remove yellow and set to OFF, and delete notification from employee phone.</span></div>', function(confirmed){
+              if(!confirmed) return;
+              console.log('V177: User confirmed cancel of yellow cell');
+              try{
+                window._pendingNewShiftForOffer=null;
+                window._pendingOldShiftForOffer=null;
+                // Cancel via function
+                if(typeof cancelPendingOffersForCell==='function'){
+                  cancelPendingOffersForCell(pendingCheckUsername, pendingCheckDateISO, 'Admin cancelled yellow pending '+pendingTime+' via click');
+                } else {
+                  // Fallback inline
+                  var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+                  for(var i=0;i<offers.length;i++){
+                    if(offers[i].targetUsername===pendingCheckUsername && offers[i].date===pendingCheckDateISO && offers[i].status==='pending'){
+                      offers[i].status='cancelled';
+                      offers[i].cancelledTs=Date.now();
+                    }
+                  }
+                  safeSetJSON('retail_roster_shift_offers_v1', offers);
+                  var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+                  for(var fi=0;fi<fns.length;fi++){
+                    var fn = fns[fi];
+                    if(!fn.dates || !fn.staff) continue;
+                    var dIdx = fn.dates.findIndex(function(d){ return d.iso===pendingCheckDateISO; });
+                    if(dIdx===-1) continue;
+                    for(var si=0;si<fn.staff.length;si++){
+                      if(fn.staff[si].username && fn.staff[si].username.toLowerCase()===pendingCheckUsername){
+                        if(fn.staff[si].pendingOffers && fn.staff[si].pendingOffers[dIdx]) delete fn.staff[si].pendingOffers[dIdx];
+                        fn.staff[si].shifts[dIdx]='OFF';
+                      }
+                    }
+                  }
+                  safeSetJSON('retail_roster_byFortnight_v1', fns);
+                }
+                try{ renderRosterSafe(); }catch(e){}
+                try{ updateShiftOffersBadge(); }catch(e){}
+                toast('Pending '+pendingTime+' cancelled - set to OFF');
+              }catch(e){ console.log('V177 cancel error', e); toast('Error cancelling: '+e.message); }
+            });
+          } else {
+            // Fallback if no custom confirm, just cancel directly
+            if(confirm('Cancel pending shift '+pendingTime+' for '+staff.firstName+'?')){
+              try{
+                if(typeof cancelPendingOffersForCell==='function'){
+                  cancelPendingOffersForCell(pendingCheckUsername, pendingCheckDateISO, 'Admin cancelled yellow pending via click');
+                }
+                renderRosterSafe();
+              }catch(e){}
+            }
+          }
+          return; // Don't open input for yellow cells - handle via dialog
+        }
+      }catch(e){ console.log('V177 yellow check error', e); }
       // V134: Close any other open edits first - prevent multiple inputs staying open
       try{
         var mount=document.getElementById('roster-mount');
