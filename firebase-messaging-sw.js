@@ -1,133 +1,96 @@
-// firebase-messaging-sw.js - Service Worker for Phone Notifications Outside Browser
-// ALPHA Build - Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready
-// Verified, possible with HTTPS + VAPID
+// Firebase Cloud Messaging Service Worker - Phone Notifications Outside Browser
+// Must be at root: /firebase-messaging-sw.js
+// REPCO ROSTER V224
 
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.22.2/firebase-messaging-compat.js');
 
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSy placeholder",
-  authDomain: "testing-de079.firebaseapp.com",
-  databaseURL: "https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "testing-de079",
-  storageBucket: "testing-de079.appspot.com",
-  messagingSenderId: "0",
-  appId: "1:0:web:repco"
+// Your Firebase config - same as main app
+const firebaseConfig = {
+  apiKey: "AIzaSyDummy-Repco-Roster-V216",
+  authDomain: "repco-roster.firebaseapp.com",
+  databaseURL: "https://repco-roster-default-rtdb.firebaseio.com",
+  projectId: "repco-roster",
+  storageBucket: "repco-roster.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef"
 };
 
 try {
-  if (!firebase.apps.length) {
-    firebase.initializeApp(FIREBASE_CONFIG);
-  }
+  firebase.initializeApp(firebaseConfig);
   const messaging = firebase.messaging();
+  
+  console.log('[FCM SW] Firebase Messaging initialized');
 
-  // Background message handler - shows notification even when browser closed (phone)
+  // Background message handler - when app is closed
   messaging.onBackgroundMessage((payload) => {
-    console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    const notificationTitle = payload.notification?.title || payload.data?.title || 'REPCO Roster Update';
+    console.log('[FCM SW] Background message received:', payload);
+    
+    const notificationTitle = payload.notification?.title || payload.data?.title || 'REPCO ROSTER';
     const notificationOptions = {
-      body: payload.notification?.body || payload.data?.body || 'Your roster has been updated',
-      icon: '/icon-192.png',
-      badge: '/badge-72.png',
-      tag: payload.data?.tag || 'repco-roster',
-      data: payload.data || {},
+      body: payload.notification?.body || payload.data?.body || payload.data?.message || 'New roster update',
+      icon: payload.notification?.icon || './icon-192.png',
+      badge: './icon-192.png',
       vibrate: [200, 100, 200],
-      requireInteraction: false,
+      data: {
+        url: payload.fcmOptions?.link || payload.data?.click_action || './',
+        ...payload.data
+      },
       actions: [
-        { action: 'open', title: 'Open Roster' },
-        { action: 'close', title: 'Close' }
-      ]
+        { action: 'open', title: 'Open' },
+        { action: 'close', title: 'Dismiss' }
+      ],
+      tag: 'repco-fcm-' + (payload.data?.type || Date.now()),
+      renotify: true
     };
 
     self.registration.showNotification(notificationTitle, notificationOptions);
   });
 
 } catch (e) {
-  console.error('[firebase-messaging-sw.js] Init error', e);
+  console.error('[FCM SW] Init error:', e);
 }
 
-// Push event handler for Web Push (PushManager + VAPID)
+// Fallback push handler (if FCM compat fails)
 self.addEventListener('push', function(event) {
-  console.log('[Service Worker] Push Received.');
-  let data = {};
+  console.log('[FCM SW] Push event (fallback):', event);
+  if (!event.data) return;
+  
   try {
-    if (event.data) {
-      data = event.data.json();
-    }
+    const data = event.data.json();
+    if (data.notification) return; // Already handled by FCM
   } catch (e) {
-    data = { title: 'REPCO Roster', body: event.data ? event.data.text() : 'Update available' };
+    // Not JSON, show generic
   }
-
-  const title = data.title || data.notification?.title || 'REPCO Roster Update';
+  
+  const title = 'REPCO ROSTER';
   const options = {
-    body: data.body || data.notification?.body || 'Your roster has been updated - tap to view',
-    icon: data.icon || '/icon-192.png',
-    badge: '/badge-72.png',
-    tag: data.tag || 'repco-roster-update',
-    data: data.data || { url: '/' },
+    body: 'New update available',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
     vibrate: [200, 100, 200],
-    requireInteraction: false
+    data: { url: './' }
   };
-
+  
   event.waitUntil(
     self.registration.showNotification(title, options)
   );
 });
 
-// Notification click handler - opens app
 self.addEventListener('notificationclick', function(event) {
-  console.log('[Service Worker] Notification click Received.');
+  console.log('[FCM SW] Notification click');
   event.notification.close();
-
-  const action = event.action;
-  const data = event.notification.data || {};
-  const urlToOpen = data.url || self.location.origin + '/';
-
-  if (action === 'close') {
-    return;
-  }
-
+  const url = event.notification.data?.url || './';
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      for (var i = 0; i < clientList.length; i++) {
-        var client = clientList[i];
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
+    clients.matchAll({ type: 'window' }).then(clients => {
+      for (let client of clients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus().then(c=>c.navigate(url));
         }
       }
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+      return clients.openWindow(url);
     })
   );
 });
 
-// Sync event for background sync (roster updates)
-self.addEventListener('sync', function(event) {
-  if (event.tag === 'repco-sync') {
-    console.log('[Service Worker] Background sync');
-    event.waitUntil(
-      fetch('https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app/repco_state.json')
-        .then(res => res.json())
-        .then(data => {
-          if (data && data._ts) {
-            return self.registration.showNotification('REPCO Roster Synced', {
-              body: 'Latest roster data synced',
-              tag: 'repco-sync'
-            });
-          }
-        })
-    );
-  }
-});
-
-// Install and activate
-self.addEventListener('install', function(event) {
-  console.log('[Service Worker] Install');
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', function(event) {
-  console.log('[Service Worker] Activate');
-  event.waitUntil(clients.claim());
-});
+console.log('[FCM SW] Repco Roster FCM Service Worker loaded');
