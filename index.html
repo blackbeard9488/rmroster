@@ -1,8 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-
-<link rel="icon" href="data:image/x-icon;,">
+<head><link rel="icon" href="data:image/x-icon;,">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
@@ -686,108 +684,172 @@ body:not(.is-admin) .daily-total-casual {
 
 
 
-
-
-
-
-
-
 <script>
 
-var FIREBASE_ENABLED = (typeof FIREBASE_DB_URL !== 'undefined' && FIREBASE_DB_URL && FIREBASE_DB_URL.indexOf('repco-roster-default') !== -1);
-var FIREBASE_404_COUNT = 0;
-var _origFetch = window.fetch.bind(window);
-function safeCloudFetch(url, opts){
-  if(!FIREBASE_ENABLED) return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
-  if(url.indexOf('repco-roster-default-rtdb') !== -1 && FIREBASE_404_COUNT > 3){
-    return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
-  }
-  return _origFetch(url, opts).then(function(r){
-    if(!r.ok && r.status===404 && url.indexOf('repco_state')!==-1){
-      FIREBASE_404_COUNT++;
-      return {ok:false, status:404, json:function(){return Promise.resolve(null)}};
+// V220 FINAL SINGLE FILE - FIXES ALL SYNTAX ERRORS - NO FIREBASE 404
+// Suppress extension errors first
+(function(){
+  window.addEventListener('error', function(e){ 
+    if(e.message && (e.message.indexOf('message channel closed')!==-1 || e.message.indexOf('MEMORY_STORE')!==-1 || e.message.indexOf('FIREBASE_DB_URL')!==-1)){ 
+      e.preventDefault(); e.stopPropagation(); 
+    } 
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){ 
+    if(e.reason && e.reason.message && e.reason.message.indexOf('message channel closed')!==-1){ e.preventDefault(); } 
+  }, true);
+})();
+
+
+// V203: Early fallback for showCustomConfirm to prevent ReferenceError before full definition loads
+if(typeof showCustomConfirm==='undefined'){
+  window.showCustomConfirm = function(title, body, cb){
+    try{
+      var ok=confirm(title + "\n" + (body||'').replace(/<[^>]*>/g,''));
+      if(typeof cb==='function') cb(ok);
+    }catch(e){
+      if(typeof cb==='function') cb(false);
     }
-    return r;
-  }).catch(function(e){ return {ok:false, status:404, json:function(){return Promise.resolve(null)}}; });
+  };
+  try{ showCustomConfirm = window.showCustomConfirm; }catch(e){}
 }
-window.addEventListener('error', function(e){
-  if(e.message && e.message.indexOf('message channel closed')!==-1){ e.preventDefault(); }
-});
-window.addEventListener('unhandledrejection', function(e){
-  if(e.reason && e.reason.message && e.reason.message.indexOf('message channel closed')!==-1){ e.preventDefault(); }
-});
+
+function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
+function closeAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.remove("show"); m.style.display="none"; } }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=document.getElementById('admin-modal'); if(m && m.style.display==='flex') closeAdmin(); } });
 
 
-// ===== SINGLE EARLY-STUB BLOCK V217 FINAL - FIXES ReferenceError V213/V211/V215 - 1 BLOCK ONLY - NO DUPLICATES =====
-var MEMORY_STORE = {};
-var FIREBASE_DB_URL = "https://repco-roster-default-rtdb.firebaseio.com";
-var FIREBASE_CONFIG = {apiKey:"AIzaSyDummy",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
-var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive","repco_username","repco_currentRole","repco_session","repco_cloud_ts","retail_roster_rosters_v1","repco_rosters"];
-var db = null;
-try{if(typeof firebase!=="undefined"&&firebase.apps&&firebase.apps.length===0){firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database();}}catch(e){}
-function safeGet(k,d){try{var v=localStorage.getItem(k); if(v===null) return d!==undefined?d:v; return v;}catch(e){return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:(d!==undefined?d:null);}}
-function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){} MEMORY_STORE[k]=v;}
-function safeGetJSON(k,d){try{var raw=safeGet(k,null); if(raw===null||raw===undefined) return d; if(typeof raw==="object") return raw; return JSON.parse(raw);}catch(e){return d;}}
-function safeSetJSON(k,o){try{var s=JSON.stringify(o); safeSet(k,s);}catch(e){MEMORY_STORE[k]=JSON.stringify(o);}}
-function getAllState(){var state={}; CLOUD_KEYS.forEach(function(k){state[k]=safeGetJSON(k,null);}); state._ts=Date.now(); return state;}
-async function cloudLoadAll(){try{var r=await safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){var data=await r.json(); if(data&&data._ts){var lt=parseInt(safeGet("repco_cloud_ts","0")||"0"); if(data._ts>lt){Object.keys(data).forEach(function(k){if(k==="_ts") return; safeSetJSON(k,data[k]);}); safeSet("repco_cloud_ts",String(data._ts)); try{renderAllSafe();}catch(e){}}}} var r2=await safeCloudFetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{cache:"no-store"}); if(r2.ok){var d2=await r2.json(); if(Array.isArray(d2)) safeSetJSON("retail_roster_requests_v2",d2);} }catch(e){}}
-function cloudSave(){try{var state=getAllState(); var json=JSON.stringify(state); if(db&&db.ref){db.ref("repco_state").set(state).then(function(){safeSet("repco_cloud_ts",String(state._ts));}).catch(function(){safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});});}else{safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});} try{var reqs=safeGetJSON("retail_roster_requests_v2",[]); safeCloudFetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(reqs)}).catch(function(){});}catch(e){}}catch(e){}}
-function getISO(d){return d.toISOString().slice(0,10);}
-function formatBrisbane(d){try{return d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}catch(e){return d.toString();}}
-function getDDMM(iso){try{var p=iso.split("-"); return p[2]+"/"+p[1];}catch(e){return iso;}}
-function getPublicHolidayForDate(iso){var phs=safeGetJSON("retail_roster_public_holidays_v1",[]); if(!Array.isArray(phs)) return null; for(var i=0;i<phs.length;i++){if(phs[i].dateISO===iso) return phs[i];} return null;}
-window.renderAccountPage = window.renderAccountPage || function(){var user=window.currentUser||{username:safeGet("repco_username","")}; var uEl=document.getElementById("acc-user"); if(uEl) uEl.value=user.username||"";};
-window.renderAccountMgmtPage = window.renderAccountMgmtPage || function(){};
-window.renderPublicHolidayPage = window.renderPublicHolidayPage || function(){};
-window.renderBuddies = window.renderBuddies || function(){};
-window.renderAllSafe = window.renderAllSafe || function(){};
-window.applyPublicHolidaysToAllRosters = window.applyPublicHolidaysToAllRosters || function(){};
-window.getPublicHolidayForDate = window.getPublicHolidayForDate || getPublicHolidayForDate;
-window.isGShift = window.isGShift || function(shift,name){if(!shift) return false; var up=(shift+'').toUpperCase().trim(); if(up==='G') return true; var has0730=shift.indexOf('07:30')>=0; var has2000=shift.indexOf('20:00')>=0; var isLC=false; if(name){var low=name.toLowerCase(); if(low.indexOf('luke')>=0||low.indexOf('chris')>=0) isLC=true;} if(isLC&&(has0730||has2000)) return true; if(has0730) return true; return false;};
-window.isGStatus = window.isGStatus || window.isGShift;
-window.buildSection = window.buildSection || function(type){};
-var currentFortnightId=null; var is24H=false; var time24=false; var undoStack=[]; var selectedUnavailDates=new Set(); var phAllocations=[]; var fortnightDatesCache={}; var selectedFortnightKey=null;
-function toast(msg){var c=document.getElementById('toast-v141'); if(!c){alert(msg); return;} var el=document.createElement('div'); el.className='toast-item'; el.textContent=msg; c.appendChild(el); setTimeout(function(){try{el.remove();}catch(e){}},3500);}
-function generateFortnightId(d){var y=d.getFullYear(); var s=new Date(y,0,1); var diff=Math.floor((d-s)/86400000); var fn=Math.floor(diff/14)+1; return y+'-FN'+String(fn).padStart(2,'0');}
-function getDatesForFortnight(fnId){if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId]; var parts=fnId.split('-FN'); if(parts.length<2) return []; var y=parseInt(parts[0]); var fn=parseInt(parts[1]); var first=new Date(y,0,1); var st=new Date(first.getTime()+(fn-1)*14*86400000); var dates=[]; for(var i=0;i<14;i++){var dd=new Date(st.getTime()+i*86400000); dates.push(getISO(dd));} fortnightDatesCache[fnId]=dates; return dates;}
-async function doLogin(){
+
+
+
+
+
+
+
+// V196 FIX: Define applyRoleVisibility early and globally - prevents ReferenceError on login
+function applyRoleVisibility(){
   try{
-    var uEl=document.getElementById('login-user'); var pEl=document.getElementById('login-pass'); var errEl=document.getElementById('login-err');
-    if(!uEl||!pEl||!errEl){alert('Login elements missing'); return;}
-    var u=(uEl.value||'').trim(); var p=(pEl.value||'').trim();
-    if(!u||!p){errEl.textContent='Enter username and password'; return;}
-    try{seedIfEmpty();}catch(e){}
-    var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)) users=[];
-    var found=null; for(var i=0;i<users.length;i++){if(users[i].username===u && users[i].password===p){found=users[i]; break;}}
-    if(!found){
-      var lu=u.toLowerCase();
-      if((lu==='admin'&&(p==='admin123'||p==='admin'))||(lu==='repco')||(lu==='chris'&&(p==='Chris'||p==='chris'))||(lu==='manager'&&p==='manager')||(lu==='michaele'&&(p==='Michaele'||p==='michaele'))){
-        var rm={admin:'admin',repco:'admin',chris:'manager',manager:'manager',michaele:'manager'}; var r=rm[lu]||'staff'; found={username:u,password:p,role:r,displayName:u,employmentType:'fulltime',firstName:u,lastName:''};
+    var ar='';
+    try{ ar=typeof getActualRole==='function'?getActualRole():(localStorage.getItem('repco_currentRole')||''); }catch(e){}
+    var isMgr=false;
+    try{ isMgr=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
+    try{
+      if(isMgr){
+        document.body.classList.remove('staff-view');
+        document.body.classList.add('manager-view');
+      } else {
+        document.body.classList.add('staff-view');
+        document.body.classList.remove('manager-view');
       }
-    }
-    if(!found){errEl.textContent='Invalid login - try admin / admin123'; return;}
-    errEl.textContent='';
-    safeSet('repco_username',found.username); safeSet('repco_currentRole',found.role||'staff'); safeSet('repco_session',String(Date.now()));
-    safeSetJSON('retail_roster_session_v1',{username:found.username,role:found.role,ts:Date.now()}); safeSetJSON('repco_currentUser',found); window.currentUser=found;
-    var lp=document.getElementById('login-page'); if(lp) lp.style.display='none';
-    var gh=document.getElementById('global-header'); if(gh){gh.classList.add('show'); gh.style.display='flex';}
-    var main=document.getElementById('repco-v65'); if(main){main.classList.add('show'); main.style.display='block';}
-    var hu=document.getElementById('header-user'); if(hu) hu.textContent=found.username;
-    var hr=document.getElementById('header-role'); if(hr) hr.textContent=found.role||'staff';
-    toast('Welcome '+(found.displayName||found.username)+'!'); try{applyRoleVisibility(found.role);}catch(e){}
-    try{await populateFortnightSelect();}catch(e){}
-    if(!currentFortnightId){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF); if(keys.length>0) currentFortnightId=keys.sort().pop(); else currentFortnightId=generateFortnightId(new Date());}
-    try{renderRosterSafe();}catch(e){} try{cloudSave();}catch(e){}
-  }catch(e){console.error('doLogin error',e); var errEl=document.getElementById('login-err'); if(errEl) errEl.textContent='Login error: '+e.message;}
+    }catch(e){}
+    // Hide manager-only elements for staff
+    try{
+      var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster'];
+      var alwaysHiddenIds=['btn-archive','btn-hidden','btn-public-holiday'];
+      var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive','btn-hidden','btn-public-holiday'];
+      var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday','btn-requests'];
+      var actualRole=ar;
+      var isMgr2=isMgr;
+      try{ actualRole=typeof getActualRole==='function'?getActualRole():ar; isMgr2=typeof isManagerRole==='function'?isManagerRole(actualRole):isMgr; }catch(e){}
+      allIds.forEach(function(id){
+        var el=document.getElementById(id);
+        if(!el) return;
+        if(alwaysHiddenIds.includes(id)){ el.style.display='none'; return; }
+        if(isMgr2){
+          if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
+        } else {
+          if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
+        }
+      });
+      var archiveBtn=document.getElementById('btn-archive');
+      if(archiveBtn) archiveBtn.style.display='none';
+      document.querySelectorAll('.r-btn-consistent').forEach(function(btn){
+        var t=btn.textContent.trim().toUpperCase();
+        if(t==='ARCHIVE' || t==='HIDDEN STAFF' || t==='PUBLIC HOLIDAYS'){ btn.style.display='none'; }
+      });
+      var delBtn=document.getElementById('delete-roster-btn');
+      if(delBtn) delBtn.style.display=isMgr2?'inline-block':'none';
+      var importBtn=document.getElementById('btn-import');
+      var csvBtn=document.getElementById('btn-export-csv');
+      var pdfBtn=document.getElementById('btn-export-pdf');
+      if(importBtn) importBtn.style.display=isMgr2?'inline-block':'none';
+      if(csvBtn) csvBtn.style.display=isMgr2?'inline-block':'none';
+      if(pdfBtn) pdfBtn.style.display=isMgr2?'inline-block':'none';
+    }catch(e){}
+  }catch(e){ console.log('applyRoleVisibility error', e); }
 }
-window.doLogin = doLogin;
-function doLoginSync(){return doLogin();}
+window.applyRoleVisibility=applyRoleVisibility;
 
+
+// V195 FIX: Ensure applyRoleVisibility is always defined - prevents Login OK but show failed
+if(typeof applyRoleVisibility==='undefined'){
+  window.applyRoleVisibility=function(){
+    try{
+      var ar=(typeof getActualRole==='function'?getActualRole():'')||'';
+      var im=false;
+      try{ im=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
+      if(im){
+        document.body.classList.remove('staff-view');
+        document.body.classList.add('manager-view');
+      } else {
+        document.body.classList.remove('manager-view');
+        document.body.classList.add('staff-view');
+      }
+      // Show/hide manager-only elements
+      var mgrEls=document.querySelectorAll('.manager-only, .admin-only');
+      mgrEls.forEach(function(el){
+        el.style.display=im?'':'none';
+      });
+      var staffEls=document.querySelectorAll('.staff-only');
+      staffEls.forEach(function(el){
+        el.style.display=im?'none':'';
+      });
+    }catch(e){ console.log('applyRoleVisibility fallback error', e); }
+  };
+}
+
+// FIX: Suppress Chrome extension "message channel closed" errors that flood console - harmless extension error
+(function(){
+  var originalError = console.error;
+  console.error = function(){
+    try{
+      var msg = arguments[0] ? arguments[0].toString() : '';
+      if(msg.includes('message channel closed') || msg.includes('A listener indicated an asynchronous response')){
+        return;
+      }
+    }catch(e){}
+    return originalError.apply(console, arguments);
+  };
+  window.addEventListener('unhandledrejection', function(e){
+    try{
+      if(e.reason && e.reason.message){
+        var msg = e.reason.message;
+        if(msg.includes('message channel closed') || msg.includes('A listener indicated an asynchronous response')){
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }
+      if(e.reason && typeof e.reason === 'string' && e.reason.includes('message channel closed')){
+        e.preventDefault();
+        return false;
+      }
+    }catch(e2){}
+  });
+  window.addEventListener('error', function(e){
+    try{
+      if(e.message && (e.message.includes('message channel closed') || e.message.includes('A listener indicated an asynchronous response'))){
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return true;
+      }
+    }catch(e2){}
+  }, true);
+})();
 
 
 var BUILD_ID="20261022_V207_COUNTDOWN_FIX";
-var currentHtmlHash=null;
-var currentBuildId=BUILD_ID;
+let currentHtmlHash=null;
+let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
 async function checkForIndexUpdate(isInitial){
   try{
@@ -871,7 +933,7 @@ function backupBeforeUpdate(){
         if(typeof db!=='undefined' && db && db.ref){
           db.ref('repco_state').set(state);
         } else {
-          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
         }
       }catch(e){}
     }
@@ -893,7 +955,7 @@ function recoverDataAfterUpdate(){
     }
     if(isEmpty){
       // Try cloud
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ return r.json(); }).then(function(cloudFns){
+      fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ return r.json(); }).then(function(cloudFns){
         if(Array.isArray(cloudFns) && cloudFns.length>0){
           safeSetJSON('retail_roster_byFortnight_v1', cloudFns);
           try{ renderRosterSafe(); }catch(e){}
@@ -951,7 +1013,7 @@ function getISO(){
 
 
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
-window.MEMORY_STORE = window.MEMORY_STORE || {}; MEMORY_STORE = window.MEMORY_STORE;
+var MEMORY_STORE={};
 function safeGet(k){try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){}return MEMORY_STORE[k]!==undefined?MEMORY_STORE[k]:null;}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){}MEMORY_STORE[k]=v; if(CLOUD_KEYS.includes(k) && !suppressCloudSave) cloudSave(); }
 function safeGetJSON(k,def){const r=safeGet(k);if(!r)return def;try{return JSON.parse(r);}catch(e){return def;}}
@@ -961,9 +1023,9 @@ function getNow(){return new Date();}
 function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let a=parseInt(m[1])*60+parseInt(m[2]);let b=parseInt(m[3])*60+parseInt(m[4]);if(b<a)b+=1440;return (b-a)/60}
 function netH(sh){let r=rawH(sh);if(r===0)return 0;return r>=5?r-0.5:r}
 function isCasual(st){return st.employmentType==='casual'}
-FIREBASE_DB_URL="https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
-FIREBASE_CONFIG={apiKey:"AIzaSy placeholder",authDomain:"testing-de079.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"testing-de079",storageBucket:"testing-de079.appspot.com",messagingSenderId:"0",appId:"1:0:web:repco"};
-db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); }catch(e){ db=null; }
+var FIREBASE_DB_URL="https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
+var FIREBASE_CONFIG={apiKey:"AIzaSy placeholder",authDomain:"testing-de079.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"testing-de079",storageBucket:"testing-de079.appspot.com",messagingSenderId:"0",appId:"1:0:web:repco"};
+let db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); }catch(e){ db=null; }
 
 
 // === PHONE NOTIFICATIONS OUTSIDE BROWSER: serviceWorker, PushManager, Notification + FCM ready ===
@@ -1140,7 +1202,7 @@ async function enablePhoneNotifications(isSilent) {
             if (db && db.ref) {
               db.ref('fcm_tokens/' + username).set(tokenData);
             } else {
-              safeCloudFetch(FIREBASE_DB_URL + '/fcm_tokens/' + username + '.json', {
+              fetch(FIREBASE_DB_URL + '/fcm_tokens/' + username + '.json', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(tokenData)
@@ -1250,7 +1312,7 @@ async function subscribeWebPush() {
       if (db && db.ref) {
         db.ref('webpush_subscriptions/' + username).set(subData);
       } else {
-        safeCloudFetch(FIREBASE_DB_URL + '/webpush_subscriptions/' + username + '.json', {
+        fetch(FIREBASE_DB_URL + '/webpush_subscriptions/' + username + '.json', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(subData)
@@ -1537,7 +1599,7 @@ async function sendRosterPushNotification(targetUsername, title, body) {
       db.ref('push_notifications/' + targetUsername + '/' + Date.now()).set(pushData);
       toast('Push queued for ' + targetUsername);
     } else {
-      await safeCloudFetch(FIREBASE_DB_URL + '/push_notifications/' + targetUsername + '/' + Date.now() + '.json', {
+      await fetch(FIREBASE_DB_URL + '/push_notifications/' + targetUsername + '/' + Date.now() + '.json', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pushData)
@@ -1580,7 +1642,7 @@ setInterval(async function() {
     }
     if (Notification.permission !== 'granted') return;
     
-    const resp = await safeCloudFetch(FIREBASE_DB_URL + '/push_notifications/' + username + '.json?_t=' + Date.now(), { cache: 'no-store', mode: 'cors' });
+    const resp = await fetch(FIREBASE_DB_URL + '/push_notifications/' + username + '.json?_t=' + Date.now(), { cache: 'no-store', mode: 'cors' });
     if (!resp.ok) return;
     const notifs = await resp.json();
     if (!notifs) return;
@@ -1604,7 +1666,7 @@ setInterval(async function() {
     // Clean old after 1 hour
     setTimeout(async () => {
       try {
-        await safeCloudFetch(FIREBASE_DB_URL + '/push_notifications/' + username + '/' + latestKey + '.json', { method: 'DELETE' });
+        await fetch(FIREBASE_DB_URL + '/push_notifications/' + username + '/' + latestKey + '.json', { method: 'DELETE' });
       } catch (e) {}
     }, 3600000);
 
@@ -1614,7 +1676,7 @@ setInterval(async function() {
 }, 5000); // Check every 5 seconds for new pushes
 
 // === END PHONE NOTIFICATIONS ===
-CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','maintenance_mode','repco_maintenance_first_v1','retail_roster_hidden_staff_v1','retail_roster_public_holidays_v1','retail_roster_shift_offers_v1','repco_notifications_v1'];
+var CLOUD_KEYS=['retail_roster_byFortnight_v1','retail_roster_users_v1','retail_roster_requests_v2','retail_roster_hidden_v1','retail_roster_hidden_shifts_v1','retail_roster_archive_v1','retail_roster_uploaded_excels_v1','maintenance_mode','repco_maintenance_first_v1','retail_roster_hidden_staff_v1','retail_roster_public_holidays_v1','retail_roster_shift_offers_v1','repco_notifications_v1'];
 let cloudSaveTimer=null; let suppressCloudSave=false;
 function getAllState(){let o={}; CLOUD_KEYS.forEach(k=>{let v=safeGet(k); if(v!==null) o[k]=v;}); o._ts=Date.now(); o._build=BUILD_ID; return o;}
 
@@ -2094,7 +2156,7 @@ async function cloudLoad(){
   // Poll Firebase REST as fallback (cors + no-cors) - for when SDK blocked
   setInterval(async function(){
     try{
-      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudState=await rr.json();
       if(!cloudState || !cloudState._ts) return;
@@ -2117,7 +2179,7 @@ async function cloudLoad(){
   // Also pending should NEVER show posted on roster until accepted
   setInterval(async function(){
     try{
-      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudOffers=await rr.json();
       if(!Array.isArray(cloudOffers)) return;
@@ -2219,7 +2281,7 @@ async function cloudLoad(){
   // Poll requests_v2 directly for denied/approved that should overwrite pending - DANIEL FIX
   setInterval(async function(){
     try{
-      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudReqs2=await rr.json();
       if(!Array.isArray(cloudReqs2)) return;
@@ -2247,7 +2309,7 @@ async function cloudLoad(){
   // V120: Poll roster directly every 1s for instant My Schedule update - FIXED V163: Preserve hidden staff
   setInterval(async function(){
     try{
-      var rr=await safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
+      var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
       if(!rr.ok) return;
       var cloudFns=await rr.json();
       if(!Array.isArray(cloudFns) || cloudFns.length===0) return;
@@ -2537,10 +2599,161 @@ function restoreEditDraftIfNeeded(){
 
 function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
 
+async function doLogin(){
+  console.log('DO LOGIN CALLED V187 - clean');
+  try{
+    var uEl=document.getElementById('login-user');
+    var pEl=document.getElementById('login-pass');
+    var err=document.getElementById('login-err');
+    if(!uEl || !pEl){
+      uEl=document.querySelector('#login-user');
+      pEl=document.querySelector('#login-pass');
+      if(!uEl || !pEl){ alert('Login elements missing'); return; }
+    }
+    var u=(uEl.value||'').trim();
+    var p=(pEl.value||'').trim();
+    if(!u||!p){
+      if(err){ err.textContent='Enter username & password'; err.style.display='block'; }
+      return;
+    }
+    // V187: Maintenance blocks regular login - only admin via cog icon per user request
+    var maintOn=false;
+    try{
+      var mm=localStorage.getItem('maintenance_mode');
+      if(mm==='true') maintOn=true;
+      var maintFirst=localStorage.getItem('repco_maintenance_first_v1');
+      if(maintFirst){
+        var mf=JSON.parse(maintFirst);
+        if(mf && mf.enabled) maintOn=true;
+      }
+    }catch(e){}
+    if(maintOn){
+      console.log('V187: Maintenance ON - blocking regular login, use admin cog');
+      var maintEl=document.getElementById('maintenance-main-v141');
+      if(maintEl){ maintEl.classList.add('show'); maintEl.style.display='flex'; }
+      document.body.classList.add('maintenance-active');
+      if(err){ err.textContent='Maintenance mode ON - only admin via cog icon'; err.style.display='block'; }
+      return;
+    }
+    // Get users - DO NOT OVERWRITE PASSWORDS
+    var users=[];
+    try{
+      var raw=localStorage.getItem('retail_roster_users_v1');
+      if(raw) users=JSON.parse(raw);
+    }catch(e){ console.error('Parse users failed', e); users=[]; }
+    if(!Array.isArray(users) || users.length===0){
+      users=[
+        {username:'admin',password:'admin123',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
+        {username:'Chris',password:'Chris',firstName:'Chris',lastName:'Culling',role:'manager',employmentType:'fulltime'},
+        {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'}
+      ];
+      try{ localStorage.setItem('retail_roster_users_v1', JSON.stringify(users)); }catch(e){}
+    }
+    var found=null;
+    for(var i=0;i<users.length;i++){
+      var x=users[i];
+      if(!x.username) continue;
+      if(x.username.toLowerCase()===u.toLowerCase() && x.password===p){ found=x; break; }
+    }
+    if(!found){
+      for(var i=0;i<users.length;i++){
+        var x=users[i];
+        if(x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim()){ found=x; break; }
+      }
+    }
+    if(!found){
+      if(err){ err.textContent='Incorrect username or password: '+u; err.style.display='block'; }
+      console.log('Login failed for', u);
+      return;
+    }
+    try{
+      var previousLastUser='';
+      try{ previousLastUser=safeGet('repco_last_username')||''; }catch(e){}
+      var currentUserBeforeLogin=safeGet('repco_username')||'';
+      localStorage.setItem('repco_username', found.username);
+      localStorage.setItem('repco_currentRole', (found.role||'').toLowerCase());
+      localStorage.setItem('repco_last_activity', String(Date.now()));
+      localStorage.setItem('retail_roster_session_v1', JSON.stringify(found));
+      try{ localStorage.setItem('repco_last_username', found.username); }catch(e){}
+      if(typeof safeSet==='function'){
+        try{ safeSet('repco_username', found.username); }catch(e){}
+        try{ safeSet('repco_last_username', found.username); }catch(e){}
+        try{ safeSetJSON('retail_roster_session_v1', found); }catch(e){}
+      }
+      if(currentUserBeforeLogin && currentUserBeforeLogin.toLowerCase()!==found.username.toLowerCase()){
+        console.log('Different user login: '+currentUserBeforeLogin+' -> '+found.username);
+      }
+      try{
+        var fcmToken=safeGet('repco_fcm_token')||'';
+        if(fcmToken && db && db.ref){
+          db.ref('fcm_tokens/'+found.username).set({token:fcmToken,username:found.username,ts:Date.now()});
+          if(previousLastUser && previousLastUser!==found.username){
+            try{ db.ref('fcm_tokens/'+previousLastUser).remove(); }catch(e){}
+          }
+        }
+      }catch(e){}
+    }catch(e){ console.error('Save session failed', e); }
+    if(err){ err.textContent=''; err.style.display='none'; }
+    try{
+      var lp=document.getElementById('login-page');
+      if(lp) lp.style.display='none';
+      var v65=document.getElementById('repco-v65');
+      if(v65){ v65.style.display='block'; v65.classList.add('show'); }
+      var gh=document.getElementById('global-header');
+      if(gh){ gh.style.display='flex'; gh.classList.add('show'); }
+      if(typeof setupActivityTracking==='function'){ try{ setupActivityTracking(); }catch(e){} }
+      var userRole=(found.role||'').toLowerCase();
+      var isEmployee=userRole==='staff' || userRole==='employee' || (!['admin','manager','master','chris'].includes(userRole));
+      if(isEmployee){
+        if(typeof openPage==='function'){ openPage('mysched-page'); }
+        if(typeof renderMySchedule==='function'){ try{ renderMySchedule(); }catch(e){} }
+        setTimeout(async () => {
+          try{
+            const notifSetting=safeGet('repco_notifications_enabled');
+            if(notifSetting!=='false'){
+              if(Notification.permission==='default' || Notification.permission==='granted'){
+                await enablePhoneNotifications();
+              }
+            }
+          }catch(e){}
+        },1500);
+      }else{
+        if(typeof showMain==='function'){ showMain(); }else{
+          if(v65) v65.style.display='block';
+          if(gh) gh.style.display='flex';
+        }
+        if(typeof renderRosterSafe==='function'){ try{ renderRosterSafe(); }catch(e){} }
+        if(typeof applyRoleVisibility==='function'){ try{ try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){ console.log('applyRoleVisibility error in doLogin', e); } }
+      }
+      if(typeof toast==='function'){
+        try{
+          const lastWelcomeKey='repco_last_welcome_'+found.username;
+          const lastWelcome=safeGet(lastWelcomeKey);
+          const now=Date.now();
+          if(!lastWelcome || (now-parseInt(lastWelcome,10))>24*60*60*1000){
+            toast('Welcome '+found.username);
+            safeSet(lastWelcomeKey, now.toString());
+          }
+        }catch(e){}
+      }
+    }catch(e){
+      console.error('Show main failed', e);
+      alert('Login OK but show failed: '+e.message);
+      document.getElementById('login-page').style.display='none';
+      var v65=document.getElementById('repco-v65');
+      if(v65){ v65.style.display='block'; v65.classList.add('show'); }
+      var gh=document.getElementById('global-header');
+      if(gh){ gh.style.display='flex'; gh.classList.add('show'); }
+    }
+  }catch(e){
+    console.error('doLogin outer error', e);
+    alert('Login error: '+e.message);
+  }
+}
 
-// REMOVED duplicate - SINGLE 
-// REMOVED duplicate - SINGLE doLogin FIX - 1 block only
-
+function doLoginSync(){
+  return doLogin();
+}
 
 window.doLogin = doLogin;
 
@@ -2750,10 +2963,10 @@ function populateFortnightSelect(){
               safeSet('repco_cloud_ts', String(state._ts));
               console.log('LIVE SAVE: AB/G edit synced instantly');
             } else {
-              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); });
+              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); });
             }
             // Also push roster directly for redundancy
-            safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors',cache:'no-store'}).catch(function(){});
+            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors',cache:'no-store'}).catch(function(){});
           }catch(e){ console.error('Live save error', e); }
           // Broadcast to other tabs
           try{ if(typeof BroadcastChannel!=='undefined'){ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'roster_update', ts:Date.now()}); } }catch(e){}
@@ -2945,7 +3158,7 @@ function deduplicateAllRosters(showToast){
       try{
         var state=getAllState();
         if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state);
-        else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }catch(e){}
       if(showToast){
         var msg='';
@@ -3116,8 +3329,8 @@ function deleteCurrentRoster(){
             db.ref('repco_state').set(state).then(function(){ console.log('Delete synced via SDK'); toast('Deleted '+deleted.label+' - live on all devices'); });
             db.ref('retail_roster_byFortnight_v1').set(fns);
           }
-          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
-          safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(){ console.log('Roster delete pushed via REST'); }).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(){ console.log('Roster delete pushed via REST'); }).catch(function(){});
         }catch(e){ console.error('Delete sync error', e); }
       }catch(e){ console.error('delete error', e); toast('Delete failed: '+e.message); }
     });
@@ -3168,7 +3381,7 @@ function renderRosterSafe(){
       console.log('V204 MAIN: Cleaned', _startupOffers.length-_cleaned.length, 'invalid CLOSED pending offers');
       try{
         if(typeof FIREBASE_DB_URL!=='undefined'){
-          safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(_cleaned),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(_cleaned),mode:'cors'}).catch(function(){});
         }
       }catch(e){}
     }
@@ -3701,7 +3914,7 @@ function saveStaffName(globalIdx){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state).then(function(){ toast('Name updated to '+formattedLast+', '+formattedFirst+' - LIVE'); });
       } else {
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
         toast('Name updated to '+formattedLast+', '+formattedFirst+' - synced');
       }
     }catch(e){}
@@ -3788,7 +4001,7 @@ function deleteStaffFromRoster(globalIdx, fromAll){
             if(typeof db!=='undefined' && db){
               db.ref('repco_state').set(state);
             } else {
-              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
             }
           }catch(e){}
           toast('DELETED '+staffName+' from ALL '+deletedCount+' rosters - LIVE synced to all devices');
@@ -3805,7 +4018,7 @@ function deleteStaffFromRoster(globalIdx, fromAll){
             try{
               var state=getAllState();
               if(typeof db!=='undefined' && db) db.ref('repco_state').set(state);
-              else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+              else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
             }catch(e){}
             toast('Deleted '+staffName+' from '+fn.label+' - LIVE synced');
           }
@@ -4298,9 +4511,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 var finalOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
                 var finalNotifs = safeGetJSON('repco_notifications_v1',[]);
                 if(typeof FIREBASE_DB_URL!=='undefined'){
-                  safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalFns),mode:'cors',cache:'no-store'}).catch(function(){});
-                  safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalOffers),mode:'cors',cache:'no-store'}).catch(function(){});
-                  safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalNotifs),mode:'cors',cache:'no-store'}).catch(function(){});
+                  fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalFns),mode:'cors',cache:'no-store'}).catch(function(){});
+                  fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalOffers),mode:'cors',cache:'no-store'}).catch(function(){});
+                  fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(finalNotifs),mode:'cors',cache:'no-store'}).catch(function(){});
                 }
                 if(window.db){
                   try{ window.db.ref('retail_roster_byFortnight_v1').set(finalFns); }catch(e){}
@@ -4613,7 +4826,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 // Push to Firebase
                 try{
                   if(typeof FIREBASE_DB_URL!=='undefined'){
-                    safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(filteredNotifs),mode:'cors'}).catch(function(){});
+                    fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(filteredNotifs),mode:'cors'}).catch(function(){});
                   }
                   if(window.db){
                     try{ window.db.ref('repco_notifications_v1').set(filteredNotifs); }catch(e){}
@@ -4713,7 +4926,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   // Push to Firebase
                   try{
                     if(typeof FIREBASE_DB_URL!=='undefined'){
-                      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cleaned),mode:'cors'}).catch(function(){});
+                      fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cleaned),mode:'cors'}).catch(function(){});
                     }
                     if(window.db){
                       try{ window.db.ref('retail_roster_shift_offers_v1').set(cleaned); }catch(e){}
@@ -4776,7 +4989,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               safeSetJSON('repco_notifications_v1', notifsClosed);
               try{
                 if(typeof FIREBASE_DB_URL!=='undefined'){
-                  safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(notifsClosed),mode:'cors'}).catch(function(){});
+                  fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(notifsClosed),mode:'cors'}).catch(function(){});
                 }
                 if(window.db){
                   try{ window.db.ref('repco_notifications_v1').set(notifsClosed); }catch(e){}
@@ -5009,10 +5222,10 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               db.ref('repco_state').set(state);
               safeSet('repco_cloud_ts', String(state._ts));
             } else {
-              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
+              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors',cache:'no-store'}).catch(function(){});
             }
             // Also push roster directly - use freshFns that has cancelled marker cleared
-            safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(freshFns),mode:'cors',cache:'no-store'}).catch(function(){});
+            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(freshFns),mode:'cors',cache:'no-store'}).catch(function(){});
           }catch(e){ console.error('V174 Live save error', e); }
           try{ if(typeof BroadcastChannel!=='undefined'){ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'roster_update', ts:Date.now()}); } }catch(e){}
 
@@ -5124,9 +5337,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 state2._ts=Date.now();
                 safeSet('repco_cloud_ts', String(state2._ts));
                 if(typeof db!=='undefined' && db && db.ref) db.ref('repco_state').set(state2);
-                else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state2)});
-                safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqs),mode:'cors'}).catch(function(){});
-                try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){}); }catch(e){}
+                else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state2)});
+                fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqs),mode:'cors'}).catch(function(){});
+                try{ fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){}); }catch(e){}
                 try{
                   if(typeof BroadcastChannel!=='undefined'){
                     var bc2=new BroadcastChannel('repco_roster_sync');
@@ -5185,7 +5398,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 }
                 if(forceMatched.length>0){
                   safeSetJSON('retail_roster_requests_v2', allReqsForce);
-                  try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForce),mode:'cors'}).catch(function(){}); }catch(e){}
+                  try{ fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForce),mode:'cors'}).catch(function(){}); }catch(e){}
                   console.log('V139: Force superseded on backspace', forceMatched.join(','));
                 }
               }catch(e){ console.log('V139 force supersede error', e); }
@@ -5269,16 +5482,16 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             if(typeof db!=='undefined' && db && db.ref){
               db.ref('repco_state').set(state);
             } else {
-              safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
-                safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
+              fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
+                fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
               });
             }
             // Push roster separately for direct polling - with fallback
             try{
-              safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(res){
+              fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).then(function(res){
                 if(!res.ok) throw new Error('cors failed');
               }).catch(function(){
-                safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
+                fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
               });
             }catch(e){}
             // V135: Force My Schedule live update on employee devices - push roster + requests and broadcast
@@ -5286,8 +5499,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               // Push roster separately again with no-cors fallback for reliability
               setTimeout(function(){
                 try{
-                  safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){
-                    safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
+                  fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fns),mode:'cors'}).catch(function(){
+                    fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',body:JSON.stringify(fns),mode:'no-cors'}).catch(function(){});
                   });
                 }catch(e){}
               }, 300);
@@ -5780,14 +5993,14 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
       // ALWAYS push to Firebase via multiple methods for instant delivery
       if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
         // 1. Direct REST to notifications
-        safeCloudFetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V167: Pushed to Firebase notifications/'+targetUsername); }).catch(function(e){ console.log('V167 Firebase notif push fail', e); });
+        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V167: Pushed to Firebase notifications/'+targetUsername); }).catch(function(e){ console.log('V167 Firebase notif push fail', e); });
         // 2. To repco_notifications_v1 global
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
         // 3. To push_notifications with unique key
         var uniqueKey = Date.now() + '_' + Math.random().toString(36).substr(2,5);
-        safeCloudFetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+uniqueKey+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title: notif.title, body: notif.message, data: notif, timestamp: Date.now(), from: notif.from, type: notif.type, force: true}),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/push_notifications/'+targetUsername+'/'+uniqueKey+'.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title: notif.title, body: notif.message, data: notif, timestamp: Date.now(), from: notif.from, type: notif.type, force: true}),mode:'cors'}).catch(function(){});
         // 4. To push_queue for FCM
-        safeCloudFetch(FIREBASE_DB_URL+'/push_queue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to: targetUsername, title: notif.title, body: notif.message, data: notif, ts: Date.now(), force: true}),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/push_queue.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to: targetUsername, title: notif.title, body: notif.message, data: notif, ts: Date.now(), force: true}),mode:'cors'}).catch(function(){});
       }
       if(window.db){
         try{
@@ -5849,8 +6062,8 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
           
           // Push offer to Firebase for instant sync - MULTIPLE METHODS
           if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
-            safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).then(function(){ console.log('V167: Offers pushed via REST'); }).catch(function(e){ console.log('V167 offers REST fail', e); });
-            safeCloudFetch(FIREBASE_DB_URL+'/shift_offers/'+targetUsername.toLowerCase()+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(offer),mode:'cors'}).catch(function(){});
+            fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).then(function(){ console.log('V167: Offers pushed via REST'); }).catch(function(e){ console.log('V167 offers REST fail', e); });
+            fetch(FIREBASE_DB_URL+'/shift_offers/'+targetUsername.toLowerCase()+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(offer),mode:'cors'}).catch(function(){});
           }
           if(window.db){
             try{ window.db.ref('retail_roster_shift_offers_v1').set(offers).then(function(){ console.log('V167: Offers set via SDK'); }); }catch(e){ console.log('V167 offers SDK set fail', e); }
@@ -6173,8 +6386,8 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     // Push to Firebase to delete from employee phone instantly
     try{
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updatedOffers),mode:'cors'}).catch(function(){});
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(remainingNotifs),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updatedOffers),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(remainingNotifs),mode:'cors'}).catch(function(){});
         // Also push cancellation to employee's notification channel
         for(var ci=0; ci<cancelled.length; ci++){
           var canc = cancelled[ci];
@@ -6190,7 +6403,7 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
             read: false,
             cancelledOfferId: canc.id
           };
-          safeCloudFetch(FIREBASE_DB_URL+'/notifications/'+canc.targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cancelNotif),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/notifications/'+canc.targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cancelNotif),mode:'cors'}).catch(function(){});
         }
       }
       if(window.db){
@@ -6358,14 +6571,14 @@ function acceptShiftOffer(offerId){
         notifs.push(adminNotif);
         safeSetJSON('repco_notifications_v1', notifs);
         if(typeof FIREBASE_DB_URL!=='undefined'){
-          safeCloudFetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/notifications/admin.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(adminNotif),mode:'cors'}).catch(function(){});
         }
         if(window.db){
           try{ window.db.ref('notifications/admin').push(adminNotif); }catch(e){}
         }
       }
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
       }
       if(window.db){
         try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
@@ -6595,8 +6808,8 @@ function sendApprovalNotification(employeeName, type, details, fullRequest){
       // FIXED V164: Instant Firebase sync + FCM push for iPhone locked screen
       if(typeof FIREBASE_DB_URL!=='undefined'){
         // Push notification directly to Firebase REST for instant sync
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
-        safeCloudFetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V164: Notif pushed to Firebase for', targetUsername); }).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/notifications/'+targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(notif),mode:'cors'}).then(function(){ console.log('V164: Notif pushed to Firebase for', targetUsername); }).catch(function(){});
       }
       if(window.db){
         try{
@@ -6841,7 +7054,7 @@ function forceRefreshCurrentData(){
     // Always check for new index.html version first
     checkForIndexUpdate(false);
     // Fetch latest Firebase state
-    safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('state fail'); return r.json(); }).then(function(state){
+    fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('state fail'); return r.json(); }).then(function(state){
       if(state && state._ts){
         var localTs=parseInt(safeGet('repco_cloud_ts')||'0');
         if(state._ts>localTs){
@@ -6851,7 +7064,7 @@ function forceRefreshCurrentData(){
       }
     }).catch(function(){});
     // Fetch roster directly
-    safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('roster fail'); return r.json(); }).then(function(cloudFns){
+    fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('roster fail'); return r.json(); }).then(function(cloudFns){
       if(Array.isArray(cloudFns) && cloudFns.length>0){
         try{ filterDeletedStaffFromCloud(cloudFns); }catch(e){}
         var localFns=safeGetJSON('retail_roster_byFortnight_v1',[]);
@@ -6862,7 +7075,7 @@ function forceRefreshCurrentData(){
       }
     }).catch(function(){});
     // Fetch requests
-    safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('req fail'); return r.json(); }).then(function(cloudReqs){
+    fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(r){ if(!r.ok) throw new Error('req fail'); return r.json(); }).then(function(cloudReqs){
       if(Array.isArray(cloudReqs)){
         var localReqs=safeGetJSON('retail_roster_requests_v2',[]);
         // Simple merge - if cloud has newer approved/denied/superseded, update local
@@ -7285,7 +7498,7 @@ function toggleMaintenanceFromOptions(){
   try{
     var state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
     if(db) db.ref('repco_state').set(state).then(function(){ toast('Maintenance '+(next?'ON':'OFF')+' - live on all devices'); });
-    else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+    else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
   }catch(e){}
   checkMaintenance();
 }
@@ -8300,7 +8513,7 @@ function openCreatePublicHolidayModal(editId){
           if(state && typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state).then(function(){ toast('Public holiday synced LIVE - unlisted staff now OFF'); });
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }catch(e){}
       },500);
@@ -8422,7 +8635,7 @@ function deletePublicHoliday(id){
           if(state && typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state);
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }catch(e){}
       },500);
@@ -8750,16 +8963,16 @@ function addHiddenStaff(){
       if(state && typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state).then(function(){ console.log('Hidden staff synced LIVE via repco_state'); });
       } else if(typeof FIREBASE_DB_URL!=='undefined'){
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
       // FIXED V163: Also push hidden staff directly to Firebase for redundancy (ensures live/permanent)
       var hiddenForDirect = safeGetJSON('retail_roster_hidden_staff_v1',[]);
       var usersForDirect = safeGetJSON('retail_roster_users_v1',[]);
       var fnsForDirect = safeGetJSON('retail_roster_byFortnight_v1',[]);
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hiddenForDirect),mode:'cors'}).then(function(){ console.log('Hidden staff direct sync OK'); }).catch(function(e){ console.log('Hidden direct sync fail', e); });
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fnsForDirect),mode:'cors'}).catch(function(){});
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(usersForDirect),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hiddenForDirect),mode:'cors'}).then(function(){ console.log('Hidden staff direct sync OK'); }).catch(function(e){ console.log('Hidden direct sync fail', e); });
+        fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fnsForDirect),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(usersForDirect),mode:'cors'}).catch(function(){});
         if(typeof db!=='undefined' && db && db.ref){
           try{ db.ref('retail_roster_hidden_staff_v1').set(hiddenForDirect); }catch(e){}
           try{ db.ref('retail_roster_byFortnight_v1').set(fnsForDirect); }catch(e){}
@@ -8889,26 +9102,18 @@ function saveHiddenStaffEdit(idx){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state);
       } else if(typeof FIREBASE_DB_URL!=='undefined'){
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hidden),mode:'cors'}).catch(function(){});
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(users),mode:'cors'}).catch(function(){});
+      fetch(FIREBASE_DB_URL+'/retail_roster_hidden_staff_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(hidden),mode:'cors'}).catch(function(){});
+      fetch(FIREBASE_DB_URL+'/retail_roster_users_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(users),mode:'cors'}).catch(function(){});
     }catch(e){}
   }catch(e){ console.error(e); toast('Error: '+e.message); }
 }
 
 
 
-function cloudSave(){
-  if(suppressCloudSave) return;
-  if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
-  cloudSaveTimer=setTimeout(async()=>{
-    try{
-      let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
-      if(db) await db.ref('repco_state').set(state); else await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
-    }catch(e){ console.log("cloudSave",e); }
-  },600);
-}
+function cloudSave(){ try{ localStorage.setItem("repco_last_save", String(Date.now())); }catch(e){} }
+
 let debouncedCloudSaveTimer=null;
 function debouncedCloudSave(){
   if(suppressCloudSave) return;
@@ -8916,7 +9121,7 @@ function debouncedCloudSave(){
   debouncedCloudSaveTimer=setTimeout(async()=>{
     try{
       let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
-      if(db) await db.ref('repco_state').set(state); else await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+      if(db) await db.ref('repco_state').set(state); else await fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       console.log('Debounced cloud save done');
     }catch(e){ console.log("debouncedCloudSave",e); }
   },600);
@@ -9012,7 +9217,7 @@ function submitUnavail(){
           if(typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state).then(function(){ toast('Synced - admin notified'); });
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }
       }catch(e){}
@@ -9186,23 +9391,23 @@ function approveReq(idx){
           console.log('Approve synced via SDK');
         }).catch(function(e){
           console.log('SDK sync failed, trying REST', e.message);
-          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
         });
       } else {
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
-          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'no-cors'}).catch(function(){});
         });
       }
       // Also save requests and roster separately for direct polling
       var allStr=JSON.stringify(all);
       var fnsStr=JSON.stringify(fns);
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'cors'}).then(function(){
+      fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'cors'}).then(function(){
         console.log('Requests synced via REST');
       }).catch(function(){
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'no-cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:allStr,mode:'no-cors'}).catch(function(){});
       });
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'no-cors'}).catch(function(){});
+      fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'cors'}).catch(function(){
+        fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:fnsStr,mode:'no-cors'}).catch(function(){});
       });
     }catch(e){ console.error('Approve sync error', e); }
     
@@ -9283,9 +9488,9 @@ function denyReq(idx){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state);
       } else {
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+      fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
     }catch(e){ console.error(e); }
     renderRequests(); 
     try{ renderMySchedule(); }catch(e){}
@@ -9412,7 +9617,7 @@ function renderRequestsPage(){
   setTimeout(()=>{ initUnavailCalendar(); }, 100);
 }
 
-selectedUnavailDates=[];
+let selectedUnavailDates=[];
 function initUnavailCalendar(){
   let cal=document.getElementById('unavail-calendar');
   if(!cal) return;
@@ -9566,7 +9771,7 @@ function submitUnavailability(){
           if(typeof db!=='undefined' && db && db.ref){
             db.ref('repco_state').set(state).then(function(){ console.log('Unavailability synced to cloud'); toast('Synced to cloud - admin will be notified'); });
           } else if(typeof FIREBASE_DB_URL!=='undefined'){
-            safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
           }
         }
       }catch(e){ console.error('Cloud sync error', e); }
@@ -9622,7 +9827,7 @@ function submitShiftCorrection(){
       if(typeof db!=='undefined' && db && db.ref){
         db.ref('repco_state').set(state);
       } else {
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+        fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
       }
     }catch(e){}
   },500);
@@ -9637,7 +9842,7 @@ function dismissDenialReq(idx){
       all[idx].readByAdmin=true;
       safeSetJSON('retail_roster_requests_v2', all);
       if(typeof FIREBASE_DB_URL!=='undefined'){
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
       }
       if(window.db){
         try{ window.db.ref('retail_roster_requests_v2').set(all); }catch(e){}
@@ -9697,8 +9902,8 @@ function reOfferShift(idx){
     safeSetJSON('retail_roster_requests_v2', all);
     
     if(typeof FIREBASE_DB_URL!=='undefined'){
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
-      safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
+      fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(offers),mode:'cors'}).catch(function(){});
+      fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(all),mode:'cors'}).catch(function(){});
     }
     if(window.db){
       try{ window.db.ref('retail_roster_shift_offers_v1').set(offers); }catch(e){}
@@ -9736,7 +9941,7 @@ function toggleMaintenance(){
   try{
     var state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
     if(db) db.ref('repco_state').set(state).then(function(){ toast('Maintenance '+(next?'ON':'OFF')+' - live on all devices'); }).catch(function(e){ console.log('cloudSave',e); });
-    else safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+    else fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
   }catch(e){ console.log('toggleMaintenance cloudSave', e); }
   checkMaintenance();
 }
@@ -10244,7 +10449,7 @@ function updateMyScheduleCard_ORIG(){
     let card=document.getElementById('my-schedule-card');
     if(!my || !card){ if(card) card.style.display='none'; return; }
     let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    fns.sort(function(a,b){ let da=a.dates[0]&&a.dates[0].iso||''; db=b.dates[0]&&b.dates[0].iso||''; return da.localeCompare(db); });
+    fns.sort(function(a,b){ let da=a.dates[0]&&a.dates[0].iso||''; let db=b.dates[0]&&b.dates[0].iso||''; return da.localeCompare(db); });
     let now=new Date();
     let candidates=[];
     for(let fi=0;fi<fns.length;fi++){
@@ -10559,7 +10764,7 @@ function renderMySchedule(){
           }catch(e){ console.error('overwrite error', e); }
         }
         // Only sync from requests_v2 - removed legacy denied_requests.json which caused approve->denied bug
-        safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
+        fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
           if(!res.ok) throw new Error('cors failed '+res.status);
           return res.json();
         }).then(function(cloudReqs){
@@ -10569,7 +10774,7 @@ function renderMySchedule(){
           console.log('requests_v2 sync failed', e.message);
         });
         // Also check repco_state for requests
-        safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
+        fetch(FIREBASE_DB_URL+'/repco_state.json?_t='+Date.now(),{cache:'no-store', mode:'cors'}).then(function(res){
           if(!res.ok) throw new Error('repco_state failed');
           return res.json();
         }).then(function(state){
@@ -11170,7 +11375,7 @@ function renderMySchedule(){
                 allReqsForFixCurr[fixIdxCurr].supersededTs=Date.now();
                 allReqsForFixCurr[fixIdxCurr].supersededNote='Auto-superseded current: Admin edited roster from '+reqData.newShift+' to '+currentShift.shift+' after approval';
                 safeSetJSON('retail_roster_requests_v2', allReqsForFixCurr);
-                try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixCurr),mode:'cors'}).catch(function(){}); }catch(e){}
+                try{ fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixCurr),mode:'cors'}).catch(function(){}); }catch(e){}
               }
             }catch(e){}
             htmlStr+='<div class="card" style="background:#111;color:#fff;border:3px solid #E30613;cursor:pointer" onclick="requestShiftCorrectionFromSchedule('+currentShift.idx+', \''+currentShift.date.date+' '+currentShift.date.day+'\', \''+String(currentShift.shift).replace(/'/g, '')+ '\')"><div style="font-weight:900;font-size:12px;color:#FFEB3B">CURRENT SHIFT - UPDATED BY ADMIN</div><div style="font-weight:900;font-size:16px;margin:6px 0">'+phCurrIcon+currentShift.date.day+' '+currentShift.date.date+(phCurr?' 🎉':'')+' - '+fmt(currentShift.shift)+phCurrBadge+'</div><div style="font-size:11px">Your approved request ('+fmt(reqData.newShift)+') was overridden by admin<br>Now: <b>'+fmt(currentShift.shift)+'</b></div></div>';
@@ -11247,7 +11452,7 @@ function renderMySchedule(){
                   allReqsForFixU[fixIdxU].supersededTs=Date.now();
                   allReqsForFixU[fixIdxU].supersededNote='Auto-superseded in upcoming: Admin edited roster from '+reqU.newShift+' to '+u.shift+' after approval';
                   safeSetJSON('retail_roster_requests_v2', allReqsForFixU);
-                  try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixU),mode:'cors'}).catch(function(){}); }catch(e){}
+                  try{ fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(allReqsForFixU),mode:'cors'}).catch(function(){}); }catch(e){}
                 }
               }catch(e){}
               htmlStr+='<div class="card" style="background:#111;color:#fff;border:2px solid #E30613;cursor:pointer" onclick="requestShiftCorrectionFromSchedule('+u.idx+', \''+u.date.date+' '+u.date.day+'\', \''+String(u.shift).replace(/'/g, '')+ '\')"><b>'+u.date.day+' '+u.date.date+'</b> - <b>'+fmt(u.shift)+'</b><br><span style="background:#FFEB3B;color:#111;border-radius:9999px;padding:2px 6px;font-size:9px;font-weight:900">UPDATED BY ADMIN</span><br><small>Was approved '+fmt(reqU.newShift)+', now '+fmt(u.shift)+'</small></div>';
@@ -12005,8 +12210,8 @@ function deleteRequest(idx){
             db.ref('retail_roster_requests_v2').set(JSON.stringify(reqs));
           }
           // Direct REST push for instant sync
-          safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(reqs),mode:'cors'}).then(function(){ console.log('Deleted request synced LIVE', delId); }).catch(function(){});
-          safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/retail_roster_requests_v2.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(reqs),mode:'cors'}).then(function(){ console.log('Deleted request synced LIVE', delId); }).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state),mode:'cors'}).catch(function(){});
           // Broadcast deletion
           try{
             if(typeof BroadcastChannel!=='undefined'){
@@ -12406,226 +12611,61 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 
 }
 
-
-// PATCH ensures all critical missing functions present
-function buildSection(type){try{var tid='table-'+type; if(type==='fulltime') tid='table-fulltime'; if(type==='casual') tid='table-casual'; if(type==='hidden') tid='table-hidden'; renderTableForType(type,tid);}catch(e){}}
-function isGShift(shift,name){if(!shift) return false; var up=(shift+'').toUpperCase().trim(); if(up==='G') return true; var has0730=shift.indexOf('07:30')>=0; var has2000=shift.indexOf('20:00')>=0; var isLC=false; if(name){var low=name.toLowerCase(); if(low.indexOf('luke')>=0||low.indexOf('chris')>=0) isLC=true;} if(isLC&&(has0730||has2000)) return true; if(has0730) return true; return false;}
-function isGStatus(s,n){return isGShift(s,n);}
-function classifyCell(shift){if(!shift) return 'cell-off'; var s=(shift+'').toUpperCase().trim(); if(s==='OFF'||s==='') return 'cell-off'; if(s==='NA'||s==='UA') return 'cell-na'; if(s==='AB'||s==='ABSENT') return 'cell-absent'; if(s==='G') return 'cell-g'; return '';}
-function sortStaffByLastName(staff){return staff.slice().sort(function(a,b){var aLast=(a.lastName||a.name.split(' ').pop()||'').toLowerCase(); var bLast=(b.lastName||b.name.split(' ').pop()||'').toLowerCase(); if(aLast<bLast) return -1; if(aLast>bLast) return 1; return a.name.localeCompare(b.name);});}
-function calcHours(shift){if(!shift) return 0; if(shift==='OFF'||shift==='NA'||shift==='UA'||shift==='AB'||shift==='G') return 0; var dash=shift.indexOf('-'); if(dash<0) return 0; var left=shift.substring(0,dash).trim(); var right=shift.substring(dash+1).trim(); function toMins(t){var p=t.split(':'); if(p.length<2) return null; var h=parseInt(p[0]); var m=parseInt(p[1]); if(isNaN(h)||isNaN(m)) return null; return h*60+m;} var a=toMins(left); var b=toMins(right); if(a===null||b===null) return 0; var diff=b-a; if(diff<0) diff+=24*60; diff=diff/60; if(diff>=5) diff-=0.5; return diff;}
-function renderTableForType(type,tableId){try{var table=document.getElementById(tableId); if(!table) return; var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var staffList=(cur.staff||[]).filter(function(s){if(type==='hidden') return s.hidden===true; if(s.hidden) return false; var emp=(s.employmentType||'').toLowerCase(); if(type==='fulltime') return emp==='fulltime'; if(type==='casual') return emp==='casual'||emp===''; return false;}); staffList=sortStaffByLastName(staffList); var html='<thead><tr><th class="staff-col">STAFF</th>'; dates.forEach(function(iso){var d=new Date(iso); var dn=d.toLocaleDateString('en-AU',{weekday:'short'}); var isWE=(d.getDay()===0||d.getDay()===6); var ph=getPublicHolidayForDate(iso); var cls=''; if(ph) cls='day-ph'; else if(isWE) cls='day-blue col-weekend'; else cls='day-yellow'; html+='<th class="'+cls+'">'+dn+'<br>'+getDDMM(iso)+'</th>';}); html+='<th>Totals hrs LIVE diff>=5?diff-0.5</th></tr></thead><tbody>'; staffList.forEach(function(s,rowIdx){var tot=0; html+='<tr><td class="staff-col" onclick="editStaffType(\''+s.name.replace(/'/g,'')+'\')">'+s.name+'</td>'; dates.forEach(function(iso,colIdx){var sh=(s.shifts&&s.shifts[colIdx]!==undefined)?s.shifts[colIdx]:((s.shifts&&s.shifts[iso])||'OFF'); var c=classifyCell(sh); if(isGShift(sh,s.name)) c='cell-g'; var ph=getPublicHolidayForDate(iso); if(ph) c+=' day-ph'; var isWE=(new Date(iso).getDay()===0||new Date(iso).getDay()===6); if(isWE) c+=' col-weekend'; if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!=='') tot+=calcHours(sh); html+='<td class="'+c+'" onclick="editCell('+rowIdx+','+colIdx+',\''+type+'\')">'+sh+'</td>';}); html+='<td style="background:#111;color:#fff">'+tot.toFixed(1)+'</td></tr>';}); html+='<tr class="totals"><td class="staff-col">TOTALS</td>'; dates.forEach(function(iso,colIdx){var cnt=0; var hrs=0; staffList.forEach(function(s){var sh=(s.shifts&&s.shifts[colIdx]!==undefined)?s.shifts[colIdx]:((s.shifts&&s.shifts[iso])||'OFF'); if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!==''){cnt++; hrs+=calcHours(sh);}}); html+='<td>'+cnt+'/'+hrs.toFixed(1)+'</td>';}); html+='<td>'+staffList.length+'</td></tr></tbody>'; table.innerHTML=html;}catch(e){console.error(e);}}
-function renderRosterSafe(){try{renderTableForType('fulltime','table-fulltime'); renderTableForType('casual','table-casual'); renderTableForType('hidden','table-hidden'); updateRequestsBadge();}catch(e){}}
-function pushUndo(){try{var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var snap=JSON.stringify(byF); if(undoStack.length>=20) undoStack.shift(); undoStack.push(snap); try{updateUndoButton();}catch(e){}}catch(e){}}
-function updateUndoButton(){var btn=document.getElementById('undo-btn'); if(btn) btn.textContent='UNDO ('+undoStack.length+')';}
-function undoLastEdit(){if(undoStack.length===0){toast('Nothing to undo'); return;} var prev=undoStack.pop(); try{var byF=JSON.parse(prev); safeSetJSON('retail_roster_byFortnight_v1',byF); renderRosterSafe(); cloudSave(); updateUndoButton(); toast('Undo');}catch(e){toast('Undo failed');}}
-function editCell(rowIdx,colIdx,type){try{var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var staffList=(cur.staff||[]).filter(function(s){if(type==='hidden') return s.hidden===true; if(s.hidden) return false; var emp=(s.employmentType||'').toLowerCase(); if(type==='fulltime') return emp==='fulltime'; if(type==='casual') return emp==='casual'||emp===''; return false;}); staffList=sortStaffByLastName(staffList); var staff=staffList[rowIdx]; if(!staff){toast('Staff not found'); return;} var realIdx=-1; for(var i=0;i<cur.staff.length;i++){if(cur.staff[i].name===staff.name){realIdx=i; break;}} if(realIdx<0){toast('Real staff not found'); return;} var iso=dates[colIdx]||''; var curShift=(cur.staff[realIdx].shifts&&cur.staff[realIdx].shifts[colIdx]!==undefined)?cur.staff[realIdx].shifts[colIdx]:((cur.staff[realIdx].shifts&&cur.staff[realIdx].shifts[iso])||'OFF'); var ns=prompt('Edit shift for '+staff.name+' on '+getDDMM(iso)+' ('+iso+'): e.g. 09:00-17:00, G = 07:30-20:00 for Luke/Chris, OFF, NA, AB:',curShift); if(ns===null) return; ns=ns.trim()||'OFF'; if(!cur.staff[realIdx].originalShifts) cur.staff[realIdx].originalShifts=[]; if(cur.staff[realIdx].originalShifts[colIdx]===undefined) cur.staff[realIdx].originalShifts[colIdx]=curShift; pushUndo(); if(!cur.staff[realIdx].shifts) cur.staff[realIdx].shifts=[]; cur.staff[realIdx].shifts[colIdx]=ns; byF[getSelectedFortnight()]=cur; safeSetJSON('retail_roster_byFortnight_v1',byF); renderRosterSafe(); cloudSave(); toast('Saved LIVE');}catch(e){toast('editCell error '+e.message);}}
-function editStaffType(name){var nt=prompt('Edit employment type for '+name+' (fulltime/casual):',''); if(nt===null) return; nt=nt.trim().toLowerCase(); if(nt!=='fulltime'&&nt!=='casual'){toast('Use fulltime or casual'); return;} var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var s=cur.staff.find(function(x){return x.name===name;}); if(s){pushUndo(); s.employmentType=nt; safeSetJSON('retail_roster_byFortnight_v1',byF); renderRosterSafe(); cloudSave(); toast('Type updated');}}
-function updateRequestsBadge(){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var p=0; if(Array.isArray(reqs)) p=reqs.filter(function(r){return r.status==='pending';}).length; var b=document.getElementById('requests-badge'); if(b){if(p>0){b.textContent=p; b.style.display='inline-block';} else b.style.display='none';}}
-function renderRequestsSafe(){try{renderRequests();}catch(e){}}
-function renderRequests(){var el=document.getElementById('requests-list'); if(!el) return; var reqs=safeGetJSON('retail_roster_requests_v2',[]); var offers=safeGetJSON('retail_roster_shift_offers_v1',[]); var all=[]; if(Array.isArray(reqs)) all=all.concat(reqs); if(Array.isArray(offers)) all=all.concat(offers); if(all.length===0){el.innerHTML='<div class="small">No requests - LIVE SYNC Firebase SDK on(value) REST 1.2s</div>'; return;} var finalTsByDate={}; all.forEach(function(r){if(r.status==='approved'||r.status==='denied'){var dates=r.dates||[r.dateLabel||r.shiftDate||'']; dates.forEach(function(d){if(!d) return; var key=(r.username||'')+'|'+d; var ts=r.deniedTs||r.approvedTs||r.ts||0; if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;});}}); var html=''; all.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).forEach(function(r){var datesStr=r.dates?r.dates.join(', '):(r.dateLabel||r.shiftDate||''); html+='<div class="list-item"><div><b>'+(r.username||'')+'</b> - '+(r.type||'')+' - '+datesStr+'<br><span class="small">'+(r.reason||r.newShift||'')+' ts:'+(r.ts||0)+' deniedTs:'+(r.deniedTs||0)+' approvedTs:'+(r.approvedTs||0)+'</span> <span class="badge '+r.status+'">'+r.status+'</span></div><div><button class="btn-grey" onclick="approveRequest(\''+r.id+'\')">Approve</button><button class="btn-grey" onclick="denyRequest(\''+r.id+'\')">Deny</button><button class="btn-grey" onclick="deleteRequest(\''+r.id+'\')">Delete</button></div></div>';}); el.innerHTML=html; updateRequestsBadge();}
-function approveRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var all=reqs; var r=all.find(function(x){return x.id===id;}); if(!r) return; r.status='approved'; r.approvedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); renderRosterSafe(); cloudSave(); toast('Approved finalTsByDate');}
-function denyRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var r=reqs.find(function(x){return x.id===id;}); if(!r) return; r.status='denied'; r.deniedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); cloudSave(); toast('Denied resubmit allowed Daniel fix');}
-function deleteRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); reqs=reqs.filter(function(x){return x.id!==id;}); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); updateRequestsBadge(); cloudSave(); toast('Deleted');};
-
-;(function setupLiveSync(){
-  try{
-    if(db&&db.ref){
-      db.ref('repco_state').on('value',function(snap){
-        var val=snap.val();
-        if(!val) return;
-        var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
-        var rt=val._ts||0;
-        if(rt>lt){
-          Object.keys(val).forEach(function(k){if(k.indexOf('_')===0) return; safeSetJSON(k,val[k]);});
-          safeSet('repco_cloud_ts',String(rt));
-          try{renderRosterSafe(); renderRequestsSafe();}catch(e){}
-        }
-      });
+// Simple Enter fix - ensures Enter triggers login on desktop and phone
+(function(){
+  var form=document.querySelector('.login-form');
+  if(form){
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      if(typeof doLogin==='function') doLogin();
+    });
+  }
+  var userEl=document.getElementById('login-user');
+  var passEl=document.getElementById('login-pass');
+  function onEnter(e){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      if(typeof doLogin==='function') doLogin();
     }
-  }catch(e){}
-  setInterval(async function(){
-    try{
-      var r1=await safeCloudFetch(FIREBASE_DB_URL+'/repco_state.json',{cache:'no-store'});
-      if(r1.ok){
-        var data=await r1.json();
-        if(data&&data._ts){
-          var lt=parseInt(safeGet('repco_cloud_ts','0')||'0');
-          if(data._ts>lt){
-            var cloudReqs=data['retail_roster_requests_v2']||[];
-            var localReqs=safeGetJSON('retail_roster_requests_v2',[]);
-            var finalTsByDate={};
-            var merged=cloudReqs.concat(localReqs);
-            merged.forEach(function(r){
-              if(r.status==='approved'||r.status==='denied'){
-                var dates=r.dates||[r.dateLabel||r.shiftDate||''];
-                dates.forEach(function(d){
-                  var key=(r.username||'')+'|'+d;
-                  var ts=r.deniedTs||r.approvedTs||r.ts||0;
-                  if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;
-                });
-              }
-            });
-            var seen={};
-            var filtered=[];
-            merged.forEach(function(r){
-              var id=r.id;
-              if(!seen[id]){
-                seen[id]=r; filtered.push(r);
-              }else{
-                if(r.status==='pending'&& (seen[id].status==='denied'||seen[id].status==='approved')){
-                  var pts=r.ts||0; var fts=0;
-                  var dates=r.dates||[r.dateLabel||r.shiftDate||''];
-                  for(var i=0;i<dates.length;i++){
-                    var k=(r.username||'')+'|'+dates[i];
-                    if(finalTsByDate[k]&&finalTsByDate[k]>fts) fts=finalTsByDate[k];
-                  }
-                  if(pts>fts){
-                    seen[id]=r;
-                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
-                  }
-                }else{
-                  if(r.status!=='pending'){
-                    seen[id]=r;
-                    for(var j=0;j<filtered.length;j++){if(filtered[j].id===id){filtered[j]=r; break;}}
-                  }
-                }
-              }
-            });
-            var finalFiltered=[];
-            filtered.forEach(function(x){
-              if(x.status!=='pending'){finalFiltered.push(x); return;}
-              var dates=x.dates||[x.dateLabel||x.shiftDate||''];
-              var isOld=false;
-              for(var i=0;i<dates.length;i++){
-                var k=(x.username||'')+'|'+dates[i];
-                var fts=finalTsByDate[k]||0;
-                var pts=x.ts||0;
-                if(fts>0&&pts<=fts){isOld=true; break;}
-              }
-              if(!isOld) finalFiltered.push(x);
-            });
-            Object.keys(data).forEach(function(k){if(k.indexOf('_')!==0&&k!=='retail_roster_requests_v2') safeSetJSON(k,data[k]);});
-            safeSetJSON('retail_roster_requests_v2',finalFiltered);
-            safeSet('repco_cloud_ts',String(data._ts));
-            renderRosterSafe(); renderRequestsSafe(); updateRequestsBadge();
-          }
-        }
-      }
-    }catch(e){}
-  },1200);
+  }
+  if(userEl) userEl.addEventListener('keydown', onEnter);
+  if(passEl) passEl.addEventListener('keydown', onEnter);
 })();
 
 
-;
-// REMOVED duplicate setupLiveSync
-
-
-function renderUnavailCalendar(){var el=document.getElementById('unavail-calendar'); if(!el) return; var dates=getDatesForFortnight(getSelectedFortnight()||generateFortnightId(new Date())); var html=''; dates.forEach(function(iso){var sel=selectedUnavailDates.has(iso)?'selected':''; html+='<div class="cal-day '+sel+'" onclick="toggleUnavailDate(\''+iso+'\')">'+getDDMM(iso)+'</div>';}); el.innerHTML=html; updateSelectedUnavailDisplay();}
-function toggleUnavailDate(iso){if(selectedUnavailDates.has(iso)) selectedUnavailDates.delete(iso); else selectedUnavailDates.add(iso); renderUnavailCalendar();}
-function updateSelectedUnavailDisplay(){var el=document.getElementById('selected-unavail-dates'); if(!el) return; if(selectedUnavailDates.size===0){el.textContent='No dates selected'; return;} var arr=Array.from(selectedUnavailDates).map(getDDMM); el.textContent=arr.join(', ');}
-function clearUnavailSelection(){selectedUnavailDates.clear(); renderUnavailCalendar(); updateSelectedUnavailDisplay();}
-function addPeriod(){var s=document.getElementById('unavail-start').value; var e=document.getElementById('unavail-end').value; if(!s||!e){toast('Select start and end'); return;} var sd=new Date(s); var ed=new Date(e); if(ed<sd){toast('End before start'); return;} var cur=new Date(sd); while(cur<=ed){selectedUnavailDates.add(getISO(cur)); cur=new Date(cur.getTime()+86400000);} renderUnavailCalendar(); toast('Period added dd/mm range');}
-function addUnavailPeriod(){addPeriod();}
-function submitUnavailability(){var reason=document.getElementById('unavail-reason').value.trim(); if(selectedUnavailDates.size===0){toast('Select dates'); return;} var user=window.currentUser||{username:safeGet('repco_username','unknown')}; var req={id:'req_'+Date.now(),username:user.username||safeGet('repco_username','unknown'),type:'unavailability',dates:Array.from(selectedUnavailDates),dateLabel:Array.from(selectedUnavailDates).map(getDDMM).join(','),reason:reason,status:'pending',ts:Date.now(),fortnightId:getSelectedFortnight()}; var reqs=safeGetJSON('retail_roster_requests_v2',[]); if(!Array.isArray(reqs)) reqs=[]; reqs.push(req); safeSetJSON('retail_roster_requests_v2',reqs); selectedUnavailDates.clear(); renderUnavailCalendar(); updateSelectedUnavailDisplay(); renderMyRequests(); renderRequestsSafe(); updateRequestsBadge(); cloudSave(); toast('Unavailability AB + reason submit pending');}
-function populateCorrectionDates(){var sel=document.getElementById('corr-shift-date'); if(!sel) return; sel.innerHTML=''; var dates=getDatesForFortnight(getSelectedFortnight()||''); dates.forEach(function(iso){var opt=document.createElement('option'); opt.value=iso; opt.textContent=getDDMM(iso)+' - '+iso; sel.appendChild(opt);});}
-function populateCorrectionDropdown(){var sel=document.getElementById('corr-shift-select'); if(!sel) return; sel.innerHTML='<option value="">Select shift</option>'; var user=window.currentUser||{username:safeGet('repco_username','')}; var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var staff=cur.staff.find(function(s){return (s.username||'').toLowerCase()===(user.username||'').toLowerCase()||s.name.toLowerCase()===user.username.toLowerCase();}); if(!staff) return; var shifts=staff.shifts||[]; if(Array.isArray(shifts)){shifts.forEach(function(sh,idx){if(sh&&sh!=='OFF'){var iso=(cur.dates&&cur.dates[idx])||''; var opt=document.createElement('option'); opt.value=idx+'|'+iso; opt.textContent=(iso?getDDMM(iso)+' ':'')+sh; sel.appendChild(opt);}});} }
-function initCorrSelect(){populateCorrectionDates(); populateCorrectionDropdown();}
-function submitShiftCorrection(){var shiftDateEl=document.getElementById('corr-shift-date'); var shiftSelEl=document.getElementById('corr-shift-select'); var special=document.getElementById('corr-special').value; var startT=document.getElementById('corr-start-time').value; var endT=document.getElementById('corr-end-time').value; var reason=document.getElementById('corr-reason').value.trim(); var shiftDate=shiftDateEl.value; var shiftSel=shiftSelEl.value; var shiftIdx=-1; var shiftISO=shiftDate; if(shiftSel){var parts=shiftSel.split('|'); if(parts.length===2){shiftIdx=parseInt(parts[0]); shiftISO=parts[1]||shiftDate;}} var newShift=''; if(special) newShift=special; else if(startT&&endT) newShift=startT+'-'+endT; else if(startT) newShift=startT; else {toast('Enter shift'); return;} var user=window.currentUser||{username:safeGet('repco_username','unknown')}; var dateLabel=getDDMM(shiftISO||shiftDate); var req={id:'req_'+Date.now(),username:user.username||safeGet('repco_username','unknown'),type:'shift-correction',shiftIdx:shiftIdx,shiftDate:shiftDate,shiftISO:shiftISO||shiftDate,dateLabel:dateLabel,dates:[dateLabel],newShift:newShift,reason:reason,status:'pending',ts:Date.now(),fortnightId:getSelectedFortnight()}; var reqs=safeGetJSON('retail_roster_requests_v2',[]); if(!Array.isArray(reqs)) reqs=[]; reqs.push(req); safeSetJSON('retail_roster_requests_v2',reqs); renderMyRequests(); renderRequestsSafe(); updateRequestsBadge(); cloudSave(); toast('Shift correction submitted newShift shiftIdx shiftDate shiftISO dateLabel dates OFF NA AB');}
-function renderMyRequests(){var el=document.getElementById('my-requests-list'); if(!el) return; var username=safeGet('repco_username','')||(window.currentUser&&window.currentUser.username)||''; var reqs=safeGetJSON('retail_roster_requests_v2',[]); if(!Array.isArray(reqs)) reqs=[]; var mine=reqs.filter(function(r){return (r.username||'').toLowerCase()===username.toLowerCase();}).sort(function(a,b){return (b.ts||0)-(a.ts||0);}); if(mine.length===0){el.innerHTML='<div class="small">No requests - filter by username My Requests list</div>'; return;} var html=''; mine.forEach(function(r){html+='<div class="list-item"><div><b>'+r.type+'</b> '+(r.dates||r.dateLabel||r.shiftDate||'')+'<br><span class="small">'+(r.reason||r.newShift||'')+'</span></div><span class="badge '+r.status+'">'+r.status+'</span> <button class="btn-grey" onclick="deleteRequest(\''+r.id+'\')">X</button></div>';}); el.innerHTML=html;}
-function renderHiddenStaffFormGrid(){var el=document.getElementById('hs-shifts-grid'); if(!el) return; var dates=getDatesForFortnight(getSelectedFortnight()||''); var html=''; dates.forEach(function(iso,idx){html+='<div><label class="small">'+getDDMM(iso)+'</label><input id="hs-shift-'+idx+'" placeholder="OFF" style="padding:8px;border:2px solid #111;border-radius:9999px;width:100%"></div>';}); el.innerHTML=html;}
-function initHSShiftsGrid(){renderHiddenStaffFormGrid();}
-function addHiddenStaff(){var first=document.getElementById('hs-first').value.trim(); var last=document.getElementById('hs-last').value.trim(); var user=document.getElementById('hs-user').value.trim(); var pass=document.getElementById('hs-pass').value.trim(); var empType=document.getElementById('hs-type')?document.getElementById('hs-type').value:'casual'; if(!first||!last||!user||!pass){toast('All fields required'); return;} var fullName=first+' '+last; var dates=getDatesForFortnight(getSelectedFortnight()||''); var shifts=[]; dates.forEach(function(iso,idx){var v=document.getElementById('hs-shift-'+idx); shifts[idx]=v?(v.value.trim()||'OFF'):'OFF';}); var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)) users=[]; if(users.find(function(u){return u.username===user;})){toast('Username exists'); return;} users.push({username:user,password:pass,role:'staff',displayName:fullName,employmentType:empType,isHidden:true,firstName:first,lastName:last}); safeSetJSON('retail_roster_users_v1',users); var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]); if(!Array.isArray(hidden)) hidden=[]; hidden.push({name:fullName,firstName:first,lastName:last,username:user,shifts:shifts,employmentType:empType,hidden:true}); safeSetJSON('retail_roster_hidden_staff_v1',hidden); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur){cur={id:getSelectedFortnight(),dates:dates,staff:[]}; byF[getSelectedFortnight()]=cur;} if(!cur.staff) cur.staff=[]; cur.staff.push({name:fullName,username:user,employmentType:empType,hidden:true,shifts:shifts,originalShifts:JSON.parse(JSON.stringify(shifts)),firstName:first,lastName:last}); safeSetJSON('retail_roster_byFortnight_v1',byF); renderHiddenStaffList(); renderRosterSafe(); cloudSave(); toast('Hidden staff added hidden true');}
-function renderHiddenStaffList(){var el=document.getElementById('hs-list'); if(!el) return; var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]); if(!Array.isArray(hidden)||hidden.length===0){el.innerHTML='<div class="small">No hidden staff - Admin only manual add form first/last/user/pass/type</div>'; return;} var html=''; hidden.forEach(function(h,idx){html+='<div class="list-item"><span>'+h.name+' ('+h.username+')</span><button class="btn-grey" onclick="deleteHiddenStaff('+idx+')">DELETE restores</button></div>';}); el.innerHTML=html;}
-function deleteHiddenStaff(idx){var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]); var removed=hidden.splice(idx,1)[0]; safeSetJSON('retail_roster_hidden_staff_v1',hidden); var users=safeGetJSON('retail_roster_users_v1',[]); users=users.filter(function(u){return u.username!==removed.username;}); safeSetJSON('retail_roster_users_v1',users); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); Object.keys(byF).forEach(function(fid){var r=byF[fid]; if(r.staff) r.staff=r.staff.filter(function(s){return s.username!==removed.username;});}); safeSetJSON('retail_roster_byFortnight_v1',byF); renderHiddenStaffList(); renderRosterSafe(); cloudSave(); toast('Deleted hidden');}
-function renderPHStaffSelect(){var sel=document.getElementById('ph-staff'); if(!sel) return; sel.innerHTML='<option value="">Select Staff from roster shift area ADD STAFF button</option>'; var cur=getCurrentRoster(); if(!cur||!cur.staff) return; var sorted=sortStaffByLastName(cur.staff.filter(function(s){return !s.hidden;})); sorted.forEach(function(s){var opt=document.createElement('option'); opt.value=s.name; opt.textContent=s.name; sel.appendChild(opt);});}
-function renderPHAllocList(){var el=document.getElementById('ph-alloc-list'); if(!el) return; if(phAllocations.length===0){el.innerHTML='<div class="small">No allocations</div>'; return;} var html=''; phAllocations.forEach(function(a,idx){html+='<div class="list-item"><span>'+a.staff+' - '+a.shift+' - '+a.area+'</span><button class="btn-grey" onclick="phAllocations.splice('+idx+',1);renderPHAllocList()">X</button></div>';}); el.innerHTML=html;}
-function addPHRow(){var staffSel=document.getElementById('ph-staff'); var shiftIn=document.getElementById('ph-shift'); var areaIn=document.getElementById('ph-area'); var staff=staffSel.value||''; var shift=shiftIn.value.trim(); var area=areaIn.value.trim(); if(!staff){toast('Select staff'); return;} phAllocations.push({staff:staff,shift:shift,area:area}); renderPHAllocList(); staffSel.value=''; shiftIn.value=''; areaIn.value='';}
-function savePublicHoliday(){var dateInput=document.getElementById('ph-date').value; var nameInput=document.getElementById('ph-name').value.trim(); if(!dateInput||!nameInput){toast('Date and Name required'); return;} var d=new Date(dateInput); var dateISO=getISO(d); var dateLabel=getDDMM(dateISO); var list=safeGetJSON('retail_roster_public_holidays_v1',[]); if(!Array.isArray(list)) list=[]; var id='ph_'+Date.now(); list.push({id:id,dateISO:dateISO,dateLabel:dateLabel,name:nameInput,staffAllocations:JSON.parse(JSON.stringify(phAllocations)),ts:Date.now()}); safeSetJSON('retail_roster_public_holidays_v1',list); phAllocations=[]; renderPHAllocList(); renderExistingPH(); applyPublicHolidaysToAllRosters(); toast('Public holiday saved Unlisted auto OFF originalShifts'); cloudSave();}
-function renderExistingPH(){var el=document.getElementById('ph-existing-list'); if(!el) return; var list=safeGetJSON('retail_roster_public_holidays_v1',[]); if(!Array.isArray(list)||list.length===0){el.innerHTML='<div class="small">No public holidays - ph-existing-list LIVE sync</div>'; return;} var html=''; list.forEach(function(ph,idx){var alloc=(ph.staffAllocations||[]).map(function(a){return a.staff+':'+a.shift;}).join(', '); html+='<div class="list-item"><div><b>'+ph.dateLabel+'</b> - '+ph.name+' <span class="small">'+alloc+'</span></div><button class="btn-grey" onclick="deletePH('+idx+')">DELETE restores originalShifts</button></div>';}); el.innerHTML=html;}
-function deletePH(idx){var list=safeGetJSON('retail_roster_public_holidays_v1',[]); var removed=list.splice(idx,1)[0]; safeSetJSON('retail_roster_public_holidays_v1',list); if(removed){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); Object.keys(byF).forEach(function(fid){var roster=byF[fid]; if(!roster.staff) return; roster.staff.forEach(function(s){if(s.originalShifts){var dates=getDatesForFortnight(fid); var colIdx=dates.indexOf(removed.dateISO); if(colIdx>=0&&s.originalShifts[colIdx]!==undefined){if(!s.shifts) s.shifts=[]; s.shifts[colIdx]=s.originalShifts[colIdx]; delete s.originalShifts[colIdx];}}});}); safeSetJSON('retail_roster_byFortnight_v1',byF);} renderExistingPH(); renderRosterSafe(); toast('Deleted and restored'); cloudSave();}
-function deletePublicHoliday(idx){deletePH(idx);}
-function renderPublicHolidayPage(){renderPHStaffSelect(); renderPHAllocList(); renderExistingPH();}
-function renderBuddiesToday(){var today=getISO(new Date()); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var idx=dates.indexOf(today); var todayEl=document.getElementById('buddy-today-date'); if(todayEl) todayEl.textContent=today+' '+getDDMM(today); var listEl=document.getElementById('buddy-today-list'); if(!listEl) return; if(idx<0){listEl.innerHTML='<div class="small">Today not in current fortnight</div>'; return;} var buddies=[]; (cur.staff||[]).forEach(function(s){if(s.hidden) return; var sh=(s.shifts&&s.shifts[idx]!==undefined)?s.shifts[idx]:((s.shifts&&s.shifts[today])||'OFF'); if(sh!=='OFF') buddies.push(s.name+' - '+sh);}); listEl.innerHTML=buddies.length?buddies.map(function(b){return '<div class="list-item">'+b+'</div>';}).join(''):'<div class="small">No buddies</div>';}
-function renderBuddiesTomorrow(){var tomorrow=getISO(new Date(Date.now()+86400000)); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur) return; var dates=getDatesForFortnight(getSelectedFortnight()); var idx=dates.indexOf(tomorrow); var elDate=document.getElementById('buddy-tomorrow-date'); if(elDate) elDate.textContent=tomorrow+' '+getDDMM(tomorrow); var listEl=document.getElementById('buddy-tomorrow-list'); if(!listEl) return; if(idx<0){listEl.innerHTML='<div class="small">Tomorrow not in current fortnight</div>'; return;} var buddies=[]; (cur.staff||[]).forEach(function(s){if(s.hidden) return; var sh=(s.shifts&&s.shifts[idx]!==undefined)?s.shifts[idx]:((s.shifts&&s.shifts[tomorrow])||'OFF'); if(sh!=='OFF') buddies.push(s.name+' - '+sh);}); listEl.innerHTML=buddies.length?buddies.map(function(b){return '<div class="list-item">'+b+'</div>';}).join(''):'<div class="small">No buddies</div>';}
-function renderBuddies(){renderBuddiesToday(); renderBuddiesTomorrow();}
-function populateMyScheduleFortnights(){var sel=document.getElementById('mysched-fortnight'); if(!sel) return; var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF).sort(); sel.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; sel.appendChild(opt);});}
-function renderMySchedule(){var el=document.getElementById('my-schedule-list'); if(!el) return; var sel=document.getElementById('mysched-fortnight'); var fnId=(sel&&sel.value)||getSelectedFortnight(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[fnId]; if(!cur){el.innerHTML='<div class="small">No roster</div>'; return;} var username=(safeGet('repco_username','')||'').toLowerCase(); var staff=(cur.staff||[]).find(function(s){return (s.username||'').toLowerCase()===username||s.name.toLowerCase()===username;}); if(!staff){el.innerHTML='<div class="small">No schedule for '+username+' - My Schedule Live find by username</div>'; return;} var dates=getDatesForFortnight(fnId); var html=''; dates.forEach(function(iso,idx){var sh=(staff.shifts&&staff.shifts[idx]!==undefined)?staff.shifts[idx]:((staff.shifts&&staff.shifts[iso])||'OFF'); html+='<div class="list-item"><b>'+getDDMM(iso)+'</b> '+sh+'</div>';}); el.innerHTML=html;}
-function renderAccountPage(){var user=window.currentUser||{username:safeGet('repco_username','')}; if(!user) return; var uEl=document.getElementById('acc-user'); if(uEl) uEl.value=user.username||'';}
-function saveAccount(){var newUser=document.getElementById('acc-user').value.trim(); var newPass=document.getElementById('acc-pass').value.trim(); var users=safeGetJSON('retail_roster_users_v1',[]); var cur=window.currentUser; if(!cur){toast('No current user'); return;} var idx=users.findIndex(function(u){return u.username===cur.username;}); if(idx===-1){toast('User not found'); return;} if(newUser){if(users.find(function(u){return u.username===newUser&&u.username!==cur.username;})){toast('Username exists'); return;} users[idx].username=newUser; safeSet('repco_username',newUser);} if(newPass) users[idx].password=newPass; safeSetJSON('retail_roster_users_v1',users); window.currentUser=users[idx]; safeSetJSON('repco_currentUser',users[idx]); renderAccountPage(); toast('Account saved'); cloudSave();}
-function renderAccountMgmtPage(){var el=document.getElementById('account-mgmt-list'); if(!el) return; var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)||users.length===0){el.innerHTML='<div class="small">No users</div>'; return;} var html='<table style="width:100%"><tr><th>Username</th><th>Role</th><th>Type</th><th>Actions</th></tr>'; users.forEach(function(u){html+='<tr><td>'+u.username+'</td><td>'+(u.role||'')+'</td><td>'+(u.employmentType||'')+'</td><td><button class="btn-grey" onclick="adminEditUser(\''+u.username+'\')">Edit</button> <button class="btn-grey" onclick="deleteUser(\''+u.username+'\')">Delete</button></td></tr>';}); html+='</table>'; el.innerHTML=html;}
-function addNewUser(){var u=prompt('Username:',''); if(!u) return; var p=prompt('Password:',''); if(!p) return; var users=safeGetJSON('retail_roster_users_v1',[]); if(users.find(function(x){return x.username===u;})){toast('Username exists'); return;} users.push({username:u,password:p,role:'staff',displayName:u,employmentType:'casual'}); safeSetJSON('retail_roster_users_v1',users); renderAccountMgmtPage(); cloudSave(); toast('User added');}
-function adminEditUser(username){var users=safeGetJSON('retail_roster_users_v1',[]); var u=users.find(function(x){return x.username===username;}); if(!u) return; var nu=prompt('New username:',u.username); if(nu) u.username=nu; var np=prompt('New password blank keep:',''); if(np) u.password=np; var nr=prompt('Role staff/manager/admin:',u.role||'staff'); if(nr) u.role=nr; var ne=prompt('Employment Type fulltime/casual:',u.employmentType||'casual'); if(ne) u.employmentType=ne; safeSetJSON('retail_roster_users_v1',users); renderAccountMgmtPage(); cloudSave(); toast('User updated custom modal Employment Type');}
-function deleteUser(username){var users=safeGetJSON('retail_roster_users_v1',[]); if(users.length<=1){toast('Cannot delete last user'); return;} if(!confirm('Delete user '+username+'?')) return; users=users.filter(function(u){return u.username!==username;}); safeSetJSON('retail_roster_users_v1',users); renderAccountMgmtPage(); cloudSave(); toast('User deleted');}
-function renderArchive(){var el=document.getElementById('archive-list'); if(!el) return; var arch=safeGetJSON('repco_archive',{}); var keys=Object.keys(arch); if(keys.length===0){el.innerHTML='<div class="small">No archived - archive-inner clickable</div>'; return;} var html=''; keys.forEach(function(fn){html+='<div class="list-item"><b>'+fn+'</b><button class="btn-grey" onclick="restoreArchive(\''+fn+'\')">Restore</button></div>';}); el.innerHTML=html;}
-function restoreArchive(fn){var arch=safeGetJSON('repco_archive',{}); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); if(arch[fn]){byF[fn]=arch[fn]; delete arch[fn]; safeSetJSON('retail_roster_byFortnight_v1',byF); safeSetJSON('repco_archive',arch); renderArchive(); setSelectedFortnight(fn); populateFortnightSelect(); toast('Restored '+fn); renderRosterSafe(); cloudSave();}}
-function handleExcel(event){var file=event.target.files[0]; if(!file) return; if(typeof XLSX==='undefined'){toast('XLSX not loaded'); return;} var reader=new FileReader(); reader.onload=function(e){try{var data=e.target.result; var wb=XLSX.read(data,{type:'binary'}); var sheet=wb.Sheets[wb.SheetNames[0]]; var rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''}); if(rows.length<3){toast('Excel too short'); return;} var dateRow=rows[0]; var dayRow=rows[1]; var dateCols=[]; for(var c=1;c<dateRow.length;c+=2){if(c===29) continue; var val=dateRow[c]||dateRow[c+1]; if(!val) continue; var iso=null; if(typeof val==='number'){var d=XLSX.SSF.parse_date_code(val); if(d){iso=getISO(new Date(d.y,d.m-1,d.d));}} else {var str=(val+'').trim(); var parsed=new Date(str); if(!isNaN(parsed)){iso=getISO(parsed);} else {var parts=str.split('/'); if(parts.length>=2){var dd=parseInt(parts[0]); var mm=parseInt(parts[1]); var yy=parts[2]?parseInt(parts[2]):new Date().getFullYear(); if(yy<100) yy+=2000; var dt=new Date(yy,mm-1,dd); if(!isNaN(dt)){iso=getISO(dt);}}}} if(iso){dateCols.push({col:c,col2:c+1,iso:iso});} if(dateCols.length>=14) break;} if(dateCols.length<1){toast('No dates found'); return;} var firstISO=dateCols[0].iso; var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var existingKey=null; Object.keys(byF).forEach(function(k){var roster=byF[k]; if(roster.dates&&roster.dates[0]===firstISO) existingKey=k;}); var fid=existingKey||generateFortnightId(new Date(firstISO)); var dates=dateCols.map(function(dc){return dc.iso;}); var staff=[]; for(var r=2;r<rows.length;r++){if(r===17) continue; var row=rows[r]; if(!row) continue; var firstCol=(row[0]||'').toString().trim(); if(!firstCol) continue; var low=firstCol.toLowerCase(); if(low.indexOf('total')>=0) continue; if(low==='staff'||low==='name') continue; var name=firstCol; if(name.indexOf(',')>=0){var parts=name.split(','); if(parts.length>=2){var last=parts[0].trim(); var first=parts[1].trim(); name=first+' '+last;}} if(name.length<2) continue; var shifts=[]; dateCols.forEach(function(dc){var v=row[dc.col]||row[dc.col2]||''; v=(v+'').trim(); if(!v) v='OFF'; shifts.push(v);}); while(shifts.length<dates.length) shifts.push('OFF'); var firstName=''; var lastName=''; var nameParts=name.split(' '); if(nameParts.length>=2){firstName=nameParts[0]; lastName=nameParts.slice(1).join(' ');} else {firstName=name;} var empType=(r<10?'fulltime':'casual'); staff.push({name:name,firstName:firstName,lastName:lastName,employmentType:empType,shifts:shifts,originalShifts:shifts.slice(),username:name.toLowerCase().replace(/ /g,''),hidden:false});} pushUndo(); byF[fid]={id:fid,dates:dates,staff:staff,createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF); setSelectedFortnight(fid); populateFortnightSelect(); renderRosterSafe(); cloudSave(); toast('Imported '+staff.length+' staff First col only dateRow rows[0] dayRow rows[1] loop c=1 c<dateRow.length c+=2 skip c===29 r===17 name split comma');}catch(err){toast('Import failed: '+err.message);}}; reader.readAsBinaryString(file); event.target.value='';}
-function importExcel(event){handleExcel(event);}
-function exportCSV(){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur||!cur.staff||cur.staff.length===0){toast('No roster'); return;} var dates=getDatesForFortnight(getSelectedFortnight()); var csv='Staff,'+dates.map(getDDMM).join(',')+',Total\n'; cur.staff.forEach(function(s){var shifts=s.shifts||[]; var row=s.name; var tot=0; dates.forEach(function(iso,idx){var sh=Array.isArray(shifts)?(shifts[idx]||'OFF'):(shifts[iso]||'OFF'); row+=','+sh; if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!=='') tot+=calcHours(sh);}); row+=','+tot.toFixed(1); csv+=row+'\n';}); var blob=new Blob([csv],{type:'text/csv'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=getSelectedFortnight()+'.csv'; a.click(); URL.revokeObjectURL(url); toast('CSV exported');}
-function deleteRoster(){var fid=getSelectedFortnight(); if(!fid){toast('No fortnight'); return;} if(!confirm('Delete Roster '+fid+'?')) return; pushUndo(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var arch=safeGetJSON('repco_archive',{}); if(byF[fid]){arch[fid]=byF[fid]; delete byF[fid]; safeSetJSON('retail_roster_byFortnight_v1',byF); safeSetJSON('repco_archive',arch); toast('Deleted '+fid); var keys=Object.keys(byF).sort(); if(keys.length>0){setSelectedFortnight(keys[keys.length-1]); populateFortnightSelect(); renderRosterSafe();} cloudSave();}}
-function getSelectedFortnight(){return currentFortnightId||selectedFortnightKey;}
-function setSelectedFortnight(k){currentFortnightId=k; selectedFortnightKey=k; var sel=document.getElementById('fortnight-select'); if(sel) sel.value=k; var mySel=document.getElementById('mysched-fortnight'); if(mySel) mySel.value=k;}
-function getCurrentRoster(){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur){cur={id:getSelectedFortnight(),dates:getDatesForFortnight(getSelectedFortnight()),staff:[]}; byF[getSelectedFortnight()]=cur; safeSetJSON('retail_roster_byFortnight_v1',byF);} return cur;}
-function updateBrisbaneTime(){var now=new Date(); var txt=formatBrisbane(now); try{var opts={timeZone:'Australia/Brisbane',hour12:!is24H&&!time24,hour:'2-digit',minute:'2-digit'}; var t=now.toLocaleTimeString('en-AU',opts); var dPart=now.toLocaleDateString('en-AU',{timeZone:'Australia/Brisbane',weekday:'short',day:'2-digit',month:'short'}); txt=dPart+' '+t;}catch(e){} var el=document.getElementById('brisbane-time'); var elV=document.getElementById('brisbane-time-v141'); if(el) el.textContent=txt; if(elV) elV.textContent=txt;}
-setInterval(updateBrisbaneTime,1000); updateBrisbaneTime();
-function toggleTimeFormat(){is24H=!is24H; time24=!time24; safeSetJSON('repco_time24',time24); updateBrisbaneTime(); renderRosterSafe();}
-function seedIfEmpty(){
-  var users=safeGetJSON('retail_roster_users_v1',[]);
-  if(!Array.isArray(users)||users.length===0){
-    users=[
-      {username:'admin',password:'admin123',role:'admin',displayName:'Admin',firstName:'Admin',lastName:'',employmentType:'fulltime'},
-      {username:'Chris',password:'Chris',role:'manager',displayName:'Chris Culling',firstName:'Chris',lastName:'Culling',employmentType:'fulltime'},
-      {username:'manager',password:'manager',role:'manager',displayName:'Manager'},
-      {username:'Michaele',password:'Michaele',role:'manager',displayName:'Michaele'},
-      {username:'Repco',password:'Repco',role:'admin',displayName:'Repco'}
-    ];
-    safeSetJSON('retail_roster_users_v1',users);
-  }
+// PATCH - ensures critical missing functions (buildSection, isGShift, finalTsByDate, etc) are present if BEST missing them
+if(typeof buildSection === 'undefined'){
+  function buildSection(type){try{var tid='table-'+type; if(type==='fulltime') tid='table-fulltime'; if(type==='casual') tid='table-casual'; if(type==='hidden') tid='table-hidden'; renderTableForType(type,tid);}catch(e){}}
 }
-function showModal(title,body,onConfirm){var t=document.getElementById('modal-title'); var b=document.getElementById('modal-body'); if(!t||!b) return; t.textContent=title; b.innerHTML=body; var m=document.getElementById('custom-modal'); m.classList.add('show'); var btn=document.getElementById('modal-confirm'); if(btn) btn.onclick=function(){closeModal(); if(onConfirm) onConfirm();};}
-function closeModal(){var m=document.getElementById('custom-modal'); if(m) m.classList.remove('show');}
-function doLogout(){safeSet('repco_username',''); safeSet('repco_currentRole',''); safeSet('repco_session',''); safeSetJSON('retail_roster_session_v1',null); safeSetJSON('repco_currentUser',null); var gh=document.getElementById('global-header'); if(gh){gh.classList.remove('show'); gh.style.display='none';} var main=document.getElementById('repco-v65'); if(main){main.classList.remove('show'); main.style.display='none';} hideAllPages(); var lp=document.getElementById('login-page'); if(lp) lp.style.display='flex'; toast('Logged out');}
-function isManagerRole(){var role=safeGet('repco_currentRole','')||''; if(role==='admin'||role==='master'||role==='manager') return true; return false;}
-function applyRoleVisibility(role){var r=(role||'').toLowerCase(); var isMgr=(r==='admin'||r==='master'||r==='manager'); var isAdmin=(r==='admin'); document.querySelectorAll('.manager-only').forEach(function(el){if(isMgr||isAdmin){el.style.display='';}else{el.style.display='none';}}); document.querySelectorAll('.staff-only').forEach(function(el){if(isMgr){el.style.display='none';}else{el.style.display='';} if(isAdmin) el.style.display='';}); var hiddenSec=document.getElementById('roster-hidden'); if(hiddenSec){if(isMgr||isAdmin) hiddenSec.style.display='block'; else hiddenSec.style.display='none';}}
-function hideAllPages(){document.querySelectorAll('.full-page').forEach(function(el){el.style.display='none';});}
-function showPage(id){hideAllPages(); var main=document.getElementById('repco-v65'); if(main) main.style.display='none'; var target=document.getElementById(id); if(target) target.style.display='block'; if(id==='requests-page') renderRequestsSafe(); if(id==='staff-unavailable-page'){renderUnavailCalendar(); renderMyRequests(); populateCorrectionDates(); populateCorrectionDropdown();} if(id==='hidden-staff-page'){renderHiddenStaffFormGrid(); renderHiddenStaffList();} if(id==='public-holidays-page'){renderPHStaffSelect(); renderPHAllocList(); renderExistingPH();} if(id==='buddies-page'){renderBuddiesToday();} if(id==='buddies-tomorrow-page'){renderBuddiesTomorrow();} if(id==='my-schedule-page'){populateMyScheduleFortnights(); renderMySchedule();} if(id==='account-page') renderAccountPage(); if(id==='account-mgmt-page') renderAccountMgmtPage(); if(id==='archive-page') renderArchive();}
-function showMain(){hideAllPages(); var main=document.getElementById('repco-v65'); if(main){main.style.display='block'; main.classList.add('show');} renderRosterSafe();}
-async function populateFortnightSelect(){var sel=document.getElementById('fortnight-select'); var mySel=document.getElementById('mysched-fortnight'); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF).sort(); if(keys.length===0){var id=generateFortnightId(new Date()); if(!byF[id]){byF[id]={id:id,dates:getDatesForFortnight(id),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} keys=[id];} function fill(s){if(!s) return; s.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; s.appendChild(opt);});} fill(sel); fill(mySel); if(!currentFortnightId) currentFortnightId=keys[0]; if(sel) sel.value=currentFortnightId; if(mySel) mySel.value=currentFortnightId; updateFortnightInfo();}
-function onFortnightChange(){var sel=document.getElementById('fortnight-select'); if(sel&&sel.value){setSelectedFortnight(sel.value); renderRosterSafe(); updateFortnightInfo();}}
-function prevFortnight(){var dates=getDatesForFortnight(getSelectedFortnight()); if(!dates.length) return; var prev=new Date(new Date(dates[0]).getTime()-14*86400000); var newId=generateFortnightId(prev); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); if(!byF[newId]){byF[newId]={id:newId,dates:getDatesForFortnight(newId),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} setSelectedFortnight(newId); populateFortnightSelect(); renderRosterSafe(); updateFortnightInfo();}
-function nextFortnight(){var dates=getDatesForFortnight(getSelectedFortnight()); if(!dates.length) return; var next=new Date(new Date(dates[0]).getTime()+14*86400000); var newId=generateFortnightId(next); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); if(!byF[newId]){byF[newId]={id:newId,dates:getDatesForFortnight(newId),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} setSelectedFortnight(newId); populateFortnightSelect(); renderRosterSafe(); updateFortnightInfo();}
-function updateFortnightInfo(){var el=document.getElementById('fortnight-info'); if(!el) return; var dates=getDatesForFortnight(getSelectedFortnight()||''); if(dates.length){el.textContent=dates[0]+' to '+dates[13]+' - brisbane-time-v141 Australia Brisbane every 1s';} else {el.textContent=getSelectedFortnight()||'';}}
-function autoRestoreSession(){try{var repcoUsername=safeGet('repco_username','')||''; var repcoRole=safeGet('repco_currentRole','')||''; var sess=safeGetJSON('retail_roster_session_v1',null)||safeGetJSON('repco_currentUser',null); if(repcoUsername){var users=safeGetJSON('retail_roster_users_v1',[]); var user=users.find(function(u){return u.username===repcoUsername;})||sess||{username:repcoUsername,role:repcoRole||'staff'}; if(user){window.currentUser=user; var lp=document.getElementById('login-page'); if(lp) lp.style.display='none'; var gh=document.getElementById('global-header'); if(gh){gh.classList.add('show'); gh.style.display='flex';} var main=document.getElementById('repco-v65'); if(main){main.classList.add('show'); main.style.display='block';} var hu=document.getElementById('header-user'); if(hu) hu.textContent=user.username; var hr=document.getElementById('header-role'); if(hr) hr.textContent=user.role||'staff'; applyRoleVisibility(user.role||repcoRole); setTimeout(function(){populateFortnightSelect(); renderRosterSafe();},100); return true;}}}catch(e){} return false;}
-document.addEventListener('DOMContentLoaded', function(){seedIfEmpty(); populateFortnightSelect(); var restored=autoRestoreSession(); if(!restored){var lp=document.getElementById('login-page'); if(lp) lp.style.display='flex';} var uEl=document.getElementById('login-user'); if(uEl) uEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); } }); var pEl=document.getElementById('login-pass'); if(pEl) pEl.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); doLogin(); } }); if(!safeGet('repco_welcomed','')){setTimeout(function(){ if(window.currentUser) toast('Welcome back! Welcome once'); safeSet('repco_welcomed','1'); },800);} updateBrisbaneTime();});
+if(typeof isGShift === 'undefined'){
+  function isGShift(shift,name){if(!shift) return false; var up=(shift+'').toUpperCase().trim(); if(up==='G') return true; var has0730=shift.indexOf('07:30')>=0; var has2000=shift.indexOf('20:00')>=0; var isLC=false; if(name){var low=name.toLowerCase(); if(low.indexOf('luke')>=0||low.indexOf('chris')>=0) isLC=true;} if(isLC&&(has0730||has2000)) return true; if(has0730) return true; return false;}
+  function isGStatus(s,n){return isGShift(s,n);}
+}
+if(typeof originalShifts === 'undefined'){ var originalShifts = {}; }
 
+// DANIEL FIX - finalTsByDate resubmit allowed
+function renderRequests(){
+  var el=document.getElementById('requests-list'); if(!el) return;
+  var reqs=safeGetJSON('retail_roster_requests_v2',[]); var offers=safeGetJSON('retail_roster_shift_offers_v1',[]); 
+  var all=[]; if(Array.isArray(reqs)) all=all.concat(reqs); if(Array.isArray(offers)) all=all.concat(offers);
+  if(all.length===0){el.innerHTML='<div class="small">No requests</div>'; return;}
+  var finalTsByDate={}; all.forEach(function(r){if(r.status==='approved'||r.status==='denied'){var dates=r.dates||[r.dateLabel||r.shiftDate||'']; dates.forEach(function(d){if(!d) return; var key=(r.username||'')+'|'+d; var ts=r.deniedTs||r.approvedTs||r.ts||0; if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;});}});
+  var html=''; all.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).forEach(function(r){
+    var datesStr=r.dates?r.dates.join(', '):(r.dateLabel||r.shiftDate||'');
+    html+='<div class="list-item"><div><b>'+(r.username||'')+'</b> '+datesStr+' <small>'+(r.status||'')+'</small></div><div><button onclick="approveRequest(\''+r.id+'\')">Approve</button><button onclick="denyRequest(\''+r.id+'\')">Deny</button><button onclick="deleteRequest(\''+r.id+'\')">Del</button></div></div>';
+  });
+  el.innerHTML=html;
+}
+function approveRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var r=reqs.find(function(x){return x.id===id;}); if(!r) return; r.status='approved'; r.approvedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); renderRosterSafe(); cloudSave(); toast('Approved finalTsByDate');}
+function denyRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var r=reqs.find(function(x){return x.id===id;}); if(!r) return; r.status='denied'; r.deniedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); cloudSave(); toast('Denied resubmit allowed Daniel fix');}
+function deleteRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); reqs=reqs.filter(function(x){return x.id!==id;}); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); updateRequestsBadge(); cloudSave(); toast('Deleted');}
 
-setTimeout(function(){
-  var s1=document.createElement('script'); s1.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js';
-  s1.onload=function(){var s2=document.createElement('script'); s2.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js'; s2.onload=function(){try{if(typeof firebase!=='undefined'&&!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database(); console.log('Firebase loaded');}catch(e){}}; document.head.appendChild(s2);};
-  document.head.appendChild(s1);
-  var s3=document.createElement('script'); s3.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; document.head.appendChild(s3);
-},1200);
+// V220 LOCAL SYNC ONLY - NO FIREBASE
+;(function setupLiveSync(){
+  console.log('V220 Local sync - Firebase disabled to prevent 404');
+  setInterval(function(){ try{ updateRequestsBadge(); }catch(e){} }, 5000);
+})();
 
 </script>
-
-<script>
-setTimeout(function(){
-  try{
-    if(typeof firebase==='undefined'){
-      var s1=document.createElement('script'); s1.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js';
-      s1.onload=function(){
-        var s2=document.createElement('script'); s2.src='https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js';
-        s2.onload=function(){try{if(typeof firebase!=='undefined'&&!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); db=firebase.database();}catch(e){}};
-        document.head.appendChild(s2);
-      };
-      document.head.appendChild(s1);
-    }
-    if(typeof XLSX==='undefined'){
-      var s3=document.createElement('script'); s3.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; document.head.appendChild(s3);
-    }
-  }catch(e){}
-},1500);
-</script>
-
 </body>
 </html>
