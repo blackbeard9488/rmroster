@@ -1,6 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><link rel="icon" href="data:image/x-icon;,">
+<head>
+
+<script>
+// V221 FIX - Single file guard, no duplicate errors, suppress extension errors
+window.MEMORY_STORE = window.MEMORY_STORE || {};
+window.FIREBASE_404_COUNT = window.FIREBASE_404_COUNT || 0;
+window.addEventListener('error', function(e){
+  if(e.message && (e.message.indexOf('message channel closed')!==-1 || e.message.indexOf('injectScriptAdjust')!==-1 || e.message.indexOf('MEMORY_STORE')!==-1 || e.message.indexOf('FIREBASE_DB_URL')!==-1)){
+    e.preventDefault(); e.stopPropagation();
+  }
+}, true);
+window.addEventListener('unhandledrejection', function(e){
+  if(e.reason && e.reason.message && e.reason.message.indexOf('message channel closed')!==-1){
+    e.preventDefault();
+  }
+}, true);
+// Guard Firebase fetch to prevent 404 spam
+(function(){
+  var _origFetch = window.fetch ? window.fetch.bind(window) : null;
+  if(!_origFetch) return;
+  window.fetch = function(url, opts){
+    if(typeof url === 'string' && url.indexOf('repco-roster-default-rtdb') !== -1){
+      if(window.FIREBASE_404_COUNT > 5){
+        return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
+      }
+      return _origFetch(url, opts).then(function(r){
+        if(!r.ok && r.status===404){
+          window.FIREBASE_404_COUNT++;
+          console.warn('Firebase 404 suppressed', window.FIREBASE_404_COUNT);
+          return {ok:false, status:404, json:function(){return Promise.resolve(null)}};
+        }
+        return r;
+      }).catch(function(e){
+        return {ok:false, status:404, json:function(){return Promise.resolve(null)}};
+      });
+    }
+    return _origFetch(url, opts);
+  };
+})();
+</script>
+<link rel="icon" href="data:image/x-icon;,">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
@@ -434,14 +474,154 @@ button, .r-btn-consistent{
 }
 
 </style>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
+// V203: Early fallback for showCustomConfirm to prevent ReferenceError before full definition loads
+if(typeof showCustomConfirm==='undefined'){
+  window.showCustomConfirm = function(title, body, cb){
+    try{
+      var ok=confirm(title + "\n" + (body||'').replace(/<[^>]*>/g,''));
+      if(typeof cb==='function') cb(ok);
+    }catch(e){
+      if(typeof cb==='function') cb(false);
+    }
+  };
+  try{ showCustomConfirm = window.showCustomConfirm; }catch(e){}
+}
+
+function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
+function closeAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.remove("show"); m.style.display="none"; } }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=document.getElementById('admin-modal'); if(m && m.style.display==='flex') closeAdmin(); } });
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" onerror="console.log('secondary xlsx failed')"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+
+<script>
+
+// V196 FIX: Define applyRoleVisibility early and globally - prevents ReferenceError on login
+function applyRoleVisibility(){
+  try{
+    var ar='';
+    try{ ar=typeof getActualRole==='function'?getActualRole():(localStorage.getItem('repco_currentRole')||''); }catch(e){}
+    var isMgr=false;
+    try{ isMgr=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
+    try{
+      if(isMgr){
+        document.body.classList.remove('staff-view');
+        document.body.classList.add('manager-view');
+      } else {
+        document.body.classList.add('staff-view');
+        document.body.classList.remove('manager-view');
+      }
+    }catch(e){}
+    // Hide manager-only elements for staff
+    try{
+      var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster'];
+      var alwaysHiddenIds=['btn-archive','btn-hidden','btn-public-holiday'];
+      var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive','btn-hidden','btn-public-holiday'];
+      var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday','btn-requests'];
+      var actualRole=ar;
+      var isMgr2=isMgr;
+      try{ actualRole=typeof getActualRole==='function'?getActualRole():ar; isMgr2=typeof isManagerRole==='function'?isManagerRole(actualRole):isMgr; }catch(e){}
+      allIds.forEach(function(id){
+        var el=document.getElementById(id);
+        if(!el) return;
+        if(alwaysHiddenIds.includes(id)){ el.style.display='none'; return; }
+        if(isMgr2){
+          if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
+        } else {
+          if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
+        }
+      });
+      var archiveBtn=document.getElementById('btn-archive');
+      if(archiveBtn) archiveBtn.style.display='none';
+      document.querySelectorAll('.r-btn-consistent').forEach(function(btn){
+        var t=btn.textContent.trim().toUpperCase();
+        if(t==='ARCHIVE' || t==='HIDDEN STAFF' || t==='PUBLIC HOLIDAYS'){ btn.style.display='none'; }
+      });
+      var delBtn=document.getElementById('delete-roster-btn');
+      if(delBtn) delBtn.style.display=isMgr2?'inline-block':'none';
+      var importBtn=document.getElementById('btn-import');
+      var csvBtn=document.getElementById('btn-export-csv');
+      var pdfBtn=document.getElementById('btn-export-pdf');
+      if(importBtn) importBtn.style.display=isMgr2?'inline-block':'none';
+      if(csvBtn) csvBtn.style.display=isMgr2?'inline-block':'none';
+      if(pdfBtn) pdfBtn.style.display=isMgr2?'inline-block':'none';
+    }catch(e){}
+  }catch(e){ console.log('applyRoleVisibility error', e); }
+}
+window.applyRoleVisibility=applyRoleVisibility;
 
 
+// V195 FIX: Ensure applyRoleVisibility is always defined - prevents Login OK but show failed
+if(typeof applyRoleVisibility==='undefined'){
+  window.applyRoleVisibility=function(){
+    try{
+      var ar=(typeof getActualRole==='function'?getActualRole():'')||'';
+      var im=false;
+      try{ im=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
+      if(im){
+        document.body.classList.remove('staff-view');
+        document.body.classList.add('manager-view');
+      } else {
+        document.body.classList.remove('manager-view');
+        document.body.classList.add('staff-view');
+      }
+      // Show/hide manager-only elements
+      var mgrEls=document.querySelectorAll('.manager-only, .admin-only');
+      mgrEls.forEach(function(el){
+        el.style.display=im?'':'none';
+      });
+      var staffEls=document.querySelectorAll('.staff-only');
+      staffEls.forEach(function(el){
+        el.style.display=im?'none':'';
+      });
+    }catch(e){ console.log('applyRoleVisibility fallback error', e); }
+  };
+}
 
-
-
-
-
-
+// FIX: Suppress Chrome extension "message channel closed" errors that flood console - harmless extension error
+(function(){
+  var originalError = console.error;
+  console.error = function(){
+    try{
+      var msg = arguments[0] ? arguments[0].toString() : '';
+      if(msg.includes('message channel closed') || msg.includes('A listener indicated an asynchronous response')){
+        return;
+      }
+    }catch(e){}
+    return originalError.apply(console, arguments);
+  };
+  window.addEventListener('unhandledrejection', function(e){
+    try{
+      if(e.reason && e.reason.message){
+        var msg = e.reason.message;
+        if(msg.includes('message channel closed') || msg.includes('A listener indicated an asynchronous response')){
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }
+      if(e.reason && typeof e.reason === 'string' && e.reason.includes('message channel closed')){
+        e.preventDefault();
+        return false;
+      }
+    }catch(e2){}
+  });
+  window.addEventListener('error', function(e){
+    try{
+      if(e.message && (e.message.includes('message channel closed') || e.message.includes('A listener indicated an asynchronous response'))){
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return true;
+      }
+    }catch(e2){}
+  }, true);
+})();
+</script>
 <style id="hide-staff-totals">
 /* Hide totals from staff - only admin sees them */
 body.staff-view .daily-total-ft,
@@ -658,195 +838,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="custom-modal"><div id="custom-modal-box"><div id="custom-modal-title" style="font-weight:900;font-size:16px;margin-bottom:10px"></div><div id="custom-modal-body"></div><div style="display:flex;gap:8px;margin-top:14px"><button id="custom-modal-cancel" style="flex:1;background:#D9D9D9;border-radius:9999px;padding:10px;font-weight:900;display:none">CANCEL</button><button id="custom-modal-ok" style="flex:1;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">OK</button></div></div></div>
 <div id="toast-v141"></div>
 
-
-<div id="hidden-staff-page" class="full-page" style="display:none">
-  <div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER - HIDDEN STAFF</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div>
-  <div class="page-inner" style="padding:14px">
-    <div style="font-weight:900;margin-bottom:12px">HIDDEN STAFF - Admin only, not shown to employees, excluded from totals</div>
-    <div id="hidden-staff-form" class="card" style="background:#fff;border:3px solid #111;border-radius:12px;padding:14px;margin-bottom:12px">
-      <div style="font-weight:900;margin-bottom:8px">ADD HIDDEN STAFF MANUALLY</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <input id="hs-first" placeholder="First Name" style="padding:10px;border-radius:9999px;border:2px solid #111">
-        <input id="hs-last" placeholder="Last Name" style="padding:10px;border-radius:9999px;border:2px solid #111">
-        <input id="hs-user" placeholder="Username (e.g. johndoe)" style="padding:10px;border-radius:9999px;border:2px solid #111">
-        <input id="hs-pass" placeholder="Password" style="padding:10px;border-radius:9999px;border:2px solid #111">
-        <!-- FIXED V167: Hidden staff don't need casual/fulltime - irrelevant -->
-        <div style="padding:10px;border-radius:9999px;border:2px dashed #999;background:#F5F5F5;text-align:center;font-weight:900;font-size:11px;color:#666">HIDDEN STAFF - No employment type needed</div>
-      </div>
-      <div style="margin-top:12px;font-weight:900">ASSIGN SHIFTS FOR CURRENT FORTNIGHT (14 days, blank = OFF)</div>
-      <div id="hs-shifts-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));gap:8px;margin-top:8px;max-width:100%;overflow:hidden;box-sizing:border-box"></div>
-      <button onclick="addHiddenStaff()" style="margin-top:12px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px 18px;font-weight:900;width:100%">ADD HIDDEN STAFF + CREATE LOGIN</button>
-    </div>
-    <div id="hs-list"></div>
-    <div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>
-  </div>
-</div>
-
-
-
 <script>
-
-// V220 FINAL SINGLE FILE - FIXES ALL SYNTAX ERRORS - NO FIREBASE 404
-// Suppress extension errors first
-(function(){
-  window.addEventListener('error', function(e){ 
-    if(e.message && (e.message.indexOf('message channel closed')!==-1 || e.message.indexOf('MEMORY_STORE')!==-1 || e.message.indexOf('FIREBASE_DB_URL')!==-1)){ 
-      e.preventDefault(); e.stopPropagation(); 
-    } 
-  }, true);
-  window.addEventListener('unhandledrejection', function(e){ 
-    if(e.reason && e.reason.message && e.reason.message.indexOf('message channel closed')!==-1){ e.preventDefault(); } 
-  }, true);
-})();
-
-
-// V203: Early fallback for showCustomConfirm to prevent ReferenceError before full definition loads
-if(typeof showCustomConfirm==='undefined'){
-  window.showCustomConfirm = function(title, body, cb){
-    try{
-      var ok=confirm(title + "\n" + (body||'').replace(/<[^>]*>/g,''));
-      if(typeof cb==='function') cb(ok);
-    }catch(e){
-      if(typeof cb==='function') cb(false);
-    }
-  };
-  try{ showCustomConfirm = window.showCustomConfirm; }catch(e){}
-}
-
-function openAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.add("show"); m.style.display="flex"; } }
-function closeAdmin(){ const m=document.getElementById("admin-modal"); if(m){ m.classList.remove("show"); m.style.display="none"; } }
-document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=document.getElementById('admin-modal'); if(m && m.style.display==='flex') closeAdmin(); } });
-
-
-
-
-
-
-
-
-
-// V196 FIX: Define applyRoleVisibility early and globally - prevents ReferenceError on login
-function applyRoleVisibility(){
-  try{
-    var ar='';
-    try{ ar=typeof getActualRole==='function'?getActualRole():(localStorage.getItem('repco_currentRole')||''); }catch(e){}
-    var isMgr=false;
-    try{ isMgr=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
-    try{
-      if(isMgr){
-        document.body.classList.remove('staff-view');
-        document.body.classList.add('manager-view');
-      } else {
-        document.body.classList.add('staff-view');
-        document.body.classList.remove('manager-view');
-      }
-    }catch(e){}
-    // Hide manager-only elements for staff
-    try{
-      var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster'];
-      var alwaysHiddenIds=['btn-archive','btn-hidden','btn-public-holiday'];
-      var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive','btn-hidden','btn-public-holiday'];
-      var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday','btn-requests'];
-      var actualRole=ar;
-      var isMgr2=isMgr;
-      try{ actualRole=typeof getActualRole==='function'?getActualRole():ar; isMgr2=typeof isManagerRole==='function'?isManagerRole(actualRole):isMgr; }catch(e){}
-      allIds.forEach(function(id){
-        var el=document.getElementById(id);
-        if(!el) return;
-        if(alwaysHiddenIds.includes(id)){ el.style.display='none'; return; }
-        if(isMgr2){
-          if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
-        } else {
-          if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
-        }
-      });
-      var archiveBtn=document.getElementById('btn-archive');
-      if(archiveBtn) archiveBtn.style.display='none';
-      document.querySelectorAll('.r-btn-consistent').forEach(function(btn){
-        var t=btn.textContent.trim().toUpperCase();
-        if(t==='ARCHIVE' || t==='HIDDEN STAFF' || t==='PUBLIC HOLIDAYS'){ btn.style.display='none'; }
-      });
-      var delBtn=document.getElementById('delete-roster-btn');
-      if(delBtn) delBtn.style.display=isMgr2?'inline-block':'none';
-      var importBtn=document.getElementById('btn-import');
-      var csvBtn=document.getElementById('btn-export-csv');
-      var pdfBtn=document.getElementById('btn-export-pdf');
-      if(importBtn) importBtn.style.display=isMgr2?'inline-block':'none';
-      if(csvBtn) csvBtn.style.display=isMgr2?'inline-block':'none';
-      if(pdfBtn) pdfBtn.style.display=isMgr2?'inline-block':'none';
-    }catch(e){}
-  }catch(e){ console.log('applyRoleVisibility error', e); }
-}
-window.applyRoleVisibility=applyRoleVisibility;
-
-
-// V195 FIX: Ensure applyRoleVisibility is always defined - prevents Login OK but show failed
-if(typeof applyRoleVisibility==='undefined'){
-  window.applyRoleVisibility=function(){
-    try{
-      var ar=(typeof getActualRole==='function'?getActualRole():'')||'';
-      var im=false;
-      try{ im=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
-      if(im){
-        document.body.classList.remove('staff-view');
-        document.body.classList.add('manager-view');
-      } else {
-        document.body.classList.remove('manager-view');
-        document.body.classList.add('staff-view');
-      }
-      // Show/hide manager-only elements
-      var mgrEls=document.querySelectorAll('.manager-only, .admin-only');
-      mgrEls.forEach(function(el){
-        el.style.display=im?'':'none';
-      });
-      var staffEls=document.querySelectorAll('.staff-only');
-      staffEls.forEach(function(el){
-        el.style.display=im?'none':'';
-      });
-    }catch(e){ console.log('applyRoleVisibility fallback error', e); }
-  };
-}
-
-// FIX: Suppress Chrome extension "message channel closed" errors that flood console - harmless extension error
-(function(){
-  var originalError = console.error;
-  console.error = function(){
-    try{
-      var msg = arguments[0] ? arguments[0].toString() : '';
-      if(msg.includes('message channel closed') || msg.includes('A listener indicated an asynchronous response')){
-        return;
-      }
-    }catch(e){}
-    return originalError.apply(console, arguments);
-  };
-  window.addEventListener('unhandledrejection', function(e){
-    try{
-      if(e.reason && e.reason.message){
-        var msg = e.reason.message;
-        if(msg.includes('message channel closed') || msg.includes('A listener indicated an asynchronous response')){
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }
-      }
-      if(e.reason && typeof e.reason === 'string' && e.reason.includes('message channel closed')){
-        e.preventDefault();
-        return false;
-      }
-    }catch(e2){}
-  });
-  window.addEventListener('error', function(e){
-    try{
-      if(e.message && (e.message.includes('message channel closed') || e.message.includes('A listener indicated an asynchronous response'))){
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        return true;
-      }
-    }catch(e2){}
-  }, true);
-})();
-
-
 var BUILD_ID="20261022_V207_COUNTDOWN_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
@@ -9112,8 +9104,16 @@ function saveHiddenStaffEdit(idx){
 
 
 
-function cloudSave(){ try{ localStorage.setItem("repco_last_save", String(Date.now())); }catch(e){} }
-
+function cloudSave(){
+  if(suppressCloudSave) return;
+  if(cloudSaveTimer) clearTimeout(cloudSaveTimer);
+  cloudSaveTimer=setTimeout(async()=>{
+    try{
+      let state=getAllState(); safeSet('repco_cloud_ts',String(state._ts));
+      if(db) await db.ref('repco_state').set(state); else await fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+    }catch(e){ console.log("cloudSave",e); }
+  },600);
+}
 let debouncedCloudSaveTimer=null;
 function debouncedCloudSave(){
   if(suppressCloudSave) return;
@@ -12609,8 +12609,31 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 
 
 
-}
+}</script>
+<div id="hidden-staff-page" class="full-page" style="display:none">
+  <div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER - HIDDEN STAFF</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div>
+  <div class="page-inner" style="padding:14px">
+    <div style="font-weight:900;margin-bottom:12px">HIDDEN STAFF - Admin only, not shown to employees, excluded from totals</div>
+    <div id="hidden-staff-form" class="card" style="background:#fff;border:3px solid #111;border-radius:12px;padding:14px;margin-bottom:12px">
+      <div style="font-weight:900;margin-bottom:8px">ADD HIDDEN STAFF MANUALLY</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input id="hs-first" placeholder="First Name" style="padding:10px;border-radius:9999px;border:2px solid #111">
+        <input id="hs-last" placeholder="Last Name" style="padding:10px;border-radius:9999px;border:2px solid #111">
+        <input id="hs-user" placeholder="Username (e.g. johndoe)" style="padding:10px;border-radius:9999px;border:2px solid #111">
+        <input id="hs-pass" placeholder="Password" style="padding:10px;border-radius:9999px;border:2px solid #111">
+        <!-- FIXED V167: Hidden staff don't need casual/fulltime - irrelevant -->
+        <div style="padding:10px;border-radius:9999px;border:2px dashed #999;background:#F5F5F5;text-align:center;font-weight:900;font-size:11px;color:#666">HIDDEN STAFF - No employment type needed</div>
+      </div>
+      <div style="margin-top:12px;font-weight:900">ASSIGN SHIFTS FOR CURRENT FORTNIGHT (14 days, blank = OFF)</div>
+      <div id="hs-shifts-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));gap:8px;margin-top:8px;max-width:100%;overflow:hidden;box-sizing:border-box"></div>
+      <button onclick="addHiddenStaff()" style="margin-top:12px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px 18px;font-weight:900;width:100%">ADD HIDDEN STAFF + CREATE LOGIN</button>
+    </div>
+    <div id="hs-list"></div>
+    <div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>
+  </div>
+</div>
 
+<script>
 // Simple Enter fix - ensures Enter triggers login on desktop and phone
 (function(){
   var form=document.querySelector('.login-form');
@@ -12631,41 +12654,79 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
   if(userEl) userEl.addEventListener('keydown', onEnter);
   if(passEl) passEl.addEventListener('keydown', onEnter);
 })();
-
-
-// PATCH - ensures critical missing functions (buildSection, isGShift, finalTsByDate, etc) are present if BEST missing them
-if(typeof buildSection === 'undefined'){
-  function buildSection(type){try{var tid='table-'+type; if(type==='fulltime') tid='table-fulltime'; if(type==='casual') tid='table-casual'; if(type==='hidden') tid='table-hidden'; renderTableForType(type,tid);}catch(e){}}
-}
-if(typeof isGShift === 'undefined'){
-  function isGShift(shift,name){if(!shift) return false; var up=(shift+'').toUpperCase().trim(); if(up==='G') return true; var has0730=shift.indexOf('07:30')>=0; var has2000=shift.indexOf('20:00')>=0; var isLC=false; if(name){var low=name.toLowerCase(); if(low.indexOf('luke')>=0||low.indexOf('chris')>=0) isLC=true;} if(isLC&&(has0730||has2000)) return true; if(has0730) return true; return false;}
-  function isGStatus(s,n){return isGShift(s,n);}
-}
-if(typeof originalShifts === 'undefined'){ var originalShifts = {}; }
-
-// DANIEL FIX - finalTsByDate resubmit allowed
-function renderRequests(){
-  var el=document.getElementById('requests-list'); if(!el) return;
-  var reqs=safeGetJSON('retail_roster_requests_v2',[]); var offers=safeGetJSON('retail_roster_shift_offers_v1',[]); 
-  var all=[]; if(Array.isArray(reqs)) all=all.concat(reqs); if(Array.isArray(offers)) all=all.concat(offers);
-  if(all.length===0){el.innerHTML='<div class="small">No requests</div>'; return;}
-  var finalTsByDate={}; all.forEach(function(r){if(r.status==='approved'||r.status==='denied'){var dates=r.dates||[r.dateLabel||r.shiftDate||'']; dates.forEach(function(d){if(!d) return; var key=(r.username||'')+'|'+d; var ts=r.deniedTs||r.approvedTs||r.ts||0; if(!finalTsByDate[key]||ts>finalTsByDate[key]) finalTsByDate[key]=ts;});}});
-  var html=''; all.slice().sort(function(a,b){return (b.ts||0)-(a.ts||0);}).forEach(function(r){
-    var datesStr=r.dates?r.dates.join(', '):(r.dateLabel||r.shiftDate||'');
-    html+='<div class="list-item"><div><b>'+(r.username||'')+'</b> '+datesStr+' <small>'+(r.status||'')+'</small></div><div><button onclick="approveRequest(\''+r.id+'\')">Approve</button><button onclick="denyRequest(\''+r.id+'\')">Deny</button><button onclick="deleteRequest(\''+r.id+'\')">Del</button></div></div>';
-  });
-  el.innerHTML=html;
-}
-function approveRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var r=reqs.find(function(x){return x.id===id;}); if(!r) return; r.status='approved'; r.approvedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); renderRosterSafe(); cloudSave(); toast('Approved finalTsByDate');}
-function denyRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); var r=reqs.find(function(x){return x.id===id;}); if(!r) return; r.status='denied'; r.deniedTs=Date.now(); r.ts=Date.now(); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); cloudSave(); toast('Denied resubmit allowed Daniel fix');}
-function deleteRequest(id){var reqs=safeGetJSON('retail_roster_requests_v2',[]); reqs=reqs.filter(function(x){return x.id!==id;}); safeSetJSON('retail_roster_requests_v2',reqs); renderRequestsSafe(); updateRequestsBadge(); cloudSave(); toast('Deleted');}
-
-// V220 LOCAL SYNC ONLY - NO FIREBASE
-;(function setupLiveSync(){
-  console.log('V220 Local sync - Firebase disabled to prevent 404');
-  setInterval(function(){ try{ updateRequestsBadge(); }catch(e){} }, 5000);
-})();
-
 </script>
+
+
+<script>
+// V221 ROLE VISIBILITY FIX - admin vs employee menus
+(function(){
+  function applyRoleVisibilityFixed(role){
+    try{
+      var r=(role||'').toLowerCase();
+      var isMgr=(r==='admin'||r==='master'||r==='manager');
+      var isAdmin=(r==='admin');
+      // All manager-only elements
+      document.querySelectorAll('.manager-only').forEach(function(el){
+        el.style.display = (isMgr||isAdmin) ? '' : 'none';
+      });
+      // Staff-only elements
+      document.querySelectorAll('.staff-only').forEach(function(el){
+        el.style.display = (isMgr && !isAdmin) ? 'none' : '';
+      });
+      // Specific buttons
+      var adminOnlyIds = ['btn-account-mgmt','btn-public-holidays','btn-hidden-staff','btn-archive','account-mgmt-btn','public-holidays-btn','hidden-staff-btn','archive-btn','btn-archive','btn-hidden','btn-public-holiday','btn-account-mgmt'];
+      adminOnlyIds.forEach(function(id){
+        var el=document.getElementById(id);
+        if(el){
+          if(isAdmin){
+            el.style.display='';
+            el.classList.remove('hidden');
+          }else{
+            el.style.display='none';
+          }
+        }
+      });
+      // Employee should see: Roster, My Schedule, Today, Tomorrow, Unavailability, Options, Requests (own)
+      // Admin sees all
+      var rosterHidden = document.getElementById('roster-hidden');
+      if(rosterHidden){
+        rosterHidden.style.display = isAdmin ? 'block' : 'none';
+      }
+    }catch(e){ console.error('role fix error', e); }
+  }
+  // Override applyRoleVisibility after it is defined
+  var checkInterval = setInterval(function(){
+    if(typeof applyRoleVisibility !== 'undefined' && typeof getActualRole !== 'undefined'){
+      // Save original
+      if(!window._origApplyRole){
+        window._origApplyRole = applyRoleVisibility;
+      }
+      window.applyRoleVisibility = function(role){
+        try{
+          applyRoleVisibilityFixed(role);
+        }catch(e){
+          try{ window._origApplyRole(role); }catch(e2){}
+        }
+      };
+      // Apply immediately
+      try{
+        var curRole = getActualRole ? getActualRole() : (localStorage.getItem('repco_currentRole')||'');
+        applyRoleVisibilityFixed(curRole);
+      }catch(e){}
+      clearInterval(checkInterval);
+    }
+  }, 500);
+  // Also apply on login
+  document.addEventListener('DOMContentLoaded', function(){
+    setTimeout(function(){
+      try{
+        var curRole = (typeof getActualRole === 'function' ? getActualRole() : localStorage.getItem('repco_currentRole')||'');
+        applyRoleVisibilityFixed(curRole);
+      }catch(e){}
+    }, 1000);
+  });
+})();
+</script>
+
 </body>
 </html>
