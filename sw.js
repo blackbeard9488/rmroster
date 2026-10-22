@@ -2,7 +2,8 @@
 // Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready
 // FIXED V157: Clean notifications, no blackbeard, single icon, Monday 22/10
 
-const CACHE_NAME = 'repco-roster-alpha-v167-fix-off-shift-notif-guaranteed';
+const CACHE_NAME = "repco-v171";
+// const CACHE_NAME = 'repco-roster-alpha-v167-fix-off-shift-notif-guaranteed';
 
 const urlsToCache = [
   '/',

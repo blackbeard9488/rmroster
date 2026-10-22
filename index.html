@@ -1604,6 +1604,54 @@ function applyCloudState(state,isInitial){
                   }
                 }
               }catch(e){ console.log('Preserve hidden in applyCloudState error', e); }
+              // V171: Preserve pending OFF cells - pending should NEVER show posted until accepted
+              try{
+                var offersForPreserve = safeGetJSON('retail_roster_shift_offers_v1',[]);
+                var localFnsForPreserve = safeGetJSON('retail_roster_byFortnight_v1',[]);
+                for(var f=0; f<parsed.length; f++){
+                  var cfnP=parsed[f];
+                  var lfnP=localFnsForPreserve.find(function(lf){ return lf.id===cfnP.id; });
+                  if(!cfnP.staff || !lfnP || !lfnP.staff) continue;
+                  for(var s=0; s<cfnP.staff.length; s++){
+                    var csP=cfnP.staff[s];
+                    var lsP=lfnP.staff.find(function(x){ return x.username && csP.username && x.username.toLowerCase()===csP.username.toLowerCase(); });
+                    if(!lsP) continue;
+                    if(lsP.pendingOffers){
+                      for(var d in lsP.pendingOffers){
+                        var poP=lsP.pendingOffers[d];
+                        if(poP && poP.status==='pending'){
+                          var dIdxP=parseInt(d);
+                          if(!isNaN(dIdxP) && cfnP.staff[s].shifts && cfnP.staff[s].shifts[dIdxP]){
+                            var cloudShiftP=cfnP.staff[s].shifts[dIdxP];
+                            if(cloudShiftP===poP.newShift && lsP.shifts[dIdxP]!==poP.newShift){
+                              console.log('V171 applyCloudState: Preserving OFF pending, cloud has', cloudShiftP, 'local OFF', lsP.shifts[dIdxP]);
+                              cfnP.staff[s].shifts[dIdxP]=lsP.shifts[dIdxP];
+                              if(!cfnP.staff[s].pendingOffers) cfnP.staff[s].pendingOffers={};
+                              cfnP.staff[s].pendingOffers[dIdxP]=poP;
+                            }
+                          }
+                        }
+                      }
+                    }
+                    // Check global offers
+                    for(var oi=0; oi<offersForPreserve.length; oi++){
+                      var offP=offersForPreserve[oi];
+                      if(offP && offP.status==='pending' && offP.targetUsername===csP.username.toLowerCase()){
+                        var cfnDateP=cfnP.dates ? cfnP.dates.findIndex(function(dd){ return dd.iso===offP.date; }) : -1;
+                        if(cfnDateP!==-1 && cfnP.staff[s].shifts[cfnDateP]===offP.newShift){
+                          var localShiftP=lsP.shifts[cfnDateP]||'OFF';
+                          if(localShiftP.toUpperCase()==='OFF' || localShiftP===''){
+                            console.log('V171 applyCloudState: Preserving OFF via global pending', offP.targetUsername, offP.date);
+                            cfnP.staff[s].shifts[cfnDateP]=localShiftP;
+                            if(!cfnP.staff[s].pendingOffers) cfnP.staff[s].pendingOffers={};
+                            cfnP.staff[s].pendingOffers[cfnDateP]={offerId: offP.id, status:'pending', newShift: offP.newShift, oldShift: offP.oldShift};
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }catch(e){ console.log('V171 preserve pending in applyCloudState error', e); }
               var filteredStr=JSON.stringify(parsed);
               localStorage.setItem(k,filteredStr);
               if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE[k]=filteredStr;
@@ -1885,7 +1933,8 @@ async function cloudLoad(){
     try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); }catch(e){}
   },2000);
   
-  // V167: Poll shift offers directly for instant accept/deny UI
+  // V167:   // V171 FIX: Poll shift offers with STRONG MERGE - pending should NEVER overwrite denied/cancelled/accepted
+  // Also pending should NEVER show posted on roster until accepted
   setInterval(async function(){
     try{
       var rr=await fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json?_t='+Date.now(),{cache:'no-store', mode:'cors'});
@@ -1893,14 +1942,74 @@ async function cloudLoad(){
       var cloudOffers=await rr.json();
       if(!Array.isArray(cloudOffers)) return;
       var localOffers=safeGetJSON('retail_roster_shift_offers_v1',[]);
-      if(JSON.stringify(localOffers)!==JSON.stringify(cloudOffers)){
-        console.log('V167: Shift offers updated via direct poll');
-        safeSetJSON('retail_roster_shift_offers_v1', cloudOffers);
+      var merged = [];
+      var cloudById = {};
+      cloudOffers.forEach(function(o){ if(o && o.id) cloudById[o.id]=o; });
+      var localById = {};
+      localOffers.forEach(function(o){ if(o && o.id) localById[o.id]=o; });
+      
+      // V171: Strong merge - local denied/cancelled/accepted ALWAYS wins over cloud pending
+      cloudOffers.forEach(function(co){
+        var lo = localById[co.id];
+        if(lo){
+          // If local is final state (denied/accepted/cancelled), NEVER overwrite with cloud pending
+          if((lo.status==='denied' || lo.status==='accepted' || lo.status==='cancelled') && co.status==='pending'){
+            console.log('V171: Keeping local final', lo.status, 'over cloud pending for', co.id, '- prevents comeback');
+            merged.push(lo);
+          } else if(lo.status==='denied' && (co.status==='accepted' || co.status==='pending')){
+            merged.push(lo); // Denied stays denied
+          } else if(lo.status==='cancelled'){
+            merged.push(lo); // Cancelled stays cancelled
+          } else {
+            // Cloud newer?
+            if(co.timestamp > lo.timestamp && co.status!=='pending' && lo.status==='pending'){
+              // Cloud has newer final status, use it
+              merged.push(co);
+            } else {
+              merged.push(co);
+            }
+          }
+        } else {
+          // Cloud offer not in local - check if we have denied/cancelled version of same employee+date
+          // If local has denied for same employee+date, don't re-add pending
+          var isDuplicatePending = false;
+          for(var li=0; li<localOffers.length; li++){
+            var lo2 = localOffers[li];
+            if(lo2 && (lo2.status==='denied' || lo2.status==='cancelled') && lo2.targetUsername===co.targetUsername && lo2.date===co.date && co.status==='pending'){
+              // Same employee+date denied before, and cloud has pending again - check timestamp
+              if(lo2.timestamp > co.timestamp || (Date.now() - lo2.timestamp) < 60000){
+                isDuplicatePending = true;
+                console.log('V171: Skipping duplicate pending that was denied/cancelled', co.id, 'for', co.targetUsername, co.date);
+                break;
+              }
+            }
+          }
+          if(!isDuplicatePending){
+            merged.push(co);
+          }
+        }
+      });
+      // Add local offers not in cloud that are final
+      localOffers.forEach(function(lo){
+        if(!cloudById[lo.id]){
+          if(lo.status==='denied' || lo.status==='cancelled' || lo.status==='accepted'){
+            merged.push(lo);
+            console.log('V171: Local final not in cloud, keeping', lo.id, lo.status);
+          } else if(lo.status==='pending'){
+            // Local pending not in cloud - keep if recent, push to cloud
+            merged.push(lo);
+          }
+        }
+      });
+      if(JSON.stringify(localOffers)!==JSON.stringify(merged)){
+        console.log('V171: Shift offers merged - local', localOffers.length, 'cloud', cloudOffers.length, 'merged', merged.length);
+        safeSetJSON('retail_roster_shift_offers_v1', merged);
         try{ renderShiftOffers(); }catch(e){}
-        try{ checkAndShowNotifications(); }catch(e){}
+        try{ updateShiftOffersBadge(); }catch(e){}
+        try{ renderRosterSafe(); }catch(e){}
       }
-    }catch(e){}
-  },1000);
+    }catch(e){ console.log('V171 offers merge error', e); }
+  },2000);;
 
   // Poll requests_v2 directly for denied/approved that should overwrite pending - DANIEL FIX
   setInterval(async function(){
@@ -1967,8 +2076,77 @@ async function cloudLoad(){
         }
       }catch(e){ console.log('Hidden preserve error', e); }
       
+      // V171: Preserve local pending/denied cells - pending should NEVER show posted until accepted, denied should NEVER show posted
+      try{
+        var offersLocal = safeGetJSON('retail_roster_shift_offers_v1',[]);
+        for(var f=0; f<cloudFns.length; f++){
+          var cfn=cloudFns[f];
+          var lfn=localFns.find(function(lf){ return lf.id===cfn.id; });
+          if(!cfn.staff || !lfn || !lfn.staff) continue;
+          for(var s=0; s<cfn.staff.length; s++){
+            var cs = cfn.staff[s];
+            var ls = lfn.staff.find(function(x){ return x.username && cs.username && x.username.toLowerCase()===cs.username.toLowerCase(); });
+            if(!ls || !cs.shifts) continue;
+            // If local has pending offer for this cell, keep local OFF, don't overwrite with cloud newShift
+            if(ls.pendingOffers){
+              for(var d in ls.pendingOffers){
+                var po = ls.pendingOffers[d];
+                if(po && (po.status==='pending' || po.status==='denied' || po.status==='cancelled')){
+                  var dIdx = parseInt(d);
+                  if(!isNaN(dIdx) && cfn.staff[s].shifts[dIdx]){
+                    var cloudShift = cfn.staff[s].shifts[dIdx];
+                    // If cloud has newShift posted but local is OFF (pending/denied), keep OFF
+                    if(cloudShift!==ls.shifts[dIdx] && (cloudShift===po.newShift || po.status==='denied')){
+                      console.log('V171: Preserving local OFF (pending/denied), not overwriting with cloud posted', ls.username, 'day', d, 'cloud', cloudShift, 'local', ls.shifts[dIdx], 'pending', po.newShift, 'status', po.status);
+                      cfn.staff[s].shifts[dIdx] = ls.shifts[dIdx]; // Keep local OFF
+                      if(po.status==='pending'){
+                        if(!cfn.staff[s].pendingOffers) cfn.staff[s].pendingOffers={};
+                        cfn.staff[s].pendingOffers[dIdx] = po;
+                      } else {
+                        // Denied/cancelled - ensure no pending marker and OFF
+                        if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[dIdx]){
+                          delete cfn.staff[s].pendingOffers[dIdx];
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            // Also check global offers - if local has pending/denied and cloud shows newShift, preserve OFF
+            for(var oi=0; oi<offersLocal.length; oi++){
+              var off = offersLocal[oi];
+              if(off && (off.status==='pending' || off.status==='denied' || off.status==='cancelled') && off.targetUsername===cs.username.toLowerCase()){
+                var cfnDate = cfn.dates ? cfn.dates.findIndex(function(dd){ return dd.iso===off.date; }) : -1;
+                if(cfnDate!==-1){
+                  var cloudShiftForCheck = cfn.staff[s].shifts[cfnDate];
+                  if(cloudShiftForCheck===off.newShift && off.status==='pending'){
+                    var localShiftForDate = ls.shifts[cfnDate]||'OFF';
+                    if(localShiftForDate.toUpperCase()==='OFF' || localShiftForDate===''){
+                      console.log('V171: Roster poll preserving OFF for pending', off.targetUsername, off.date);
+                      cfn.staff[s].shifts[cfnDate] = localShiftForDate;
+                      if(!cfn.staff[s].pendingOffers) cfn.staff[s].pendingOffers={};
+                      cfn.staff[s].pendingOffers[cfnDate] = {offerId: off.id, status: 'pending', newShift: off.newShift, oldShift: off.oldShift};
+                    }
+                  } else if(off.status==='denied' || off.status==='cancelled'){
+                    // If denied/cancelled, ensure roster is OFF, not newShift
+                    if(cloudShiftForCheck===off.newShift){
+                      console.log('V171: Roster poll fixing denied/cancelled - cloud shows', off.newShift, 'but should be OFF for', off.targetUsername, off.date);
+                      cfn.staff[s].shifts[cfnDate] = off.oldShift||'OFF';
+                      if(cfn.staff[s].pendingOffers && cfn.staff[s].pendingOffers[cfnDate]){
+                        delete cfn.staff[s].pendingOffers[cfnDate];
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }catch(e){ console.log('V171 preserve pending roster error', e); }
+      
       if(JSON.stringify(localFns)!==JSON.stringify(cloudFns)){
-        console.log('LIVE SYNC: Roster changed via direct poll, updating My Schedule');
+        console.log('LIVE SYNC: Roster changed via direct poll, updating My Schedule - V171 pending preserved');
         safeSetJSON('retail_roster_byFortnight_v1', cloudFns);
         try{ deduplicateAllRosters(false); }catch(e){}
   try{ renderRosterSafe(); }catch(e){}
@@ -2940,13 +3118,18 @@ function renderRosterSafe(){
           }
         }
         var dispOriginal = disp;
-        // V169: If pending offer, show new shift time with pending indicator
-        if(hasPendingOffer && pendingOfferData){
-          disp = pendingOfferData.newShift || disp;
-        }
+        // V171: Pending should NEVER show posted on roster - keep OFF visible, yellow pending
+        // Don't show newShift time until accepted
         var txt=fmt(disp);
         if(hasPendingOffer){
-          txt = fmt(disp) + ' ⏳';
+          // Show OFF with pending indicator, not new shift
+          // Keep original OFF display but yellow
+          txt = ''; // OFF shows as empty grey, but we override with yellow + pending text
+          if((dispOriginal||'').toUpperCase()==='OFF' || dispOriginal==='' || !dispOriginal){
+            txt = '⏳ PENDING';
+          } else {
+            txt = fmt(dispOriginal) + ' ⏳';
+          }
         }
         // FIX: If manually green, keep original shift text, don't show G
         if(isGreen){
@@ -2972,10 +3155,7 @@ function renderRosterSafe(){
         else if(na && orig){ txt=fmt(disp)+' ('+fmt(orig)+')'; if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA') txt='UA'; }
         else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
         else if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA'){ txt='UA'; }
-        var isG=isGShift(disp, st.firstName) || (st.cellG && st.cellG[idx]);
-        var off=['OFF',''].includes((disp||'').toUpperCase().trim()) || (isG && false); var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
-        var isUA=['UA','NA','UNAVAILABLE','U'].includes((disp||'').toUpperCase().trim()) || na;
-        // V169: Check if this cell has pending shift offer - should be YELLOW awaiting feedback
+        // V171: Check if this cell has pending shift offer - MUST be before disp handling, should be YELLOW awaiting feedback
         var hasPendingOffer = false;
         var pendingOfferData = null;
         try{
@@ -2983,7 +3163,6 @@ function renderRosterSafe(){
             hasPendingOffer = true;
             pendingOfferData = st.pendingOffers[idx];
           } else {
-            // Also check global offers array
             var allOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
             var myUsernameLower = (st.username||'').toLowerCase();
             var curDate = cur.dates[idx] ? cur.dates[idx].iso : '';
@@ -2997,6 +3176,10 @@ function renderRosterSafe(){
             }
           }
         }catch(e){}
+        
+        var isG=isGShift(disp, st.firstName) || (st.cellG && st.cellG[idx]);
+        var off=['OFF',''].includes((disp||'').toUpperCase().trim()) || (isG && false); var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
+        var isUA=['UA','NA','UNAVAILABLE','U'].includes((disp||'').toUpperCase().trim()) || na;
         
         var cls=''; 
         // FIX: Manual green (G typed) takes priority over auto G for Luke/Chris
@@ -3013,7 +3196,12 @@ function renderRosterSafe(){
         else if(off) cls='cell-off'; 
         else cls='cell-work';
         var isWeekendCol=isWeekend(cur.dates[idx].day); var weekendClass=''; if(isWeekendCol){ var prevWeekend=idx>0?isWeekend(cur.dates[idx-1].day):false; var nextWeekend=idx<cur.dates.length-1?isWeekend(cur.dates[idx+1].day):false; if(!prevWeekend) /*weekendClass+=' weekend-start'*/; if(!nextWeekend) /*weekendClass+=' weekend-end'*/; cls+=' col-weekend'+weekendClass; }
-        var isFull=!isCasual(st); var net; if(isAbsentApproved){ net = isFull ? netH(orig||sh) : 0; } else if(isFull){ if(na){ net=netH(orig||sh); } else { net=netH(sh); } } else { if(na||off||absent){ net=0; } else { net=netH(sh); } }
+        var isFull=!isCasual(st); var net; 
+        // V171: Pending shift should NEVER count hours until accepted - stays OFF
+        if(hasPendingOffer){
+          net = 0;
+          console.log('V171: Pending cell - 0 hours counted until accepted', st.firstName, idx);
+        } else if(isAbsentApproved){ net = isFull ? netH(orig||sh) : 0; } else if(isFull){ if(na){ net=netH(orig||sh); } else { net=netH(sh); } } else { if(na||off||absent){ net=0; } else { net=netH(sh); } }
         // V132: Hidden employees shifts do not count towards any totals
         if(isHiddenStaff){
           net=0;
@@ -3653,7 +3841,25 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             staff.originalShifts[colIdx]=staff.shifts[colIdx];
             try{ staff.originalShifts[String(colIdx)]=staff.shifts[colIdx]; }catch(e){}
           }
+          // V171: Detect OFF->shift new offer - pending should NEVER show posted until accepted
+          var currentCleanForPending = (current||'').toString().trim().toUpperCase();
+          var actualCleanForPending = (actualShift||'').toString().trim().toUpperCase();
+          var isOffToShiftPending = (currentCleanForPending==='' || currentCleanForPending==='OFF' || currentCleanForPending==='-' || currentCleanForPending==='0') && 
+                                    (actualCleanForPending!=='' && actualCleanForPending!=='OFF' && actualCleanForPending!=='-' && actualCleanForPending!=='0' && actualCleanForPending!=='UA' && actualCleanForPending!=='NA' && !actualCleanForPending.includes('AB'));
+          
           try{ if(typeof pushUndo==='function') pushUndo(); }catch(e){}
+          // V171: If OFF->shift, keep roster as OFF initially, yellow pending - don't post shift yet
+          if(isOffToShiftPending){
+            console.log('V171: OFF->shift detected - keeping roster OFF, yellow pending, newShift', actualShift, 'not posted until accepted');
+            // Store actualShift as pending newShift, but keep current shift as OFF in roster for now
+            // The sendShiftChangeNotification will create pending offer and keep OFF
+            // So set a flag to handle after save
+            window._pendingNewShiftForOffer = actualShift;
+            window._pendingOldShiftForOffer = current;
+            // Keep roster as OFF for now - will be set to OFF below, pending marker will hold newShift
+            // Don't set actualShift to OFF yet, let below logic handle but we will override after
+          }
+          
           if(isGFlag){
             if(!staff.cellG) staff.cellG=[];
             staff.cellG[colIdx]=true;
@@ -3725,6 +3931,28 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               targetStaff.unavailable[colIdx]=staff.unavailable?staff.unavailable[colIdx]:false;
             }
           }
+          // V171: If OFF->shift pending, revert roster cell back to OFF - pending should NEVER show posted until accepted
+          try{
+            if(typeof window._pendingNewShiftForOffer!=='undefined' && window._pendingNewShiftForOffer){
+              var pendingNew = window._pendingNewShiftForOffer;
+              var pendingOld = window._pendingOldShiftForOffer||'OFF';
+              console.log('V171: Reverting roster cell to OFF after OFF->shift pending creation, newShift pending:', pendingNew);
+              // Revert current staff shift back to OFF
+              staff.shifts[colIdx] = pendingOld||'OFF';
+              // Also revert in fns
+              if(fns[fnIdx] && fns[fnIdx].staff[rowIdx]){
+                fns[fnIdx].staff[rowIdx].shifts[colIdx] = pendingOld||'OFF';
+                // Ensure pendingOffers marker exists with newShift
+                if(!fns[fnIdx].staff[rowIdx].pendingOffers) fns[fnIdx].staff[rowIdx].pendingOffers={};
+                fns[fnIdx].staff[rowIdx].pendingOffers[colIdx] = {offerId: 'temp_'+Date.now(), status: 'pending', newShift: pendingNew, oldShift: pendingOld};
+              }
+              safeSetJSON('retail_roster_byFortnight_v1',fns);
+              // Clear temp
+              window._pendingNewShiftForOffer = null;
+              window._pendingOldShiftForOffer = null;
+            }
+          }catch(e){ console.log('V171 revert error', e); }
+          
           safeSetJSON('retail_roster_byFortnight_v1',fns);
           
           // V169: If admin removes new shift data while awaiting feedback - cancel pending offer and delete notification from employee phone
@@ -4652,9 +4880,15 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
             }
             if(foundFn && foundStaffIdx>=0 && foundDateIdx>=0){
               if(!foundFn.staff[foundStaffIdx].pendingOffers) foundFn.staff[foundStaffIdx].pendingOffers = {};
-              foundFn.staff[foundStaffIdx].pendingOffers[foundDateIdx] = {offerId: offer.id, status: 'pending', newShift: newShift};
+              foundFn.staff[foundStaffIdx].pendingOffers[foundDateIdx] = {offerId: offer.id, status: 'pending', newShift: newShift, oldShift: oldShift||'OFF'};
+              // V171 CRITICAL FIX: Pending shift should NEVER show posted on roster until accepted
+              // Keep roster as OFF, not newShift - only show yellow pending
+              foundFn.staff[foundStaffIdx].shifts[foundDateIdx] = oldShift||'OFF';
+              if(foundFn.staff[foundStaffIdx].originalShifts){
+                // Don't overwrite original
+              }
               safeSetJSON('retail_roster_byFortnight_v1', fns);
-              console.log('V167: Marked roster cell as pending offer', foundFn.id, foundStaffIdx, foundDateIdx);
+              console.log('V171: Marked roster cell as pending offer - roster stays OFF, yellow pending', foundFn.id, foundStaffIdx, foundDateIdx, 'pending newShift', newShift, 'roster stays', oldShift||'OFF');
             }
           }catch(e){ console.log('V167 mark pending error', e); }
         }catch(e){ console.error('V167 offer create error', e); }
