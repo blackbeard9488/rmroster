@@ -3980,55 +3980,108 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
           
           safeSetJSON('retail_roster_byFortnight_v1',fns);
           
-          // V169: If admin removes new shift data while awaiting feedback - cancel pending offer and delete notification from employee phone
+          // V173 FIX: Backspacing/resetting yellow cell MUST cancel pending shift - robust check
           try{
             var dateISOForCancel = cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso || cur.dates[colIdx].date || '') : '';
             var staffUsernameForCancel = (staff.username||'').toLowerCase() || (staff.firstName||'').toLowerCase();
             var pendingOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
             var hasPendingForThisCell = false;
-            for(var poi=0; poi<pendingOffers.length; poi++){
-              var po = pendingOffers[poi];
-              if(po && po.status==='pending' && po.targetUsername===staffUsernameForCancel && po.date===dateISOForCancel){
-                hasPendingForThisCell = true;
-                break;
+            var pendingNewShiftForCancel = '';
+            
+            // Check 1: staff.pendingOffers marker (most reliable after V171)
+            if(staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
+              hasPendingForThisCell = true;
+              pendingNewShiftForCancel = staff.pendingOffers[colIdx].newShift||'';
+              console.log('V173: Found pending via staff.pendingOffers marker', staff.firstName, colIdx, pendingNewShiftForCancel);
+            }
+            // Check 2: global offers array by username+date
+            if(!hasPendingForThisCell){
+              for(var poi=0; poi<pendingOffers.length; poi++){
+                var po = pendingOffers[poi];
+                if(po && po.status==='pending' && po.targetUsername===staffUsernameForCancel && po.date===dateISOForCancel){
+                  hasPendingForThisCell = true;
+                  pendingNewShiftForCancel = po.newShift||'';
+                  console.log('V173: Found pending via global offers', po.id, po.newShift);
+                  break;
+                }
               }
-              // Also check via staff pendingOffers marker
-              if(staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
-                hasPendingForThisCell = true;
-                break;
-              }
+            }
+            // Check 3: Check fns roster for pending marker (in case staff object is stale)
+            if(!hasPendingForThisCell){
+              try{
+                var fnsForCancel = safeGetJSON('retail_roster_byFortnight_v1',[]);
+                for(var fci=0; fci<fnsForCancel.length; fci++){
+                  var fnc = fnsForCancel[fci];
+                  if(!fnc.dates || !fnc.staff) continue;
+                  var dIdxC = fnc.dates.findIndex(function(d){ return d.iso===dateISOForCancel || d.date===dateISOForCancel; });
+                  if(dIdxC===-1) continue;
+                  var sIdxC = fnc.staff.findIndex(function(s){ return s.username && s.username.toLowerCase()===staffUsernameForCancel; });
+                  if(sIdxC===-1) continue;
+                  if(fnc.staff[sIdxC].pendingOffers && fnc.staff[sIdxC].pendingOffers[dIdxC] && fnc.staff[sIdxC].pendingOffers[dIdxC].status==='pending'){
+                    hasPendingForThisCell = true;
+                    pendingNewShiftForCancel = fnc.staff[sIdxC].pendingOffers[dIdxC].newShift||'';
+                    console.log('V173: Found pending via fns roster', sIdxC, dIdxC, pendingNewShiftForCancel);
+                    break;
+                  }
+                }
+              }catch(e){ console.log('V173 fns check error', e); }
             }
             
             if(hasPendingForThisCell){
-              var oldCleanCancel = (current||'').toString().trim().toUpperCase();
               var newCleanCancel = (actualShift||'').toString().trim().toUpperCase();
-              // If admin clears cell to OFF, or changes to different time than pending offer, cancel it
-              var isRemoving = (newCleanCancel==='' || newCleanCancel==='OFF' || newCleanCancel==='-' || newCleanCancel==='0');
-              var isChanging = (oldCleanCancel!=='' && newCleanCancel!=='' && oldCleanCancel!==newCleanCancel);
+              // V173: Backspace/reset means actualShift is OFF or empty - ALWAYS cancel if pending exists and admin is clearing
+              var isBackspaceOrReset = (newCleanCancel==='' || newCleanCancel==='OFF' || newCleanCancel==='-' || newCleanCancel==='0' || newCleanCancel==='BACKSPACE' || newCleanCancel==='RESET' || newCleanCancel==='CLEAR');
+              // Also cancel if admin types different time than pending offer
+              var isChangingTime = (newCleanCancel!=='' && newCleanCancel!=='OFF' && newCleanCancel!==pendingNewShiftForCancel.toUpperCase());
               
-              // Get pending offer newShift to compare
-              var pendingNewShift = '';
-              try{
-                if(staff.pendingOffers && staff.pendingOffers[colIdx]) pendingNewShift = staff.pendingOffers[colIdx].newShift||'';
-                else {
-                  for(var pii=0; pii<pendingOffers.length; pii++){
-                    if(pendingOffers[pii].targetUsername===staffUsernameForCancel && pendingOffers[pii].date===dateISOForCancel && pendingOffers[pii].status==='pending'){
-                      pendingNewShift = pendingOffers[pii].newShift||'';
-                      break;
-                    }
-                  }
-                }
-              }catch(e){}
+              console.log('V173: Cancel check - hasPending', hasPendingForThisCell, 'newClean', newCleanCancel, 'pendingNew', pendingNewShiftForCancel, 'isBackspace', isBackspaceOrReset, 'isChanging', isChangingTime, 'current', current, 'actual', actualShift);
               
-              // Cancel if removing, or if changing to something different than pending offer
-              if(isRemoving || (isChanging && newCleanCancel!==pendingNewShift.toUpperCase())){
-                console.log('V169: Admin removing/changing pending offer cell - cancelling', staff.firstName, dateISOForCancel, current, '->', actualShift);
+              if(isBackspaceOrReset || isChangingTime){
+                console.log('V173: CANCELLING pending offer - admin backspaced/reset yellow cell', staff.firstName, dateISOForCancel, 'pending was', pendingNewShiftForCancel, '->', actualShift);
                 if(typeof cancelPendingOffersForCell==='function'){
-                  cancelPendingOffersForCell(staffUsernameForCancel, dateISOForCancel, 'Admin removed shift '+current+' -> '+actualShift);
+                  cancelPendingOffersForCell(staffUsernameForCancel, dateISOForCancel, 'Admin backspaced/reset yellow cell '+pendingNewShiftForCancel+' -> '+actualShift);
+                } else {
+                  // Fallback inline cancel if function not available
+                  try{
+                    var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
+                    var cancelledIds = [];
+                    for(var ci=0; ci<offers.length; ci++){
+                      if(offers[ci] && offers[ci].status==='pending' && offers[ci].targetUsername===staffUsernameForCancel && offers[ci].date===dateISOForCancel){
+                        offers[ci].status='cancelled';
+                        offers[ci].cancelledTs=Date.now();
+                        cancelledIds.push(offers[ci].id);
+                      }
+                    }
+                    safeSetJSON('retail_roster_shift_offers_v1', offers);
+                    // Clear roster pending markers
+                    var fnsClear = safeGetJSON('retail_roster_byFortnight_v1',[]);
+                    for(var fci=0; fci<fnsClear.length; fci++){
+                      var fnc = fnsClear[fci];
+                      if(!fnc.dates || !fnc.staff) continue;
+                      var dIdxC = fnc.dates.findIndex(function(d){ return d.iso===dateISOForCancel; });
+                      if(dIdxC===-1) continue;
+                      var sIdxC = fnc.staff.findIndex(function(s){ return s.username && s.username.toLowerCase()===staffUsernameForCancel; });
+                      if(sIdxC!==-1 && fnc.staff[sIdxC].pendingOffers && fnc.staff[sIdxC].pendingOffers[dIdxC]){
+                        delete fnc.staff[sIdxC].pendingOffers[dIdxC];
+                        if(Object.keys(fnc.staff[sIdxC].pendingOffers).length===0) delete fnc.staff[sIdxC].pendingOffers;
+                      }
+                    }
+                    safeSetJSON('retail_roster_byFortnight_v1', fnsClear);
+                    // Clear notifications
+                    var notifs = safeGetJSON('repco_notifications_v1',[]);
+                    var remaining = notifs.filter(function(n){ return cancelledIds.indexOf(n.id)===-1 && cancelledIds.indexOf(n.notifId)===-1; });
+                    safeSetJSON('repco_notifications_v1', remaining);
+                    console.log('V173: Fallback cancel done, cancelled', cancelledIds.length);
+                    try{ updateShiftOffersBadge(); }catch(e){}
+                    try{ renderShiftOffers(); }catch(e){}
+                    try{ renderRosterSafe(); }catch(e){}
+                  }catch(e){ console.log('V173 fallback cancel error', e); }
                 }
               }
+            } else {
+              console.log('V173: No pending found for cell', staff.firstName, dateISOForCancel, 'current', current, 'actual', actualShift);
             }
-          }catch(cancelErr){ console.log('V169 cancel check error', cancelErr); }
+          }catch(cancelErr){ console.log('V173 cancel check error', cancelErr); }
           
           // FIXED: Send shift change notification (OFF -> shift = New shift added! for current fortnight)
           try{
