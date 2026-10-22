@@ -2,7 +2,7 @@
   "name": "REPCO Roster - ALPHA",
   "short_name": "REPCO Roster",
   "description": "REPCO Roster - Staff scheduling",
-  "start_url": "./?v=195",
+  "start_url": "./?v=196",
   "scope": "./",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "browser"],

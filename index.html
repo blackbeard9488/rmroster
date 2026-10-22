@@ -434,6 +434,89 @@ document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ const m=
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
 
 <script>
+
+// V196 FIX: Define applyRoleVisibility early and globally - prevents ReferenceError on login
+function applyRoleVisibility(){
+  try{
+    var ar='';
+    try{ ar=typeof getActualRole==='function'?getActualRole():(localStorage.getItem('repco_currentRole')||''); }catch(e){}
+    var isMgr=false;
+    try{ isMgr=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
+    try{
+      if(isMgr){
+        document.body.classList.remove('staff-view');
+        document.body.classList.add('manager-view');
+      } else {
+        document.body.classList.add('staff-view');
+        document.body.classList.remove('manager-view');
+      }
+    }catch(e){}
+    // Hide manager-only elements for staff
+    try{
+      var allIds=['btn-unavail','btn-today','btn-tomorrow','btn-mysched','btn-options','btn-archive','btn-account','btn-hidden','btn-public-holiday','btn-requests','btn-roster'];
+      var alwaysHiddenIds=['btn-archive','btn-hidden','btn-public-holiday'];
+      var adminHiddenIds=['btn-today','btn-tomorrow','btn-mysched','btn-archive','btn-hidden','btn-public-holiday'];
+      var staffHiddenIds=['btn-unavail','btn-options','btn-hidden','btn-archive','btn-public-holiday','btn-requests'];
+      var actualRole=ar;
+      var isMgr2=isMgr;
+      try{ actualRole=typeof getActualRole==='function'?getActualRole():ar; isMgr2=typeof isManagerRole==='function'?isManagerRole(actualRole):isMgr; }catch(e){}
+      allIds.forEach(function(id){
+        var el=document.getElementById(id);
+        if(!el) return;
+        if(alwaysHiddenIds.includes(id)){ el.style.display='none'; return; }
+        if(isMgr2){
+          if(adminHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
+        } else {
+          if(staffHiddenIds.includes(id)){ el.style.display='none'; } else { el.style.display='inline-block'; }
+        }
+      });
+      var archiveBtn=document.getElementById('btn-archive');
+      if(archiveBtn) archiveBtn.style.display='none';
+      document.querySelectorAll('.r-btn-consistent').forEach(function(btn){
+        var t=btn.textContent.trim().toUpperCase();
+        if(t==='ARCHIVE' || t==='HIDDEN STAFF' || t==='PUBLIC HOLIDAYS'){ btn.style.display='none'; }
+      });
+      var delBtn=document.getElementById('delete-roster-btn');
+      if(delBtn) delBtn.style.display=isMgr2?'inline-block':'none';
+      var importBtn=document.getElementById('btn-import');
+      var csvBtn=document.getElementById('btn-export-csv');
+      var pdfBtn=document.getElementById('btn-export-pdf');
+      if(importBtn) importBtn.style.display=isMgr2?'inline-block':'none';
+      if(csvBtn) csvBtn.style.display=isMgr2?'inline-block':'none';
+      if(pdfBtn) pdfBtn.style.display=isMgr2?'inline-block':'none';
+    }catch(e){}
+  }catch(e){ console.log('applyRoleVisibility error', e); }
+}
+window.applyRoleVisibility=applyRoleVisibility;
+
+
+// V195 FIX: Ensure applyRoleVisibility is always defined - prevents Login OK but show failed
+if(typeof applyRoleVisibility==='undefined'){
+  window.applyRoleVisibility=function(){
+    try{
+      var ar=(typeof getActualRole==='function'?getActualRole():'')||'';
+      var im=false;
+      try{ im=typeof isManagerRole==='function'?isManagerRole(ar):false; }catch(e){}
+      if(im){
+        document.body.classList.remove('staff-view');
+        document.body.classList.add('manager-view');
+      } else {
+        document.body.classList.remove('manager-view');
+        document.body.classList.add('staff-view');
+      }
+      // Show/hide manager-only elements
+      var mgrEls=document.querySelectorAll('.manager-only, .admin-only');
+      mgrEls.forEach(function(el){
+        el.style.display=im?'':'none';
+      });
+      var staffEls=document.querySelectorAll('.staff-only');
+      staffEls.forEach(function(el){
+        el.style.display=im?'none':'';
+      });
+    }catch(e){ console.log('applyRoleVisibility fallback error', e); }
+  };
+}
+
 // FIX: Suppress Chrome extension "message channel closed" errors that flood console - harmless extension error
 (function(){
   var originalError = console.error;
@@ -690,7 +773,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V195_PDF_PERIOD_PENDING_ADMIN";
+const BUILD_ID="20261022_V196_FIX_APPLYROLEVISIBILITY";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1958,9 +2041,9 @@ function applyCloudState(state,isInitial){
   }
   suppressCloudSave=false; 
   if(isInitial){
-    try{populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();checkMaintenance(); updateRequestsBadge(); renderRequests(); renderMySchedule();}catch(e){}
+    try{populateFortnightSelect();renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}checkMaintenance(); updateRequestsBadge(); renderRequests(); renderMySchedule();}catch(e){}
   } else {
-    try{renderRosterSafe(); applyRoleVisibility();checkMaintenance(); updateRequestsBadge(); renderRequests(); renderMySchedule();}catch(e){}
+    try{renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}checkMaintenance(); updateRequestsBadge(); renderRequests(); renderMySchedule();}catch(e){}
     try{
       var mode=safeGet('maintenance_mode')==='true';
       if(mode){
@@ -2359,9 +2442,9 @@ window.showMain = function(){
     document.querySelectorAll('.full-page').forEach(e=>e.classList.remove('show'));
     let rv=document.getElementById('repco-v65'); if(rv) rv.classList.add('show');
     let gh=document.getElementById('global-header'); if(gh) gh.classList.add('show');
-    renderRosterSafe(); applyRoleVisibility();
+    renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}
   }
-  applyRoleVisibility();
+  try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){}
 };
 
 function isManagerRole(r,u){
@@ -2566,6 +2649,7 @@ async function doLogin(){
           if(gh) gh.style.display='flex';
         }
         if(typeof renderRosterSafe==='function'){ try{ renderRosterSafe(); }catch(e){} }
+        if(typeof applyRoleVisibility==='function'){ try{ try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){ console.log('applyRoleVisibility error in doLogin', e); } }
       }
       if(typeof toast==='function'){
         try{
@@ -2760,7 +2844,7 @@ function datesFrom(startStr){
   if(!safeGetJSON('retail_roster_requests_v2',null)) safeSetJSON('retail_roster_requests_v2',[]);
 }
 
-function initApp(){populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();}
+function initApp(){populateFortnightSelect();renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}}
 
 
 
@@ -2928,7 +3012,7 @@ function onFortnightSelectChange(){
     safeSet('repco_last_manual_select_ts', String(Date.now()));
     console.log('Dropdown changed to', sel.value);
     renderRosterSafe();
-    applyRoleVisibility();
+    try{ if(typeof applyRoleVisibility==='function') try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){ console.log('applyRoleVisibility in showMain', e); }
   }catch(e){ console.error('onFortnightSelectChange error', e); }
 }
 
@@ -3158,7 +3242,7 @@ function deleteCurrentRoster(){
         toast('Deleted '+deleted.label+' - syncing to Firebase...');
         populateFortnightSelect();
         renderRosterSafe();
-        applyRoleVisibility();
+        try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){}
         try{ if(typeof updateMyScheduleCard==='function') updateMyScheduleCard(); }catch(e){}
         // FIXED V167: Sync deleted roster to Firebase so it stays deleted
         try{
@@ -5106,7 +5190,7 @@ function prevFortnight(){
     try{ populateFortnightSelect(); }catch(e){}
     if(sel) sel.value=newId;
     renderRosterSafe(); 
-    try{ applyRoleVisibility(); }catch(e){}
+    try{ try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}
     toast('Previous: '+sorted[idx].label);
     console.log('V167 PREV: Changed to', newId, sorted[idx].label);
   }catch(e){ console.error('prevFortnight error', e); toast('Error: '+e.message); }
@@ -5134,13 +5218,13 @@ function nextFortnight(){
     try{ populateFortnightSelect(); }catch(e){}
     if(sel) sel.value=newId;
     renderRosterSafe(); 
-    try{ applyRoleVisibility(); }catch(e){}
+    try{ try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}
     toast('Next: '+sorted[idx].label);
     console.log('V167 NEXT: Changed to', newId, sorted[idx].label);
   }catch(e){ console.error('nextFortnight error', e); toast('Error: '+e.message); }
 }
 
-function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur==='24h'?'12h':'24h';safeSet('timeFormat',nxt);toast('Time: '+nxt);renderRosterSafe(); applyRoleVisibility();}
+function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur==='24h'?'12h':'24h';safeSet('timeFormat',nxt);toast('Time: '+nxt);renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}}
 
 
 function showMain(){
@@ -5204,7 +5288,7 @@ function showMain(){
       }
     }
     renderRosterSafe();
-    applyRoleVisibility();
+    try{ if(typeof applyRoleVisibility==='function') try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){ console.log('applyRoleVisibility in showMain', e); }
   }catch(e){ console.error('showMain', e); }
 }
 function toggleMobileMenu(){
@@ -6472,7 +6556,7 @@ function openPage(id){
     }catch(e){}
   }, 200);
   
-  try{ if(typeof applyRoleVisibility==='function') applyRoleVisibility(); }catch(e){}
+  try{ if(typeof applyRoleVisibility==='function') try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}
 }
 function showMain(){
   try{
@@ -6516,7 +6600,7 @@ function showMain(){
       }
     }
     renderRosterSafe();
-    applyRoleVisibility();
+    try{ if(typeof applyRoleVisibility==='function') try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){ console.log('applyRoleVisibility in showMain', e); }
   }catch(e){ console.error('showMain', e); }
 }
 
@@ -6740,7 +6824,7 @@ function renderArchivePage(){
 }
 function viewArchive(){ let el=document.getElementById('archive-list'); if(!el) return; let archive=safeGetJSON('retail_roster_archive_v1',[]); if(archive.length===0){ el.innerHTML='<div style="font-size:11px;opacity:.6">No archived rosters</div>'; return; } el.innerHTML=archive.map((a,i)=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:6px"><span><b>'+a.label+'</b> - '+(a.dates[0]?.date||'')+' to '+(a.dates[a.dates.length-1]?.date||'')+' <small style="opacity:.6">('+new Date(a.archivedAt).toLocaleDateString()+')</small></span><span style="display:flex;gap:4px"><button onclick="restoreArchive('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:4px 8px;font-size:10px">RESTORE</button><button onclick="deleteArchive('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:4px 8px;font-size:10px">DELETE</button></span></div>').join(''); }
 function archiveCurrent(){ let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let curId=safeGet('retail_roster_currentFortnightId'); let cur=fns.find(f=>f.id===curId); if(!cur){ toast('No current roster'); return; } let archive=safeGetJSON('retail_roster_archive_v1',[]); archive.push({...JSON.parse(JSON.stringify(cur)),archivedAt:new Date().toISOString()}); safeSetJSON('retail_roster_archive_v1',archive); toast('Archived '+cur.label+' - synced'); viewArchive(); }
-function restoreArchive(idx){ let archive=safeGetJSON('retail_roster_archive_v1',[]); let item=archive[idx]; if(!item) return; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let exists=fns.find(f=>f.label===item.label); if(!exists){ fns.push({id:item.id,label:item.label,dates:item.dates,staff:item.staff}); safeSetJSON('retail_roster_byFortnight_v1',fns); } safeSet('retail_roster_currentFortnightId',item.id); toast('Restored '+item.label);  populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard(); viewArchive(); }
+function restoreArchive(idx){ let archive=safeGetJSON('retail_roster_archive_v1',[]); let item=archive[idx]; if(!item) return; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let exists=fns.find(f=>f.label===item.label); if(!exists){ fns.push({id:item.id,label:item.label,dates:item.dates,staff:item.staff}); safeSetJSON('retail_roster_byFortnight_v1',fns); } safeSet('retail_roster_currentFortnightId',item.id); toast('Restored '+item.label);  populateFortnightSelect(); renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){} updateMyScheduleCard(); viewArchive(); }
 function deleteArchive(idx){ showCustomConfirm('Delete archived roster?','', (ok)=>{ if(!ok) return; let archive=safeGetJSON('retail_roster_archive_v1',[]); archive.splice(idx,1); safeSetJSON('retail_roster_archive_v1',archive); toast('Deleted from archive - synced'); viewArchive(); }); }
 function clearArchive(){ showCustomConfirm('Clear all archived rosters?','', (ok)=>{ if(!ok) return; safeSetJSON('retail_roster_archive_v1',[]); toast('Archive cleared'); viewArchive(); }); }
 function viewUploadedExcels(){ const el=document.getElementById('uploaded-excels-list'); if(!el) return; const list=safeGetJSON('retail_roster_uploaded_excels_v1',[]); if(list.length===0){ el.innerHTML='<div style="font-size:11px;opacity:.6">No uploaded excels yet - upload on desktop, download on mobile</div>'; return; } el.innerHTML=list.map((a,i)=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:6px"><span><b>'+a.name+'</b> - '+a.label+' <small style="opacity:.6">('+new Date(a.ts).toLocaleDateString()+')</small></span><span style="display:flex;gap:4px"><button onclick="downloadUploadedExcel('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:10px;font-weight:900">DOWNLOAD</button><button onclick="deleteUploadedExcel('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:6px 10px;font-size:10px">DELETE</button></span></div>').join(''); }
@@ -7295,7 +7379,7 @@ function adminEditUser(idx){
     }catch(e){} 
     toast('Updated '+u.username+' - syncing live'); 
     renderAccountMgmtPage(); 
-    applyRoleVisibility(); 
+    try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} 
     setTimeout(function(){
       try{
         var state=getAllState();
@@ -8592,7 +8676,7 @@ function approveReq(idx){
     renderRequests();
     renderRosterSafe();
     try{ renderMySchedule(); }catch(e){}
-    applyRoleVisibility();
+    try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){}
     try{ updateRequestsBadge(); }catch(e){}
     toast('Approved - '+matchedStaffName+' → '+req.newShift+' - forcing sync to My Schedule (employee will see APPROVED in 3 sec)');
     // FIXED V164: Always send notification to requesting user - use username, not employee field
@@ -10910,10 +10994,10 @@ function changePassword(){
 
 
 
-function applyRoleVisibility(){
+window.applyRoleVisibility = function(){
   try{
-    var ar=getActualRole();
-    var im=isManagerRole(ar);
+    var ar=typeof getActualRole==='function'?getActualRole():'';
+    var im=typeof isManagerRole==='function'?isManagerRole(ar):false;
     if(im){
       document.body.classList.remove('staff-view');
       document.body.classList.add('manager-view');
