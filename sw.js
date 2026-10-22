@@ -1,11 +1,11 @@
-const CACHE_NAME = "repco-v185-maint-block";
+const CACHE_NAME = "repco-v187-clean-login";
 const urlsToCache = ["./","./manifest.json"];
-self.addEventListener('install', function(e){ self.skipWaiting(); e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(urlsToCache))); });
-self.addEventListener('activate', function(e){ e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>{ if(k!==CACHE_NAME && k.startsWith('repco-')) return caches.delete(k); }))).then(()=>self.clients.claim())); });
-self.addEventListener('fetch', function(e){
+self.addEventListener('install', e=>{ self.skipWaiting(); e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(urlsToCache))); });
+self.addEventListener('activate', e=>{ e.waitUntil(caches.keys().then(keys=>Promise.all(keys.map(k=>{ if(k!==CACHE_NAME && k.startsWith('repco-')) return caches.delete(k); }))).then(()=>self.clients.claim())); });
+self.addEventListener('fetch', e=>{
   if(e.request.url.includes('index.html') || e.request.mode==='navigate' || e.request.url.endsWith('/')){
     e.respondWith(fetch(e.request,{cache:'no-store'}).then(r=>r).catch(()=>caches.match(e.request).then(r=>r||caches.match('./'))));
   } else { e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))); }
 });
-self.addEventListener('push', function(e){ var d={}; try{ d=e.data?e.data.json():{}; }catch(e2){ d={title:'REPCO Roster',body:e.data?e.data.text():'New'}; } var t=d.title||'REPCO Roster'; var o={body:d.body||'Update',icon:'./icon-192.png',badge:'./icon-192.png',tag:d.tag||'repco-notif',data:d,requireInteraction:true}; e.waitUntil(self.registration.showNotification(t,o)); });
-self.addEventListener('notificationclick', function(e){ e.notification.close(); e.waitUntil(clients.openWindow('./')); });
+self.addEventListener('push', e=>{ var d={}; try{ d=e.data?e.data.json():{}; }catch{ d={title:'REPCO Roster',body:e.data?e.data.text():'New'}; } var t=d.title||'REPCO Roster'; var o={body:d.body||'Update',icon:'./icon-192.png',badge:'./icon-192.png',tag:d.tag||'repco-notif',data:d,requireInteraction:true}; e.waitUntil(self.registration.showNotification(t,o)); });
+self.addEventListener('notificationclick', e=>{ e.notification.close(); e.waitUntil(clients.openWindow('./')); });

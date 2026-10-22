@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V185_MAINT_BLOCKS_LOGIN";
+const BUILD_ID="20261022_V187_CLEAN_LOGIN";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -2441,41 +2441,47 @@ function restoreEditDraftIfNeeded(){
 function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
 
 async function doLogin(){
-  console.log('DO LOGIN CALLED V181');
+  console.log('DO LOGIN CALLED V187 - clean');
   try{
     var uEl=document.getElementById('login-user');
     var pEl=document.getElementById('login-pass');
     var err=document.getElementById('login-err');
-    if(!uEl || !pEl){ 
-      console.log('Login elements missing, trying direct get');
+    if(!uEl || !pEl){
       uEl=document.querySelector('#login-user');
       pEl=document.querySelector('#login-pass');
       if(!uEl || !pEl){ alert('Login elements missing'); return; }
     }
     var u=(uEl.value||'').trim();
     var p=(pEl.value||'').trim();
-    console.log('V184 Attempt login', u, 'pass len', p.length);
-    // V184: Allow login even if maintenance ON - hide overlay for login attempt
-    try{
-      var maintElCheck=document.getElementById('maintenance-main-v141');
-      if(maintElCheck && maintElCheck.classList.contains('show')){
-        console.log('V184: Maintenance ON but allowing login attempt');
-      }
-    }catch(e){}
-    console.log('Attempt login', u);
     if(!u||!p){
       if(err){ err.textContent='Enter username & password'; err.style.display='block'; }
       return;
     }
-    
-    // Get users from localStorage directly
+    // V187: Maintenance blocks regular login - only admin via cog icon per user request
+    var maintOn=false;
+    try{
+      var mm=localStorage.getItem('maintenance_mode');
+      if(mm==='true') maintOn=true;
+      var maintFirst=localStorage.getItem('repco_maintenance_first_v1');
+      if(maintFirst){
+        var mf=JSON.parse(maintFirst);
+        if(mf && mf.enabled) maintOn=true;
+      }
+    }catch(e){}
+    if(maintOn){
+      console.log('V187: Maintenance ON - blocking regular login, use admin cog');
+      var maintEl=document.getElementById('maintenance-main-v141');
+      if(maintEl){ maintEl.classList.add('show'); maintEl.style.display='flex'; }
+      document.body.classList.add('maintenance-active');
+      if(err){ err.textContent='Maintenance mode ON - only admin via cog icon'; err.style.display='block'; }
+      return;
+    }
+    // Get users - DO NOT OVERWRITE PASSWORDS
     var users=[];
     try{
       var raw=localStorage.getItem('retail_roster_users_v1');
       if(raw) users=JSON.parse(raw);
     }catch(e){ console.error('Parse users failed', e); users=[]; }
-    
-    // V184: Only create defaults if truly empty - preserves changed passwords
     if(!Array.isArray(users) || users.length===0){
       users=[
         {username:'admin',password:'admin123',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
@@ -2483,71 +2489,52 @@ async function doLogin(){
         {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'}
       ];
       try{ localStorage.setItem('retail_roster_users_v1', JSON.stringify(users)); }catch(e){}
-      console.log('V184: Created default users - storage was empty');
     }
-    
-    console.log('Users available', users.length);
-    
     var found=null;
     for(var i=0;i<users.length;i++){
       var x=users[i];
       if(!x.username) continue;
-      if(x.username.toLowerCase()===u.toLowerCase() && x.password===p){
-        found=x; break;
-      }
+      if(x.username.toLowerCase()===u.toLowerCase() && x.password===p){ found=x; break; }
     }
     if(!found){
       for(var i=0;i<users.length;i++){
         var x=users[i];
-        if(x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim()){
-          found=x; break;
-        }
+        if(x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim()){ found=x; break; }
       }
     }
-    // V184: No fallback - require exact password match, preserves changed passwords
-    
     if(!found){
       if(err){ err.textContent='Incorrect username or password: '+u; err.style.display='block'; }
       console.log('Login failed for', u);
       return;
     }
-    
-    console.log('Login found', found.username, found.role);
-    
     try{
-      var previousLastUser = '';
-      try{ previousLastUser = safeGet('repco_last_username')||''; }catch(e){}
-      var currentUserBeforeLogin = safeGet('repco_username')||'';
-      
+      var previousLastUser='';
+      try{ previousLastUser=safeGet('repco_last_username')||''; }catch(e){}
+      var currentUserBeforeLogin=safeGet('repco_username')||'';
       localStorage.setItem('repco_username', found.username);
       localStorage.setItem('repco_currentRole', (found.role||'').toLowerCase());
       localStorage.setItem('repco_last_activity', String(Date.now()));
       localStorage.setItem('retail_roster_session_v1', JSON.stringify(found));
-      try{ localStorage.setItem('repco_last_username', JSON.stringify(found.username)); }catch(e){ try{ localStorage.setItem('repco_last_username', found.username); }catch(e2){} }
-      // Also safeSet if exists
+      try{ localStorage.setItem('repco_last_username', found.username); }catch(e){}
       if(typeof safeSet==='function'){
         try{ safeSet('repco_username', found.username); }catch(e){}
         try{ safeSet('repco_last_username', found.username); }catch(e){}
         try{ safeSetJSON('retail_roster_session_v1', found); }catch(e){}
       }
-      
-      // FIXED V159: Same device switch - only latest user gets notifications
       if(currentUserBeforeLogin && currentUserBeforeLogin.toLowerCase()!==found.username.toLowerCase()){
-        console.log('Different user login on same device: '+currentUserBeforeLogin+' -> '+found.username+' - notifications now for '+found.username+' only');
+        console.log('Different user login: '+currentUserBeforeLogin+' -> '+found.username);
       }
       try{
-        var fcmToken = safeGet('repco_fcm_token')||'';
+        var fcmToken=safeGet('repco_fcm_token')||'';
         if(fcmToken && db && db.ref){
-          db.ref('fcm_tokens/'+found.username).set({token: fcmToken, username: found.username, ts: Date.now()});
+          db.ref('fcm_tokens/'+found.username).set({token:fcmToken,username:found.username,ts:Date.now()});
           if(previousLastUser && previousLastUser!==found.username){
             try{ db.ref('fcm_tokens/'+previousLastUser).remove(); }catch(e){}
           }
         }
       }catch(e){}
     }catch(e){ console.error('Save session failed', e); }
-    
     if(err){ err.textContent=''; err.style.display='none'; }
-    
     try{
       var lp=document.getElementById('login-page');
       if(lp) lp.style.display='none';
@@ -2555,62 +2542,40 @@ async function doLogin(){
       if(v65){ v65.style.display='block'; v65.classList.add('show'); }
       var gh=document.getElementById('global-header');
       if(gh){ gh.style.display='flex'; gh.classList.add('show'); }
-      if(typeof setupActivityTracking==='function'){
-        try{ setupActivityTracking(); }catch(e){}
-      }
-      // FIX: If employee (staff role), go straight to My Schedule page
+      if(typeof setupActivityTracking==='function'){ try{ setupActivityTracking(); }catch(e){} }
       var userRole=(found.role||'').toLowerCase();
       var isEmployee=userRole==='staff' || userRole==='employee' || (!['admin','manager','master','chris'].includes(userRole));
       if(isEmployee){
-        console.log('Employee login - going straight to My Schedule');
-        if(typeof openPage==='function'){
-          openPage('mysched-page');
-        }
-        if(typeof renderMySchedule==='function'){
-          try{ renderMySchedule(); }catch(e){ console.error('renderMySchedule failed', e); }
-        }
-        // FIX: Notifications ON by default - auto-enable on login if not explicitly disabled
+        if(typeof openPage==='function'){ openPage('mysched-page'); }
+        if(typeof renderMySchedule==='function'){ try{ renderMySchedule(); }catch(e){} }
         setTimeout(async () => {
-          try {
-            const notifSetting = safeGet('repco_notifications_enabled');
-            if (notifSetting !== 'false') {
-              if (Notification.permission === 'default' || Notification.permission === 'granted') {
-                console.log('Auto-enabling phone notifications on login (ON by default)');
+          try{
+            const notifSetting=safeGet('repco_notifications_enabled');
+            if(notifSetting!=='false'){
+              if(Notification.permission==='default' || Notification.permission==='granted'){
                 await enablePhoneNotifications();
               }
             }
-          } catch (e) {
-            console.log('Auto-enable on login failed', e);
-          }
-        }, 1500);
-      } else {
-        if(typeof showMain==='function'){
-          showMain();
-        } else {
+          }catch(e){}
+        },1500);
+      }else{
+        if(typeof showMain==='function'){ showMain(); }else{
           if(v65) v65.style.display='block';
           if(gh) gh.style.display='flex';
         }
-        if(typeof renderRosterSafe==='function'){
-          try{ renderRosterSafe(); }catch(e){ console.error('renderRosterSafe failed', e); }
-        }
+        if(typeof renderRosterSafe==='function'){ try{ renderRosterSafe(); }catch(e){} }
       }
       if(typeof toast==='function'){
-        // FIXED V164: Only show Welcome once per login session, not on every menu click
         try{
-          const lastWelcomeKey = 'repco_last_welcome_'+found.username;
-          const lastWelcome = safeGet(lastWelcomeKey);
-          const now = Date.now();
-          // Only show if never shown or >24h ago
-          if(!lastWelcome || (now - parseInt(lastWelcome,10)) > 24*60*60*1000){
+          const lastWelcomeKey='repco_last_welcome_'+found.username;
+          const lastWelcome=safeGet(lastWelcomeKey);
+          const now=Date.now();
+          if(!lastWelcome || (now-parseInt(lastWelcome,10))>24*60*60*1000){
             toast('Welcome '+found.username);
             safeSet(lastWelcomeKey, now.toString());
           }
-        }catch(e){
-          // If check fails, don't spam welcome
-          console.log('Welcome once check', e);
-        }
+        }catch(e){}
       }
-      console.log('Login success, page should show, role:', userRole, 'isEmployee:', isEmployee);
     }catch(e){
       console.error('Show main failed', e);
       alert('Login OK but show failed: '+e.message);
@@ -2622,13 +2587,16 @@ async function doLogin(){
     }
   }catch(e){
     console.error('doLogin outer error', e);
-    alert('Login error: '+e.message+'\n'+e.stack);
+    alert('Login error: '+e.message);
   }
 }
 
-
+function doLoginSync(){
+  return doLogin();
+}
 
 window.doLogin = doLogin;
+
 
 
 
