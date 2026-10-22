@@ -1922,7 +1922,56 @@ function applyCloudState(state,isInitial){
       }catch(e){}
     }
   });
+  // V210 FIX: Shift offers merge - NEW requests after final are NOT deleted, only old pending blocked
+  if(state['retail_roster_shift_offers_v1']!==undefined){
+    try{
+      var cloudOffers=null; try{ cloudOffers=JSON.parse(state['retail_roster_shift_offers_v1']); }catch(e){}
+      var localOffers=safeGetJSON('retail_roster_shift_offers_v1',[]);
+      if(Array.isArray(cloudOffers)){
+        var mergedOff=localOffers.slice();
+        var offIdIdx={};
+        for(var li=0;li<mergedOff.length;li++){ if(mergedOff[li]&&mergedOff[li].id) offIdIdx[mergedOff[li].id]=li; }
+        var changedOff=false;
+        for(var ci=0;ci<cloudOffers.length;ci++){
+          var co=cloudOffers[ci]; if(!co||!co.id) continue;
+          var del=null; try{ del=localStorage.getItem('retail_roster_deleted_offer_'+co.id); }catch(e){}
+          if(del) continue;
+          var ex=offIdIdx[co.id];
+          if(ex===undefined){
+            if(co.status==='pending'){
+              var blockedOff=false;
+              for(var lj=0;lj<mergedOff.length;lj++){
+                var ljOff=mergedOff[lj];
+                if(ljOff && ['denied','cancelled','accepted','cleared'].includes(ljOff.status) && ljOff.targetUsername && co.targetUsername && ljOff.targetUsername.toLowerCase()===co.targetUsername.toLowerCase() && ljOff.date===co.date){
+                  var lTs=ljOff.actionedTs||ljOff.deniedTs||ljOff.acceptedTs||ljOff.timestamp||0;
+                  var cTs=co.timestamp||co.actionedTs||0;
+                  if(cTs <= lTs){ blockedOff=true; break; }
+                }
+              }
+              if(!blockedOff){ mergedOff.push(co); offIdIdx[co.id]=mergedOff.length-1; changedOff=true; }
+            }else{ mergedOff.push(co); offIdIdx[co.id]=mergedOff.length-1; changedOff=true; }
+          }else{
+            var localOff=mergedOff[ex];
+            var localFinal=['accepted','denied','cancelled','cleared','rejected'].includes(localOff.status);
+            var cloudFinal=['accepted','denied','cancelled','cleared','rejected'].includes(co.status);
+            var cloudT=co.actionedTs||co.acceptedTs||co.deniedTs||co.timestamp||0;
+            var localT=localOff.actionedTs||localOff.acceptedTs||localOff.deniedTs||localOff.timestamp||0;
+            if(localFinal && !cloudFinal){ }
+            else if(!localFinal && cloudFinal){ mergedOff[ex]=co; changedOff=true; }
+            else if(cloudT>localT){ mergedOff[ex]=co; changedOff=true; }
+          }
+        }
+        var toRemOff=[]; var cloudOffIds={}; for(var cii=0;cii<cloudOffers.length;cii++){ if(cloudOffers[cii]&&cloudOffers[cii].id) cloudOffIds[cloudOffers[cii].id]=true; }
+        for(var lii=0;lii<mergedOff.length;lii++){ var lo=mergedOff[lii]; if(!lo||!lo.id) continue; if(!cloudOffIds[lo.id]){ var dm=null; try{ dm=localStorage.getItem('retail_roster_deleted_offer_'+lo.id); }catch(e){} if(dm){ toRemOff.push(lii); } } }
+        toRemOff.sort(function(a,b){return b-a;}); for(var ri=0;ri<toRemOff.length;ri++){ mergedOff.splice(toRemOff[ri],1); changedOff=true; }
+        if(changedOff){
+          try{ localStorage.setItem('retail_roster_shift_offers_v1', JSON.stringify(mergedOff)); if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE['retail_roster_shift_offers_v1']=JSON.stringify(mergedOff); }catch(e){}
+        }
+      }
+    }catch(e){ console.log('shift offers merge error',e); }
+  }
   // Merge requests - DANIEL FIX: denied always wins over pending
+
   if(state['retail_roster_requests_v2']!==undefined){
     try{
       var cloudReqs=null;
