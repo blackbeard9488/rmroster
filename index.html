@@ -2725,6 +2725,47 @@ function populateFortnightSelect(){
     if(selEl && selEl.value) currentSelectedId = selEl.value;
   }catch(e){}
   var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+  // V224 RECOVERY: If data is corrupted (0, fallback, or invalid), force reseed
+  var isCorrupted = false;
+  if(!fns || !Array.isArray(fns) || fns.length===0) isCorrupted = true;
+  else if(fns.length===1 && (fns[0].id==='0' || fns[0].id===0 || fns[0].id==='fallback' || !fns[0].dates || fns[0].dates.length===0)) isCorrupted = true;
+  else if(fns.some(function(fn){ return !fn || !fn.id || !fn.dates || fn.dates.length===0; })) {
+    // If more than half are invalid, treat as corrupted
+    var invalidCount = fns.filter(function(fn){ return !fn || !fn.id || !fn.dates || fn.dates.length===0; }).length;
+    if(invalidCount > fns.length/2) isCorrupted = true;
+  }
+  if(isCorrupted){
+    console.warn('V224: Corrupted fortnight data detected, forcing reseed', fns);
+    try{
+      localStorage.removeItem('retail_roster_byFortnight_v1');
+      localStorage.removeItem('retail_roster_currentFortnightId');
+      // Also clear corrupted Firebase data
+      try{
+        if(typeof FIREBASE_DB_URL!=='undefined'){
+          fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'DELETE',mode:'cors'}).catch(function(){});
+          fetch(FIREBASE_DB_URL+'/repco_state/retail_roster_byFortnight_v1.json',{method:'DELETE',mode:'cors'}).catch(function(){});
+        }
+        if(typeof db!=='undefined' && db && db.ref){
+          try{ db.ref('retail_roster_byFortnight_v1').remove(); }catch(e){}
+          try{ db.ref('repco_state/retail_roster_byFortnight_v1').remove(); }catch(e){}
+        }
+      }catch(e){}
+      if(typeof seedIfEmpty==='function') seedIfEmpty();
+      // Push clean data immediately
+      setTimeout(function(){
+        try{
+          var freshFns = safeGetJSON('retail_roster_byFortnight_v1',[]);
+          if(freshFns && freshFns.length>0){
+            if(typeof cloudSave==='function') cloudSave();
+            if(typeof FIREBASE_DB_URL!=='undefined'){
+              fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(freshFns),mode:'cors'}).catch(function(){});
+            }
+          }
+        }catch(e){}
+      }, 500);
+    }catch(e){}
+    fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+  }
   if(!fns || fns.length===0){
     try{ seedIfEmpty(); }catch(e){}
     fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
