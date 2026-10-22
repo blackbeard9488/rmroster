@@ -720,7 +720,7 @@ window.addEventListener('unhandledrejection', function(e){
 
 // ===== SINGLE EARLY-STUB BLOCK V217 FINAL - FIXES ReferenceError V213/V211/V215 - 1 BLOCK ONLY - NO DUPLICATES =====
 var MEMORY_STORE = {};
-var FIREBASE_DB_URL = "https://repco-roster-default-rtdb.firebaseio.com";
+var FIREBASE_DB_URL = "https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
 var FIREBASE_CONFIG = {apiKey:"AIzaSyDummy",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
 var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive","repco_username","repco_currentRole","repco_session","repco_cloud_ts","retail_roster_rosters_v1","repco_rosters"];
 var db = null;
@@ -2776,13 +2776,9 @@ function populateFortnightSelect(){
   }catch(e){}
   var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
   // V224 RECOVERY: If data is corrupted (0, fallback, or invalid), force reseed
+  try{if(fns && Array.isArray(fns)){ var _bef=fns.length; fns=fns.filter(function(fn){return fn && fn.id && fn.id!=='0' && fn.id!==0 && fn.id!=='fallback' && fn.dates && fn.dates.length>0;});}}catch(e){}
   var isCorrupted = false;
   if(!fns || !Array.isArray(fns) || fns.length===0) isCorrupted = true;
-    // V227 FIX: also filter out id=0 which shows as "0" in dropdown
-if(fns && Array.isArray(fns)){
-  fns=fns.filter(f=>f && f.id && f.id!=='0' && f.id!==0 && f.id!=='fallback' && f.dates && f.dates.length>0);
-  if(fns.length===0) isCorrupted=true;
-}
   else if(fns.length===1 && (fns[0].id==='0' || fns[0].id===0 || fns[0].id==='fallback' || !fns[0].dates || fns[0].dates.length===0)) isCorrupted = true;
   else if(fns.some(function(fn){ return !fn || !fn.id || !fn.dates || fn.dates.length===0; })) {
     // If more than half are invalid, treat as corrupted
@@ -9948,21 +9944,23 @@ function toggleMaintenance(){
 
 
 function checkMaintenance(){
+  // V185: Maintenance ON = block ALL users from logging in, only admin via cog icon can access
   try{
     var maintEl=document.getElementById('maintenance-main-v141');
     if(!maintEl) return;
-    var maintMode=false;
-    try{maintMode=localStorage.getItem('maintenance_mode')==='true';}catch(e){}
-    var local=JSON.parse(localStorage.getItem('repco_maintenance_first_v1')||'{"enabled":false}');
+    // V185: Check both maintenance flags - maintenance_mode (simple) and repco_maintenance_first_v1 (detailed)
+    var maintMode = false;
+    try{ maintMode = safeGet('maintenance_mode')==='true'; }catch(e){}
+    var local=safeGetJSON('repco_maintenance_first_v1',{enabled:false});
+try{if(local.enabled && local.ts && (Date.now()-local.ts > 5*60*1000)){ safeSet('maintenance_mode','false'); safeSetJSON('repco_maintenance_first_v1',{enabled:false}); local.enabled=false; console.log('FIXED: cleared stale maintenance'); }}catch(e){}
     if(maintMode) local.enabled=true;
-    // Auto-clear if older than 5 mins
-    if(local.enabled && local.ts){
-      var age=Date.now()-local.ts;
-      if(age>5*60*1000){
-        localStorage.removeItem('maintenance_mode');
-        localStorage.removeItem('repco_maintenance_first_v1');
-        local.enabled=false;
-      }
+    var timeEl=document.getElementById('maint-time-display');
+    if(timeEl){
+      try{
+        var now=new Date();
+        var timeFmt=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Brisbane',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+        timeEl.textContent='Time: '+timeFmt.format(now);
+      }catch(e){ timeEl.textContent='Time: '+new Date().toLocaleString(); }
     }
     if(local.enabled){
       maintEl.classList.add('show');
@@ -9971,21 +9969,21 @@ function checkMaintenance(){
       maintEl.classList.remove('show');
       document.body.classList.remove('maintenance-active');
     }
-    fetch('https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app/maintenance.json').then(r=>r.json()).then(j=>{
+    fetch('https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app/maintenance.json').then(function(r){return r.json();}).then(function(j){
       if(j && j.enabled){
-        var fAge=j.ts?(Date.now()-j.ts):999999999;
-        if(fAge<5*60*1000){
-          maintEl.classList.add('show');
-          document.body.classList.add('maintenance-active');
-        } else {
-          fetch('https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app/maintenance.json',{method:'DELETE',mode:'cors'}).catch(()=>{});
+        safeSetJSON('repco_maintenance_first_v1',j);
+        maintEl.classList.add('show');
+        document.body.classList.add('maintenance-active');
+      } else {
+        if(!local.enabled){
           maintEl.classList.remove('show');
           document.body.classList.remove('maintenance-active');
         }
       }
-    }).catch(()=>{});
-  }catch(e){}
+    }).catch(function(e){});
+  }catch(e){ console.error('checkMaintenance', e); }
 }
+
 function exportCSV(){
   // V193: Export Excel matching original template exactly with colours - Row1 dates from Col B every 2 cols, Row2 days, Col A names, 2 cols per day for start/end
   let cur=getCurrentFortnight() || getSelectedFortnight();
@@ -12835,6 +12833,7 @@ function applyRoleVisibility(role){
   var bypassLabel = document.getElementById('admin-bypass-label');
   if(bypassLabel) bypassLabel.style.display = isMgr ? 'flex' : 'none';
   
+  try{ if((r||'').toLowerCase()==='admin'){ var btns=document.querySelectorAll('#menu button, .menu button, #global-header button, .r-btn-consistent'); btns.forEach(function(b){ var tt=(b.textContent||'').toLowerCase(); if((tt.includes('today') && tt.includes('budd')) || (tt.includes('tomorrow') && tt.includes('budd'))){ b.style.display='none'; }}); } }catch(e){}
   console.log('Role visibility applied - role:', r, 'isMgr:', isMgr);
 }
 function hideAllPages(){document.querySelectorAll('.full-page').forEach(function(el){el.style.display='none';});}
