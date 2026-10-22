@@ -799,7 +799,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V203_IMPORT_CONFIRM_FIX";
+const BUILD_ID="20261022_V204_CLOSED_YELLOW_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -3318,6 +3318,51 @@ function isRosterEditing(){
 function renderRosterSafe(){
  try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){ console.log('populate error', e); }
 
+  // V204: AGGRESSIVE CLEANUP - Remove invalid CLOSED pending offers that cause yellow CLOSED stuck (main render)
+  try{
+    var _startupOffers=safeGetJSON('retail_roster_shift_offers_v1',[]);
+    var _hasInvalid=_startupOffers.some(function(o){ return o && o.status==='pending' && (o.newShift||'').toString().toUpperCase().includes('CLOSED'); });
+    if(_hasInvalid){
+      var _cleaned=_startupOffers.filter(function(o){
+        if(!o) return true;
+        if(o.status!=='pending') return true;
+        var ns=(o.newShift||'').toString().toUpperCase();
+        return !ns.includes('CLOSED');
+      });
+      safeSetJSON('retail_roster_shift_offers_v1', _cleaned);
+      console.log('V204 MAIN: Cleaned', _startupOffers.length-_cleaned.length, 'invalid CLOSED pending offers');
+      try{
+        if(typeof FIREBASE_DB_URL!=='undefined'){
+          fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(_cleaned),mode:'cors'}).catch(function(){});
+        }
+      }catch(e){}
+    }
+    var _fnsClean=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var _cleanedFns=false;
+    for(var _fi=0; _fi<_fnsClean.length; _fi++){
+      var _fn=_fnsClean[_fi];
+      if(!_fn.staff) continue;
+      for(var _si=0; _si<_fn.staff.length; _si++){
+        var _st=_fn.staff[_si];
+        if(!_st.pendingOffers) continue;
+        var _keys=Object.keys(_st.pendingOffers);
+        for(var _ki=0; _ki<_keys.length; _ki++){
+          var _k=_keys[_ki];
+          var _po=_st.pendingOffers[_k];
+          if(_po && ( (_po.newShift||'').toString().toUpperCase().includes('CLOSED') )){
+            delete _st.pendingOffers[_k];
+            _cleanedFns=true;
+            console.log('V204 MAIN: Cleaned CLOSED pending marker for', _st.firstName, 'idx', _k);
+          }
+        }
+        if(_st.pendingOffers && Object.keys(_st.pendingOffers).length===0) delete _st.pendingOffers;
+      }
+    }
+    if(_cleanedFns){
+      safeSetJSON('retail_roster_byFortnight_v1', _fnsClean);
+    }
+  }catch(e){ console.log('V204 main cleanup error', e); }
+
   try{
     if(isRosterEditing()){
       console.log('renderRosterSafe skipped - editing active');
@@ -3982,16 +4027,41 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
         var isYellowPending = false;
         var yellowPendingOffer = null;
         
-        // Signal 1: Visual - cell has ⏳ or yellow class
-        if(elText.indexOf('⏳')!==-1 || elClass.indexOf('cell-pending')!==-1 || origClassStr.indexOf('cell-pending')!==-1){
+        // Signal 1: Visual - cell has ⏳ or yellow class - V204: Exclude CLOSED from yellow detection
+        var elTextUpper = (elText||'').toString().toUpperCase();
+        if(!elTextUpper.includes('CLOSED') && (elText.indexOf('⏳')!==-1 || elClass.indexOf('cell-pending')!==-1 || origClassStr.indexOf('cell-pending')!==-1)){
           isYellowPending = true;
           console.log('V179: Yellow detected via visual ⏳/class', elText, elClass);
         }
-        // Signal 2: staff.pendingOffers marker
+        // Signal 2: staff.pendingOffers marker - V204: Exclude CLOSED newShift
         if(!isYellowPending && staff.pendingOffers && staff.pendingOffers[colIdx] && staff.pendingOffers[colIdx].status==='pending'){
-          isYellowPending = true;
-          yellowPendingOffer = staff.pendingOffers[colIdx];
-          console.log('V179: Yellow detected via staff.pendingOffers', yellowPendingOffer.newShift);
+          var nsCheck=(staff.pendingOffers[colIdx].newShift||'').toString().toUpperCase();
+          if(!nsCheck.includes('CLOSED')){
+            isYellowPending = true;
+            yellowPendingOffer = staff.pendingOffers[colIdx];
+            console.log('V179: Yellow detected via staff.pendingOffers', yellowPendingOffer.newShift);
+          } else {
+            console.log('V204: Skipping CLOSED pendingOffers marker - cleaning up', staff.pendingOffers[colIdx].newShift);
+            // Auto-clean this invalid marker
+            try{
+              delete staff.pendingOffers[colIdx];
+              // Save immediately
+              var fnsClean=safeGetJSON('retail_roster_byFortnight_v1',[]);
+              for(var fc=0; fc<fnsClean.length; fc++){
+                var fnC=fnsClean[fc];
+                if(!fnC.dates || !fnC.staff) continue;
+                for(var sc=0; sc<fnC.staff.length; sc++){
+                  if(fnC.staff[sc].username && fnC.staff[sc].username.toLowerCase()===pendingCheckUsername){
+                    if(fnC.staff[sc].pendingOffers && fnC.staff[sc].pendingOffers[colIdx]){
+                      var nc=(fnC.staff[sc].pendingOffers[colIdx].newShift||'').toString().toUpperCase();
+                      if(nc.includes('CLOSED')) delete fnC.staff[sc].pendingOffers[colIdx];
+                    }
+                  }
+                }
+              }
+              safeSetJSON('retail_roster_byFortnight_v1', fnsClean);
+            }catch(e){}
+          }
         }
         // Signal 3: Check fns for pending marker
         if(!isYellowPending){
@@ -6020,34 +6090,50 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     var cancelled = [];
     var remainingOffers = [];
     
+    // V204: Robust cancel - match by username+date, OR any CLOSED newShift for this user, OR any pending for this date
     for(var i=0; i<offers.length; i++){
       var o = offers[i];
       if(!o) continue;
-      // Match by username and date
       var usernameMatch = o.targetUsername && o.targetUsername.toLowerCase()===targetUsername.toLowerCase();
-      var dateMatch = o.date===dateISO;
-      // Also check if date matches via formatted
-      if(!dateMatch && dateISO){
+      var dateMatch = false;
+      if(o.date===dateISO) dateMatch=true;
+      else if(o.date && dateISO){
         try{
-          // Try matching by iso
-          if(o.date && o.date.includes && dateISO.includes){
+          if(o.date.includes && dateISO.includes){
             if(o.date.substring(0,10)===dateISO.substring(0,10)) dateMatch=true;
+            // Also try reverse
+            if(o.date.replace(/\//g,'-')===dateISO.replace(/\//g,'-')) dateMatch=true;
+            if(o.date.substring(0,10)===dateISO.substring(0,10).replace(/-/g,'/')) dateMatch=true;
+          }
+          // Match by formatted date like "24/10" vs "2026-10-24"
+          var dayPart=dateISO.split('T')[0].split('-');
+          if(dayPart.length===3){
+            var dd=dayPart[2];
+            var mm=dayPart[1];
+            var short1=dd+'/'+mm;
+            var short2=parseInt(dd)+'/'+parseInt(mm);
+            if(o.date && (o.date.includes(short1) || o.date.includes(short2) || (o.formattedDate && (o.formattedDate.includes(short1) || o.formattedDate.includes(short2))))) dateMatch=true;
           }
         }catch(e){}
       }
+      var isClosedOffer = (o.newShift||'').toString().toUpperCase().includes('CLOSED');
       
-      if(usernameMatch && dateMatch && o.status==='pending'){
-        console.log('V169: Cancelling offer', o.id, 'for', targetUsername, dateISO);
+      // V204: Cancel if username matches AND (date matches OR it's a CLOSED offer)
+      if(usernameMatch && o.status==='pending' && (dateMatch || isClosedOffer)){
+        console.log('V204: Cancelling offer', o.id, 'for', targetUsername, dateISO, 'isClosedOffer', isClosedOffer, 'dateMatch', dateMatch);
         o.status = 'cancelled';
         o.cancelledTs = Date.now();
         o.cancelledBy = safeGet('repco_username')||'admin';
         o.cancelReason = reason||'Admin removed shift';
         cancelled.push(o);
-        // Don't keep pending, mark cancelled but keep for history then remove
-        // For instant UI, remove from pending list
       } else {
         remainingOffers.push(o);
       }
+    }
+    // V204: If still 0 cancelled but we have a pending marker, force cancel by cleaning all pending for this user+date from local storage
+    if(cancelled.length===0){
+      console.log('V204: No offers matched via global array, forcing cleanup of local pending markers for', targetUsername, dateISO);
+      // Still proceed to clean local markers - don't return early
     }
     
     // Keep cancelled for audit but also create cleaned list without pending that was cancelled
@@ -6106,7 +6192,6 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
         if(!fn.dates || !fn.staff) continue;
         var dIdx = fn.dates.findIndex(function(d){ return d.iso===dateISO || d.date===dateISO; });
         if(dIdx===-1){
-          // Try substring match - dateISO might be DD/MM/YYYY or YYYY-MM-DD
           for(var di=0; di<fn.dates.length; di++){
             var fDate=fn.dates[di];
             if(!fDate) continue;
@@ -6116,10 +6201,19 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
             if(fDate.date && dateISO && (fDate.date===dateISO || fDate.date.replace('/','-')===dateISO || fDate.iso && fDate.iso.includes(dateISO) || dateISO.includes(fDate.date))){
               dIdx=di; break;
             }
-            // Also match by formatted date
             if(fn.dates[di].date && dateISO && fn.dates[di].date.replace(/\//g,'-')===dateISO.replace(/\//g,'-')){
               dIdx=di; break;
             }
+            // V204: Also match DD/MM
+            try{
+              var dp=dateISO.split('T')[0].split('-');
+              if(dp.length===3){
+                var dd=dp[2];
+                var mm=dp[1];
+                var short1=dd+'/'+mm;
+                if(fDate.date===short1 || (fDate.iso && fDate.iso.includes(mm+'-'+dd))) { dIdx=di; break; }
+              }
+            }catch(e){}
           }
         }
         if(dIdx===-1) continue;
