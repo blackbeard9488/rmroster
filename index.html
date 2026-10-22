@@ -665,14 +665,6 @@ body:not(.is-admin) .daily-total-casual {
   margin-top: 10px !important;
 }
 </style>
-
-<style id="bell-css">
-@keyframes bellRing{0%{transform:rotate(0)}10%{transform:rotate(15deg)}20%{transform:rotate(-15deg)}30%{transform:rotate(10deg)}40%{transform:rotate(-10deg)}50%{transform:rotate(0)}100%{transform:rotate(0)}}
-.bell-icon{animation:bellRing 1s ease-in-out infinite; display:inline-block}
-.cell-closed{ position:relative }
-
-</style>
-
 </head>
 <body>
 <div class="global-bg"><div class="red-corner-global"></div><div class="black-corner-global"></div></div>
@@ -794,7 +786,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V202F_ALARM_ONLY_NOTIF";
+const BUILD_ID="20261022_V203_CANCEL_FIX_ALARM_ONLY";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -967,7 +959,7 @@ function safeGetJSON(k,def){const r=safeGet(k);if(!r)return def;try{return JSON.
 function safeSetJSON(k,obj){safeSet(k, JSON.stringify(obj));}
 function getNow(){return new Date();}
 
-function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE',' SHOP CLOSED'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let a=parseInt(m[1])*60+parseInt(m[2]);let b=parseInt(m[3])*60+parseInt(m[4]);if(b<a)b+=1440;return (b-a)/60}
+function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let a=parseInt(m[1])*60+parseInt(m[2]);let b=parseInt(m[3])*60+parseInt(m[4]);if(b<a)b+=1440;return (b-a)/60}
 function netH(sh){let r=rawH(sh);if(r===0)return 0;return r>=5?r-0.5:r}
 function isCasual(st){return st.employmentType==='casual'}
 const FIREBASE_DB_URL="https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
@@ -3223,8 +3215,7 @@ function getSelectedFortnight(){
 
 
 function to12h(range){if(!range) return range; return range.split('-').map(t=>{let tt=t.trim().replace('A',''); const m=tt.match(/(\d{1,2}):(\d{2})/); if(!m) return t; let hh=parseInt(m[1]); let mm=m[2]; const am=hh<12?'AM':'PM'; let h=hh%12; if(h===0) h=12; return h+':'+mm+am;}).join('-');}
-function fmt(s){if(!s) return ''; if(s==='NA') return 'NA'; let up=s.toUpperCase().trim(); if(up==='OFF' || up==='' ) return ''; if(up==='AB'||up==='ABSENT') return 'AB'; if(up==='CLOSED'||up==='CLOSE'||up===' SHOP CLOSED') return 'CLOSED';
-  if(up==='C') return 'C'; let tf=safeGet('timeFormat')||'24h'; if(tf==='12h'){ let hasA=s.includes('A'); let base=s.replace(/A/g,'').trim(); return to12h(base)+(hasA?' A':''); } return s;}
+function fmt(s){if(!s) return ''; if(s==='NA') return 'NA'; let up=s.toUpperCase().trim(); if(up==='OFF' || up==='' ) return ''; if(up==='AB'||up==='ABSENT') return 'AB'; if(up==='CLOSED'||up==='CLOSE'||up==='SHOP CLOSED') return 'CLOSED'; let tf=safeGet('timeFormat')||'24h'; if(tf==='12h'){ let hasA=s.includes('A'); let base=s.replace(/A/g,'').trim(); return to12h(base)+(hasA?' A':''); } return s;}
 function deleteCurrentRoster(){
   try{
     var selected = getSelectedFortnight();
@@ -3343,7 +3334,7 @@ function renderRosterSafe(){
       if(isCurrentRoster){
         var todayFmt=new Date().toLocaleDateString('en-AU',{day:'2-digit',month:'2-digit'});
         indicatorEl.style.display='block';
-        indicatorEl.innerHTML='📅 CURRENT ROSTER - Contains today '+todayFmt+' ('+cur.label+') - Today is '+todayISO2;
+        indicatorEl.innerHTML='📅 CURRENT FORTNIGHT';
       } else {
         indicatorEl.style.display='none';
       }
@@ -3499,7 +3490,7 @@ function renderRosterSafe(){
         } else if(st.shopClosed && st.shopClosed[idx]) {
           cls='cell-closed';
           txt='CLOSED';
-        } else if((disp||'').toUpperCase().trim()==='CLOSED' || (disp||'').toUpperCase().trim()==='CLOSE' || (disp||'').toUpperCase().trim()===' SHOP CLOSED') {
+        } else if((disp||'').toUpperCase().trim()==='CLOSED' || (disp||'').toUpperCase().trim()==='CLOSE' || (disp||'').toUpperCase().trim()==='SHOP CLOSED') {
           cls='cell-closed';
           txt='CLOSED';
         } else if(off) {
@@ -4490,7 +4481,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               }
               console.log('Toggling ON AB for', staff.firstName, colIdx, 'keeping', keepTime, '->', actualShift);
             }
-          } else if(up==='CLOSED' || up==='CLOSE' || up===' SHOP CLOSED' || up==='C'){
+          } else if(up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED' || up==='C'){
             // V192: CLOSED handling - black cell, no countdown, totals logic: full-time counts original, casual not
             var currentlyClosed = staff.shopClosed && staff.shopClosed[colIdx];
             if(currentlyClosed){
@@ -4606,7 +4597,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             var revertDateObj = cur && cur.dates && cur.dates[colIdx] ? cur.dates[colIdx] : {day:'', date:'', iso:''};
             var revertLabel = (revertDateObj.day||'')+' '+(revertDateObj.date||'');
             var revertISO = revertDateObj.iso||revertDateObj.date||'';
-            console.log('V201:  SHOP CLOSED REVERT WHOLE DAY for', revertLabel, revertISO);
+            console.log('V201: SHOP CLOSED REVERT WHOLE DAY for', revertLabel, revertISO);
             try{
               var allStaffForRevert = cur.staff||[];
               var revertedCount=0;
@@ -4642,7 +4633,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             if(staff.shopClosed) staff.shopClosed[colIdx]=false;
             staff.shifts[colIdx]=actualShift;
             if(staff.absentApproved) staff.absentApproved[colIdx]=false;
-            // V201: Delete  SHOP CLOSED notifications for ALL staff on that date when CLOSED removed from any shift
+            // V201: Delete SHOP CLOSED notifications for ALL staff on that date when CLOSED removed from any shift
             try{
               var notifsDel=safeGetJSON('repco_notifications_v1',[]);
               var dateISOForDel=cur && cur.dates && cur.dates[colIdx] ? (cur.dates[colIdx].iso||cur.dates[colIdx].date||'') : '';
@@ -4661,7 +4652,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               });
               if(filteredNotifs.length!==notifsDel.length){
                 safeSetJSON('repco_notifications_v1', filteredNotifs);
-                console.log('V198: Deleted  SHOP CLOSED notification for', staff.firstName, dateISOForDel);
+                console.log('V198: Deleted SHOP CLOSED notification for', staff.firstName, dateISOForDel);
                 // Push to Firebase
                 try{
                   if(typeof FIREBASE_DB_URL!=='undefined'){
@@ -4679,7 +4670,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             var wholeDayDateObj = cur && cur.dates && cur.dates[colIdx] ? cur.dates[colIdx] : {day:'', date:'', iso:''};
             var wholeDayLabel = (wholeDayDateObj.day||'')+' '+(wholeDayDateObj.date||'');
             var wholeDayISO = wholeDayDateObj.iso||wholeDayDateObj.date||'';
-            console.log('V201:  SHOP CLOSED WHOLE DAY for', wholeDayLabel, wholeDayISO, 'colIdx', colIdx);
+            console.log('V201: SHOP CLOSED WHOLE DAY for', wholeDayLabel, wholeDayISO, 'colIdx', colIdx);
             // Apply to all staff in current fortnight for this colIdx who had a shift
             try{
               var allStaffForClosed = cur.staff||[];
@@ -4812,8 +4803,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   targetUsername: (ns.username||ns.firstName||'').toLowerCase(),
                   date: dateObjClosed.iso||dateObjClosed.date||'',
                   formattedDate: dayLabelClosed,
-                  message: '🚨 Shift '+(ns.originalShifts && ns.originalShifts[colIdx] ? ns.originalShifts[colIdx] : (ns===staff ? (staff.originalShifts[colIdx]||current||dayLabelClosed) : dayLabelClosed))+' cancelled -  SHOP CLOSED',
-                  title: '🚨 Shop Closed - ALERT',
+                  message: '🚨 Shift '+(ns.originalShifts && ns.originalShifts[colIdx] ? ns.originalShifts[colIdx] : (ns===staff ? (staff.originalShifts[colIdx]||current||dayLabelClosed) : dayLabelClosed))+' cancelled - SHOP CLOSED',
+                  title: '🚨 Shop Closed',
                   shiftDate: dayLabelClosed,
                   shiftIdx: colIdx,
                   timestamp: Date.now(),
@@ -4833,7 +4824,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 }
               }catch(e){ console.log('Closed notif push error', e); }
               var origShiftForMsg=staff.originalShifts[colIdx]||current||dayLabelClosed;
-              toast('🚨 Notified '+staff.firstName+': Shift '+origShiftForMsg+' cancelled -  SHOP CLOSED');
+              toast('🚨 Notified '+staff.firstName+': Shift '+origShiftForMsg+' cancelled - SHOP CLOSED');
             }catch(e){ console.log('Closed notification error', e); }
           } else if(isGreen){
             if(!staff.cellGreen) staff.cellGreen=[];
@@ -6010,292 +6001,120 @@ function renderShiftOffers(){
 
 function cancelPendingOffersForCell(targetUsername, dateISO, reason){
   try{
-    console.log('V169: Cancelling pending offers for', targetUsername, dateISO, reason);
+    console.log('V203: Cancelling pending offers for', targetUsername, dateISO, reason);
     var offers = safeGetJSON('retail_roster_shift_offers_v1',[]);
     var notifs = safeGetJSON('repco_notifications_v1',[]);
-    var cancelled = [];
-    var remainingOffers = [];
-    
-    for(var i=0; i<offers.length; i++){
-      var o = offers[i];
-      if(!o) continue;
-      // Match by username and date
-      var usernameMatch = o.targetUsername && o.targetUsername.toLowerCase()===targetUsername.toLowerCase();
-      var dateMatch = o.date===dateISO;
-      // Also check if date matches via formatted
-      if(!dateMatch && dateISO){
+    var cancelledCount=0;
+    var dateOnly = dateISO ? dateISO.substring(0,10) : '';
+    var updatedOffers = offers.map(function(o){
+      if(!o) return o;
+      var usernameMatch = false;
+      if(o.targetUsername){
+        var tu=o.targetUsername.toLowerCase();
+        var targetLower=targetUsername.toLowerCase();
+        if(tu===targetLower || tu.includes(targetLower) || targetLower.includes(tu)) usernameMatch=true;
+      }
+      if(!usernameMatch && o.firstName){
+        if(o.firstName.toLowerCase()===targetUsername.toLowerCase()) usernameMatch=true;
+      }
+      var dateMatch=false;
+      if(o.date){
+        var od=o.date;
+        if(od===dateISO) dateMatch=true;
+        else if(dateOnly && od.includes && od.includes(dateOnly)) dateMatch=true;
+        else if(od.substring && od.substring(0,10)===dateOnly) dateMatch=true;
         try{
-          // Try matching by iso
-          if(o.date && o.date.includes && dateISO.includes){
-            if(o.date.substring(0,10)===dateISO.substring(0,10)) dateMatch=true;
-          }
+          var dObj=new Date(dateISO);
+          var day=dObj.getDate();
+          var month=dObj.getMonth()+1;
+          var formatted1=String(day).padStart(2,'0')+'/'+String(month).padStart(2,'0');
+          var formatted2=day+'/'+month;
+          if(od.includes(formatted1) || od.includes(formatted2)) dateMatch=true;
         }catch(e){}
       }
-      
+      if(!dateMatch && o.dateISO){
+        if(o.dateISO===dateISO || (dateOnly && o.dateISO.includes(dateOnly))) dateMatch=true;
+      }
+      if(!o.date && !o.dateISO) dateMatch=true;
       if(usernameMatch && dateMatch && o.status==='pending'){
-        console.log('V169: Cancelling offer', o.id, 'for', targetUsername, dateISO);
         o.status = 'cancelled';
         o.cancelledTs = Date.now();
         o.cancelledBy = safeGet('repco_username')||'admin';
         o.cancelReason = reason||'Admin removed shift';
-        cancelled.push(o);
-        // Don't keep pending, mark cancelled but keep for history then remove
-        // For instant UI, remove from pending list
-      } else {
-        remainingOffers.push(o);
+        cancelledCount++;
       }
-    }
-    
-    // Keep cancelled for audit but also create cleaned list without pending that was cancelled
-    // For now, we keep cancelled in array but status != pending so it won't show
-    var updatedOffers = [];
-    for(var j=0; j<offers.length; j++){
-      var oj = offers[j];
-      if(!oj) continue;
-      var isCancelled = false;
-      for(var c=0; c<cancelled.length; c++){
-        if(cancelled[c].id===oj.id) isCancelled=true;
-      }
-      if(isCancelled){
-        // Mark as cancelled and keep for history but not pending
-        oj.status='cancelled';
-        updatedOffers.push(oj);
-      } else {
-        updatedOffers.push(oj);
-      }
-    }
-    
+      return o;
+    });
     safeSetJSON('retail_roster_shift_offers_v1', updatedOffers);
-    
-    // Delete notifications for this offer from employee phone
+    try{
+      var byF=safeGetJSON('retail_roster_byFortnight_v1',{});
+      var changed=false;
+      Object.keys(byF).forEach(function(fnKey){
+        var fnData=byF[fnKey];
+        if(!fnData || !fnData.staff) return;
+        var dates=fnData.dates||[];
+        var dateIdx=-1;
+        for(var di=0; di<dates.length; di++){
+          if(dates[di].iso===dateISO) { dateIdx=di; break; }
+          if(dateOnly && dates[di].iso && dates[di].iso.substring(0,10)===dateOnly) { dateIdx=di; break; }
+        }
+        if(dateIdx===-1) return;
+        fnData.staff.forEach(function(st){
+          if(!st) return;
+          var staffUser=(st.username||st.firstName||'').toLowerCase();
+          if(staffUser===targetUsername.toLowerCase() || (st.firstName && st.firstName.toLowerCase()===targetUsername.toLowerCase())){
+            if(st.pendingOffers && st.pendingOffers[dateIdx]){
+              delete st.pendingOffers[dateIdx];
+              if(Object.keys(st.pendingOffers).length===0) delete st.pendingOffers;
+              if(st.shifts) st.shifts[dateIdx]='OFF';
+              if(st.originalShifts){ try{ delete st.originalShifts[dateIdx]; }catch(e){} }
+              changed=true;
+            }
+          }
+        });
+      });
+      if(changed){ safeSetJSON('retail_roster_byFortnight_v1', byF); }
+    }catch(e){}
     var remainingNotifs = [];
-    var deletedNotifIds = [];
+    var deletedCount=0;
     for(var n=0; n<notifs.length; n++){
       var notif = notifs[n];
-      if(!notif) { remainingNotifs.push(notif); continue; }
-      var shouldDelete = false;
-      for(var cc=0; cc<cancelled.length; cc++){
-        var co = cancelled[cc];
-        if(notif.id===co.id || notif.id===co.notifId || notif.notifId===co.id){
-          shouldDelete = true;
-          deletedNotifIds.push(notif.id);
-          break;
-        }
-        // Also match by employee and date and type new_shift_offer
-        if(notif.type==='new_shift_offer' && notif.targetUsername===targetUsername.toLowerCase() && notif.date===dateISO){
-          shouldDelete = true;
-          deletedNotifIds.push(notif.id);
-          break;
-        }
-      }
-      if(!shouldDelete){
-        remainingNotifs.push(notif);
-      }
-    }
-    safeSetJSON('repco_notifications_v1', remainingNotifs);
-    
-    // V197: Remove pendingOffers marker from roster - ALL fortnights, and clear shifts to OFF - ROBUST DATE MATCHING
-    try{
-      var fns = safeGetJSON('retail_roster_byFortnight_v1',[]);
-      for(var fi=0; fi<fns.length; fi++){
-        var fn = fns[fi];
-        if(!fn.dates || !fn.staff) continue;
-        var dIdx = fn.dates.findIndex(function(d){ return d.iso===dateISO || d.date===dateISO; });
-        if(dIdx===-1){
-          // Try substring match - dateISO might be DD/MM/YYYY or YYYY-MM-DD
-          for(var di=0; di<fn.dates.length; di++){
-            var fDate=fn.dates[di];
-            if(!fDate) continue;
-            if(fDate.iso && dateISO && fDate.iso.substring(0,10)===dateISO.substring(0,10)){
-              dIdx=di; break;
-            }
-            if(fDate.date && dateISO && (fDate.date===dateISO || fDate.date.replace('/','-')===dateISO || fDate.iso && fDate.iso.includes(dateISO) || dateISO.includes(fDate.date))){
-              dIdx=di; break;
-            }
-            // Also match by formatted date
-            if(fn.dates[di].date && dateISO && fn.dates[di].date.replace(/\//g,'-')===dateISO.replace(/\//g,'-')){
-              dIdx=di; break;
-            }
-          }
-        }
-        if(dIdx===-1) continue;
-        for(var si=0; si<fn.staff.length; si++){
-          var st = fn.staff[si];
-          if(st.username && st.username.toLowerCase()===targetUsername.toLowerCase()){
-            // V190 FIX: Check if pending BEFORE deleting marker - was bug causing yellow to remain
-            var hadPendingMarker = !!(st.pendingOffers && st.pendingOffers[dIdx]);
-            var curShift = (st.shifts && st.shifts[dIdx]) ? (st.shifts[dIdx]||'') : '';
-            var isPendingShift = false;
-            if(hadPendingMarker) isPendingShift=true;
-            if(curShift.indexOf('⏳')!==-1) isPendingShift=true;
-            if(curShift.indexOf('01:00')!==-1 || curShift.indexOf('02:00')!==-1) isPendingShift=true;
-            for(var cc=0; cc<cancelled.length; cc++){
-              if(curShift===cancelled[cc].newShift || curShift.indexOf(cancelled[cc].newShift)!==-1){
-                isPendingShift=true; break;
-              }
-            }
-            // Also if there's any pending offer for this user/date, treat as pending
-            if(cancelled.length>0) isPendingShift=true;
-            // V202: Always clear pending marker, even if 0 offers found (fix for CLOSED yellow stuck)
-            if(st.pendingOffers && st.pendingOffers[dIdx]){
-              console.log('V202: Clearing pending marker from roster', st.username, dIdx, 'hadPending', hadPendingMarker, 'isPending', isPendingShift, 'curShift', curShift);
-              delete st.pendingOffers[dIdx];
-              if(st.pendingOffers && Object.keys(st.pendingOffers).length===0) delete st.pendingOffers;
-            } else {
-              // Even if no marker, ensure any CLOSED pending visual is cleared
-              try{
-                if(st.pendingOffers){
-                  // Check all pending for this staff and clear those matching date
-                  var keys=Object.keys(st.pendingOffers);
-                  for(var pk=0; pk<keys.length; pk++){
-                    var k=keys[pk];
-                    if(parseInt(k)===dIdx || k==dIdx){
-                      delete st.pendingOffers[k];
-                    }
-                  }
-                }
-              }catch(e){}
-            }
-            // V202: If this is a CLOSED cell showing as pending, force clear to CLOSED or OFF as appropriate
-            var curShiftUpper=String(curShift||'').toUpperCase();
-            var isClosedCell=curShiftUpper.includes('CLOSED');
-            if(isPendingShift || isClosedCell){
-              console.log('V202: Resetting yellow/CLOSED pending shift from', curShift, 'to OFF after cancel - user clicked YES');
-              if(!st.shifts) st.shifts=[];
-              // If it was CLOSED before, restore original if available, else OFF
-              var origForCancel = (st.originalShifts && st.originalShifts[dIdx]) ? st.originalShifts[dIdx] : null;
-              if(isClosedCell && origForCancel && !String(origForCancel).toUpperCase().includes('CLOSED')){
-                st.shifts[dIdx]=origForCancel;
-                if(st.shopClosed) st.shopClosed[dIdx]=false;
-              } else {
-                st.shifts[dIdx]='OFF';
-              }
-              if(st.originalShifts){
-                try{ delete st.originalShifts[dIdx]; delete st.originalShifts[String(dIdx)]; }catch(e){}
-              }
-              if(st.cellGreen) st.cellGreen[dIdx]=false;
-              if(st.cellG) st.cellG[dIdx]=false;
-              if(st.absentApproved) st.absentApproved[dIdx]=false;
-              if(st.unavailable) st.unavailable[dIdx]=false;
-            }
-          }
-        }
-      }
-      safeSetJSON('retail_roster_byFortnight_v1', fns);
-      // Also clear from current in-memory cur if it exists
+      if(!notif) continue;
+      var shouldDelete=false;
       try{
-        if(typeof cur!=='undefined' && cur && cur.staff){
-          for(var si=0; si<cur.staff.length; si++){
-            if(cur.staff[si].username && cur.staff[si].username.toLowerCase()===targetUsername.toLowerCase()){
-              if(cur.staff[si].pendingOffers && cur.staff[si].pendingOffers[dIdx]){
-                delete cur.staff[si].pendingOffers[dIdx];
-              }
-            }
+        var notifUser=(notif.targetUsername||notif.username||'').toLowerCase();
+        var targetLower=targetUsername.toLowerCase();
+        var userMatch=notifUser===targetLower || notifUser.includes(targetLower) || targetLower.includes(notifUser);
+        var dateMatchNotif=false;
+        if(notif.date===dateISO) dateMatchNotif=true;
+        else if(dateOnly && notif.date && notif.date.includes && notif.date.includes(dateOnly)) dateMatchNotif=true;
+        else if(notif.dateISO && notif.dateISO===dateISO) dateMatchNotif=true;
+        else if(dateOnly && notif.dateISO && notif.dateISO.includes(dateOnly)) dateMatchNotif=true;
+        if(userMatch && (dateMatchNotif || !notif.date)){
+          if(notif.type==='new_shift_offer' || notif.type==='shift_offer' || notif.type==='shift_change' || notif.type==='pending_shift'){
+            shouldDelete=true;
           }
         }
       }catch(e){}
-    }catch(e){ console.log('V174 cancel roster marker error', e); }
-    
-    // Push to Firebase to delete from employee phone instantly
+      if(shouldDelete){ deletedCount++; } else { remainingNotifs.push(notif); }
+    }
+    safeSetJSON('repco_notifications_v1', remainingNotifs);
+    console.log('V203: Cancelled '+cancelledCount+' offers, deleted '+deletedCount+' notifications');
     try{
       if(typeof FIREBASE_DB_URL!=='undefined'){
         fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(updatedOffers),mode:'cors'}).catch(function(){});
         fetch(FIREBASE_DB_URL+'/repco_notifications_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(remainingNotifs),mode:'cors'}).catch(function(){});
-        // Also push cancellation to employee's notification channel
-        for(var ci=0; ci<cancelled.length; ci++){
-          var canc = cancelled[ci];
-          var cancelNotif = {
-            id: 'cancel_'+canc.id+'_'+Date.now(),
-            type: 'shift_offer_cancelled',
-            employee: canc.employee,
-            targetUsername: canc.targetUsername,
-            date: canc.date,
-            message: 'Shift offer cancelled by admin - '+canc.formattedDate+' '+canc.newShift,
-            title: 'Shift Cancelled',
-            timestamp: Date.now(),
-            read: false,
-            cancelledOfferId: canc.id
-          };
-          fetch(FIREBASE_DB_URL+'/notifications/'+canc.targetUsername+'.json',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cancelNotif),mode:'cors'}).catch(function(){});
-        }
       }
       if(window.db){
         try{ window.db.ref('retail_roster_shift_offers_v1').set(updatedOffers); }catch(e){}
         try{ window.db.ref('repco_notifications_v1').set(remainingNotifs); }catch(e){}
-        for(var cii=0; cii<cancelled.length; cii++){
-          try{
-            var cc2 = cancelled[cii];
-            window.db.ref('notifications/'+cc2.targetUsername).push({
-              id: 'cancel_'+cc2.id+'_'+Date.now(),
-              type: 'shift_offer_cancelled',
-              employee: cc2.employee,
-              targetUsername: cc2.targetUsername,
-              date: cc2.date,
-              message: 'Shift offer cancelled by admin',
-              title: 'Shift Cancelled',
-              timestamp: Date.now(),
-              read: false,
-              cancelledOfferId: cc2.id
-            });
-          }catch(e){}
-        }
       }
-    }catch(e){ console.log('V169 cancel Firebase error', e); }
-    
-    console.log('V169: Cancelled', cancelled.length, 'offers, deleted', deletedNotifIds.length, 'notifications');
-    // V197: Force clear any remaining yellow markers - aggressive cleanup
-    try{
-      var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
-      var cleaned2=0;
-      for(var fi2=0; fi2<fns2.length; fi2++){
-        var fn2=fns2[fi2];
-        if(!fn2.dates || !fn2.staff) continue;
-        // If dIdx not found, clear for all dates matching username
-        if(cancelled.length>0){
-          for(var si2=0; si2<fn2.staff.length; si2++){
-            if(fn2.staff[si2].username && fn2.staff[si2].username.toLowerCase()===targetUsername.toLowerCase()){
-              if(fn2.staff[si2].pendingOffers){
-                // If specific date found, clear only that, else clear all pending for this user if cancelled
-                if(typeof dIdx!=='undefined' && dIdx!==-1 && fn2.staff[si2].pendingOffers[dIdx]){
-                  delete fn2.staff[si2].pendingOffers[dIdx];
-                  fn2.staff[si2].shifts[dIdx]='OFF';
-                  cleaned2++;
-                } else if(cancelled.length>0){
-                  // Clear all pending for this user that match cancelled offers
-                  for(var pd in fn2.staff[si2].pendingOffers){
-                    var po2=fn2.staff[si2].pendingOffers[pd];
-                    if(po2 && cancelled.some(function(c){ return c.id===po2.id || po2.newShift===c.newShift; })){
-                      delete fn2.staff[si2].pendingOffers[pd];
-                      fn2.staff[si2].shifts[pd]='OFF';
-                      cleaned2++;
-                    }
-                  }
-                }
-                if(fn2.staff[si2].pendingOffers && Object.keys(fn2.staff[si2].pendingOffers).length===0) delete fn2.staff[si2].pendingOffers;
-              }
-            }
-          }
-        }
-      }
-      if(cleaned2>0){
-        safeSetJSON('retail_roster_byFortnight_v1', fns2);
-        console.log('V197: Aggressive cleanup cleared '+cleaned2+' yellow cells');
-      }
-    }catch(e){ console.log('V197 aggressive cleanup error', e); }
-    if(cancelled.length>0){
-      try{ console.log('V180: Cancelled '+cancelled.length+' pending - no popup'); }catch(e){}
-      try{ renderShiftOffers(); }catch(e){}
-      try{ updateShiftOffersBadge(); }catch(e){}
-      try{ renderRosterSafe(); }catch(e){}
-      // Force reload from storage after short delay
-      setTimeout(function(){
-        try{ renderRosterSafe(); }catch(e){}
-        try{ renderShiftOffers(); }catch(e){}
-      }, 500);
-    }
-    return cancelled;
-  }catch(e){ console.error('cancelPendingOffersForCell error', e); return []; }
+    }catch(e){}
+    try{ renderRosterSafe(); }catch(e){}
+    try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); }catch(e){}
+  }catch(e){ console.error('V203 cancel error', e); }
 }
+
 
 
 function updateShiftOffersBadge(){
@@ -7056,7 +6875,7 @@ function showMain(){
 function parseDM(str){str=str.trim(); if(!str) return null; let m=str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1])); m=str.match(/^(\d{1,2})\/(\d{1,2})$/); if(m){ let y=new Date().getFullYear(); return new Date(y, parseInt(m[2])-1, parseInt(m[1])); } m=str.match(/^(\d{4})-(\d{2})-(\d{2})$/); if(m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])); return null;}
 function formatDDMM(date){const dd=String(date.getDate()).padStart(2,'0'); const mm=String(date.getMonth()+1).padStart(2,'0'); return dd+'/'+mm;}
 function expandDateRange(startStr, endStr){let s=parseDM(startStr); let e=parseDM(endStr); if(!s||!e) return []; if(e < s){let tmp=s; s=e; e=tmp;} let min=new Date(2026,0,1); let max=new Date(2040,0,1); if(s < min) s=min; if(e > max) e=max; let out=[]; let cur=new Date(s); while(cur <= e){ out.push(formatDDMM(cur)); cur.setDate(cur.getDate()+1); if(out.length>500) break; } return out;}
-function parseShiftRange(s){if(!s) return null; let up=s.toUpperCase().trim(); if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE',' SHOP CLOSED',''].includes(up)) return null; let m=s.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/); if(!m) return null; let start=parseInt(m[1])*60+parseInt(m[2]); let end=parseInt(m[3])*60+parseInt(m[4]); if(end<start) end+=1440; return {start,end,raw:s};}
+function parseShiftRange(s){if(!s) return null; let up=s.toUpperCase().trim(); if(['OFF','NA','ABSENT','AB','CLOSED','CLOSE','SHOP CLOSED',''].includes(up)) return null; let m=s.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/); if(!m) return null; let start=parseInt(m[1])*60+parseInt(m[2]); let end=parseInt(m[3])*60+parseInt(m[4]); if(end<start) end+=1440; return {start,end,raw:s};}
 
 
 function mapUsernameToStaffKey(username){
@@ -9748,7 +9567,7 @@ function exportCSV(){
         var isWeekend=['SAT','SUN','SATURDAY','SUNDAY'].indexOf((cur.dates[di].day||'').toUpperCase().substring(0,3))!==-1 || ['SAT','SUN'].indexOf((cur.dates[di].day||'').toUpperCase())!==-1;
         // Parse shift into start/end
         var start='', end='';
-        if(up==='CLOSED' || up==='CLOSE' || up===' SHOP CLOSED' || isClosed){
+        if(up==='CLOSED' || up==='CLOSE' || up==='SHOP CLOSED' || isClosed){
           start='CLOSED'; end='CLOSED';
         } else if(up==='AB' || up==='ABSENT' || up.indexOf(' AB')!==-1 || isAbsent){
           // Show original time + AB
@@ -10825,7 +10644,7 @@ function renderMySchedule(){
           var d=fn.dates[di];
           var shiftStr=myStaffInFn.shifts && myStaffInFn.shifts[di]!=null ? myStaffInFn.shifts[di] : 'OFF';
           var up=String(shiftStr).toUpperCase().trim();
-          if(['OFF','NA','AB','ABSENT','CLOSED','CLOSE',' SHOP CLOSED',''].indexOf(up)!==-1 || up==='' || up.indexOf('CLOSED')!==-1 || up.indexOf('AB')!==-1) continue; // V192: AB and CLOSED excluded from active countdown - show next shift
+          if(['OFF','NA','AB','ABSENT','CLOSED','CLOSE','SHOP CLOSED',''].indexOf(up)!==-1 || up==='' || up.indexOf('CLOSED')!==-1 || up.indexOf('AB')!==-1) continue; // V192: AB and CLOSED excluded from active countdown - show next shift
           var parsed=parseShiftRange(shiftStr);
           if(!parsed) continue;
           var iso=d.iso;
@@ -10966,7 +10785,7 @@ function renderMySchedule(){
         var dateLabelClosed=currentShift.date.day+' '+currentShift.date.date;
         var isFullClosed = myStaff.employmentType!=='casual';
         var totalInfo = isFullClosed ? 'Full-time: original '+fmt(origForClosed)+' counted to totals' : 'Casual: not counted to totals';
-        htmlStr+='<div class="card" style="background:#000;color:#fff;border:3px solid #fff;"><div style="font-weight:900;font-size:12px;color:#fff">🚨  SHOP CLOSED - '+dateLabelClosed+'</div><div style="font-weight:900;font-size:16px;margin:6px 0;color:#fff">🚨  SHOP CLOSED</div><div style="font-size:11px;background:#fff;color:#000;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Shop Closed - no countdown</div><div style="margin-top:6px;font-size:10px;color:#ccc">Original: '+(origForClosed?fmt(origForClosed):'N/A')+' - '+totalInfo+'</div></div>';
+        htmlStr+='<div class="card" style="background:#000;color:#fff;border:3px solid #fff;"><div style="font-weight:900;font-size:12px;color:#fff">🚨 SHOP CLOSED - '+dateLabelClosed+'</div><div style="font-weight:900;font-size:16px;margin:6px 0;color:#fff">🚨 SHOP CLOSED</div><div style="font-size:11px;background:#fff;color:#000;padding:4px 8px;border-radius:9999px;display:inline-block;font-weight:900">Status: Shop Closed - no countdown</div><div style="margin-top:6px;font-size:10px;color:#ccc">Original: '+(origForClosed?fmt(origForClosed):'N/A')+' - '+totalInfo+'</div></div>';
       } else if(isCurrG){
         var dateLabelG=currentShift.date.day+' '+currentShift.date.date;
         var displayG=fmt(currentShift.shift);
