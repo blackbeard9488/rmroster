@@ -1,0 +1,5 @@
+*.html text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+* text=auto

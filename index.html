@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 
-<link rel="icon" href="data:image/x-icon;,">
+<link rel="icon" type="image/png" href="./Logo.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
@@ -548,7 +548,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="login-page" style="position:fixed;inset:0;width:100vw;height:100vh;background:#fff;z-index:999999;display:flex;align-items:center;justify-content:center;overflow:hidden">
   <div class="red-corner" style="position:absolute;top:0;left:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#E30613;clip-path:polygon(0 0,100% 0,0 100%);z-index:1"></div>
   <div class="black-corner" style="position:absolute;bottom:0;right:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#0a0a0a;clip-path:polygon(100% 0,100% 100%,0 100%);z-index:1"></div>
-  <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;width:100%;max-width:500px">
+  <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;width:100%;max-width:500px"><img src="./Logo.png" alt="Repco Roster Management" style="width:320px;max-width:85vw;height:auto;margin-bottom:24px;border-radius:16px;border:3px solid #111;box-shadow:8px 8px 0 #111;background:#fff;padding:8px">
     <div class="repco-logo" style="display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:32px;transform:skewX(-12deg)">
       <div style="display:flex;gap:6px;align-items:center">
         <div style="width:48px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
@@ -730,7 +730,38 @@ function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){} MEMORY_STORE[k]=
 function safeGetJSON(k,d){try{var raw=safeGet(k,null); if(raw===null||raw===undefined) return d; if(typeof raw==="object") return raw; return JSON.parse(raw);}catch(e){return d;}}
 function safeSetJSON(k,o){try{var s=JSON.stringify(o); safeSet(k,s);}catch(e){MEMORY_STORE[k]=JSON.stringify(o);}}
 function getAllState(){var state={}; CLOUD_KEYS.forEach(function(k){state[k]=safeGetJSON(k,null);}); state._ts=Date.now(); return state;}
-async function cloudLoadAll(){try{var r=await safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){var data=await r.json(); if(data&&data._ts){var lt=parseInt(safeGet("repco_cloud_ts","0")||"0"); if(data._ts>lt){Object.keys(data).forEach(function(k){if(k==="_ts") return; safeSetJSON(k,data[k]);}); safeSet("repco_cloud_ts",String(data._ts)); try{renderAllSafe();}catch(e){}}}} var r2=await safeCloudFetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{cache:"no-store"}); if(r2.ok){var d2=await r2.json(); if(Array.isArray(d2)) safeSetJSON("retail_roster_requests_v2",d2);} }catch(e){}}
+async function cloudLoadAll(){
+  try{
+    var r=await safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); 
+    if(r.ok){
+      var data=await r.json(); 
+      if(data&&data._ts){
+        // V224: Ignore corrupted fortnight data from cloud
+        if(data.retail_roster_byFortnight_v1){
+          var cfns = data.retail_roster_byFortnight_v1;
+          try{
+            if(typeof cfns==='string') cfns = JSON.parse(cfns);
+            var isCorruptedCloud = false;
+            if(!cfns || !Array.isArray(cfns) || cfns.length===0) isCorruptedCloud = true;
+            else if(cfns.length===1 && (cfns[0].id==='0' || cfns[0].id===0 || cfns[0].id==='fallback' || !cfns[0].dates)) isCorruptedCloud = true;
+            if(isCorruptedCloud){
+              console.warn('V224: Ignoring corrupted cloud fortnight data', cfns);
+              delete data.retail_roster_byFortnight_v1;
+            }
+          }catch(e){}
+        }
+        var lt=parseInt(safeGet("repco_cloud_ts","0")||"0"); 
+        if(data._ts>lt){
+          Object.keys(data).forEach(function(k){if(k==="_ts") return; 
+            // Skip corrupted key if we deleted it
+            if(k==='retail_roster_byFortnight_v1' && !data[k]) return;
+            safeSetJSON(k,data[k]);
+          }); 
+          safeSet("repco_cloud_ts",String(data._ts)); 
+          try{renderAllSafe();}catch(e){}
+        }
+      }
+    } var r2=await safeCloudFetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{cache:"no-store"}); if(r2.ok){var d2=await r2.json(); if(Array.isArray(d2)) safeSetJSON("retail_roster_requests_v2",d2);} }catch(e){}}
 function cloudSave(){try{var state=getAllState(); var json=JSON.stringify(state); if(db&&db.ref){db.ref("repco_state").set(state).then(function(){safeSet("repco_cloud_ts",String(state._ts));}).catch(function(){safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});});}else{safeCloudFetch(FIREBASE_DB_URL+"/repco_state.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:json}).catch(function(){});} try{var reqs=safeGetJSON("retail_roster_requests_v2",[]); safeCloudFetch(FIREBASE_DB_URL+"/retail_roster_requests_v2.json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(reqs)}).catch(function(){});}catch(e){}}catch(e){}}
 function getISO(d){return d.toISOString().slice(0,10);}
 function formatBrisbane(d){try{return d.toLocaleString("en-AU",{timeZone:"Australia/Brisbane",weekday:"short",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}catch(e){return d.toString();}}
@@ -2449,14 +2480,33 @@ function isAdminTypeAccount(){
 // Override showMain and openPage to apply role and block buddies for admin
 let _origShowMain = window.showMain;
 window.showMain = function(){
-  if(typeof _origShowMain === 'function') _origShowMain();
-  else {
-    document.querySelectorAll('.full-page').forEach(e=>e.classList.remove('show'));
-    let rv=document.getElementById('repco-v65'); if(rv) rv.classList.add('show');
-    let gh=document.getElementById('global-header'); if(gh) gh.classList.add('show');
-    renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}
-  }
+  try{
+    // Hide all full pages
+    document.querySelectorAll('.full-page').forEach(e=>{ e.classList.remove('show'); e.style.display='none'; });
+    let rv=document.getElementById('repco-v65'); 
+    if(rv){ rv.classList.add('show'); rv.style.display='block'; }
+    let gh=document.getElementById('global-header'); 
+    if(gh){ gh.classList.add('show'); gh.style.display='flex'; }
+    // Ensure roster is rendered
+    if(typeof populateFortnightSelect==='function'){ try{ populateFortnightSelect(); }catch(e){} }
+    if(typeof renderRosterSafe==='function'){ try{ renderRosterSafe(); }catch(e){} }
+    // Welcome only once per session
+    try{
+      if(!window._hasWelcomed){
+        let uname = (typeof safeGet==='function' ? safeGet('repco_username') : localStorage.getItem('repco_username')) || '';
+        if(uname){
+          let users = (typeof safeGetJSON==='function' ? safeGetJSON('retail_roster_users_v1',[]) : []);
+          let found = users.find(x=>x.username.toLowerCase()===uname.toLowerCase());
+          if(found){
+            // Don't spam welcome, just set flag
+            window._hasWelcomed = true;
+          }
+        }
+      }
+    }catch(e){}
+  }catch(e){ console.error('showMain override error', e); }
   try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){}
+  try{ if(typeof updateMyScheduleCard==='function') updateMyScheduleCard(); }catch(e){}
 };
 
 function isManagerRole(r,u){
@@ -12736,7 +12786,53 @@ function showModal(title,body,onConfirm){var t=document.getElementById('modal-ti
 function closeModal(){var m=document.getElementById('custom-modal'); if(m) m.classList.remove('show');}
 function doLogout(){safeSet('repco_username',''); safeSet('repco_currentRole',''); safeSet('repco_session',''); safeSetJSON('retail_roster_session_v1',null); safeSetJSON('repco_currentUser',null); var gh=document.getElementById('global-header'); if(gh){gh.classList.remove('show'); gh.style.display='none';} var main=document.getElementById('repco-v65'); if(main){main.classList.remove('show'); main.style.display='none';} hideAllPages(); var lp=document.getElementById('login-page'); if(lp) lp.style.display='flex'; toast('Logged out');}
 function isManagerRole(){var role=safeGet('repco_currentRole','')||''; if(role==='admin'||role==='master'||role==='manager') return true; return false;}
-function applyRoleVisibility(role){var r=(role||'').toLowerCase(); var isMgr=(r==='admin'||r==='master'||r==='manager'); var isAdmin=(r==='admin'); document.querySelectorAll('.manager-only').forEach(function(el){if(isMgr||isAdmin){el.style.display='';}else{el.style.display='none';}}); document.querySelectorAll('.staff-only').forEach(function(el){if(isMgr){el.style.display='none';}else{el.style.display='';} if(isAdmin) el.style.display='';}); var hiddenSec=document.getElementById('roster-hidden'); if(hiddenSec){if(isMgr||isAdmin) hiddenSec.style.display='block'; else hiddenSec.style.display='none';}}
+function applyRoleVisibility(role){
+  var r=(role||getActualRole()||'').toLowerCase();
+  var isMgr=(r==='admin'||r==='master'||r==='manager'||r==='chris'||r==='owner');
+  var isAdmin=(r==='admin'||r==='master'||r==='manager');
+  // Legacy: if role is staff, never manager
+  if(r==='staff') { isMgr=false; isAdmin=false; }
+  
+  // Generic classes
+  document.querySelectorAll('.manager-only').forEach(function(el){ el.style.display = (isMgr||isAdmin) ? '' : 'none'; });
+  document.querySelectorAll('.staff-only').forEach(function(el){ el.style.display = isMgr ? 'none' : ''; if(isAdmin) el.style.display=''; });
+  var hiddenSec=document.getElementById('roster-hidden'); 
+  if(hiddenSec){ hiddenSec.style.display = (isMgr||isAdmin) ? 'block' : 'none'; }
+
+  // ===== MENU VISIBILITY BY ROLE =====
+  // Staff: ROSTER, SHIFT OFFERS, TODAY'S BUDDIES, TOMORROW'S BUDDIES, MY SCHEDULE, ACCOUNT, LOG OUT
+  // Manager/Admin/Master: ALL menus
+  var menuMap = {
+    'btn-roster': true, // everyone
+    'btn-requests': isMgr, // manager only
+    'btn-shift-offers': true, // everyone (staff see own offers, manager see all)
+    'btn-unavail': isMgr, // STAFF UNAVAILABLE - manager only
+    'btn-today': true, // everyone
+    'btn-tomorrow': true, // everyone
+    'btn-mysched': true, // MY SCHEDULE - everyone
+    'btn-options': isMgr, // OPTIONS - manager only
+    'btn-archive': isMgr, // ARCHIVE - manager only
+    'btn-account': true, // ACCOUNT - everyone
+    'btn-hidden': isMgr, // HIDDEN STAFF - manager only
+    'btn-public-holiday': isMgr, // PUBLIC HOLIDAYS - manager only
+    'btn-logout': true // LOG OUT - everyone
+  };
+  
+  Object.keys(menuMap).forEach(function(btnId){
+    var el = document.getElementById(btnId);
+    if(el){
+      el.style.display = menuMap[btnId] ? '' : 'none';
+    }
+  });
+  
+  // ROSTER CONTROLS: DELETE ROSTER and BYPASS only for managers
+  var delBtn = document.getElementById('delete-roster-btn');
+  if(delBtn) delBtn.style.display = isMgr ? '' : 'none';
+  var bypassLabel = document.getElementById('admin-bypass-label');
+  if(bypassLabel) bypassLabel.style.display = isMgr ? 'flex' : 'none';
+  
+  console.log('Role visibility applied - role:', r, 'isMgr:', isMgr);
+}
 function hideAllPages(){document.querySelectorAll('.full-page').forEach(function(el){el.style.display='none';});}
 function showPage(id){hideAllPages(); var main=document.getElementById('repco-v65'); if(main) main.style.display='none'; var target=document.getElementById(id); if(target) target.style.display='block'; if(id==='requests-page') renderRequestsSafe(); if(id==='staff-unavailable-page'){renderUnavailCalendar(); renderMyRequests(); populateCorrectionDates(); populateCorrectionDropdown();} if(id==='hidden-staff-page'){renderHiddenStaffFormGrid(); renderHiddenStaffList();} if(id==='public-holidays-page'){renderPHStaffSelect(); renderPHAllocList(); renderExistingPH();} if(id==='buddies-page'){renderBuddiesToday();} if(id==='buddies-tomorrow-page'){renderBuddiesTomorrow();} if(id==='my-schedule-page'){populateMyScheduleFortnights(); renderMySchedule();} if(id==='account-page') renderAccountPage(); if(id==='account-mgmt-page') renderAccountMgmtPage(); if(id==='archive-page') renderArchive();}
 function showMain(){hideAllPages(); var main=document.getElementById('repco-v65'); if(main){main.style.display='block'; main.classList.add('show');} renderRosterSafe();}

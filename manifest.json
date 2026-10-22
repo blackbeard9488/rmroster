@@ -1,24 +1,21 @@
 {
-  "name": "REPCO Roster - ALPHA",
-  "short_name": "REPCO Roster",
-  "description": "REPCO Roster - Staff scheduling",
-  "start_url": "./?v=196",
-  "scope": "./",
+  "name": "REPCO ROSTER MANAGEMENT",
+  "short_name": "REPCO",
+  "start_url": "./",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "browser"],
-  "background_color": "#111111",
+  "background_color": "#FFFFFF",
   "theme_color": "#E30613",
-  "orientation": "portrait",
-  "categories": ["business", "productivity"],
-  "lang": "en-AU",
-  "dir": "ltr",
-  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "./icon-192.png",
-      "sizes": "192x192",
+      "src": "./Logo.png",
+      "sizes": "1024x1024",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
     },
     {
       "src": "./icon-512.png",
@@ -27,23 +24,15 @@
       "purpose": "any maskable"
     },
     {
-      "src": "./icon-1024.png",
-      "sizes": "1024x1024",
+      "src": "./icon-192.png",
+      "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
-      "src": "./Logo.png",
-      "sizes": "2000x2000",
-      "type": "image/png",
-      "purpose": "any"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Today's Roster",
-      "url": "./?today=1",
-      "description": "View today's roster"
+      "src": "./apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
     }
   ]
 }

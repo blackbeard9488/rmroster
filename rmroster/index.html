@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 
-<link rel="icon" href="data:image/x-icon;,">
+<link rel="icon" type="image/png" href="./Logo.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
 <title>REPCO ROSTER</title>
@@ -548,7 +548,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="login-page" style="position:fixed;inset:0;width:100vw;height:100vh;background:#fff;z-index:999999;display:flex;align-items:center;justify-content:center;overflow:hidden">
   <div class="red-corner" style="position:absolute;top:0;left:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#E30613;clip-path:polygon(0 0,100% 0,0 100%);z-index:1"></div>
   <div class="black-corner" style="position:absolute;bottom:0;right:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#0a0a0a;clip-path:polygon(100% 0,100% 100%,0 100%);z-index:1"></div>
-  <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;width:100%;max-width:500px">
+  <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;width:100%;max-width:500px"><img src="./Logo.png" alt="Repco Roster Management" style="width:320px;max-width:85vw;height:auto;margin-bottom:24px;border-radius:16px;border:3px solid #111;box-shadow:8px 8px 0 #111;background:#fff;padding:8px">
     <div class="repco-logo" style="display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:32px;transform:skewX(-12deg)">
       <div style="display:flex;gap:6px;align-items:center">
         <div style="width:48px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
@@ -2480,14 +2480,33 @@ function isAdminTypeAccount(){
 // Override showMain and openPage to apply role and block buddies for admin
 let _origShowMain = window.showMain;
 window.showMain = function(){
-  if(typeof _origShowMain === 'function') _origShowMain();
-  else {
-    document.querySelectorAll('.full-page').forEach(e=>e.classList.remove('show'));
-    let rv=document.getElementById('repco-v65'); if(rv) rv.classList.add('show');
-    let gh=document.getElementById('global-header'); if(gh) gh.classList.add('show');
-    renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}
-  }
+  try{
+    // Hide all full pages
+    document.querySelectorAll('.full-page').forEach(e=>{ e.classList.remove('show'); e.style.display='none'; });
+    let rv=document.getElementById('repco-v65'); 
+    if(rv){ rv.classList.add('show'); rv.style.display='block'; }
+    let gh=document.getElementById('global-header'); 
+    if(gh){ gh.classList.add('show'); gh.style.display='flex'; }
+    // Ensure roster is rendered
+    if(typeof populateFortnightSelect==='function'){ try{ populateFortnightSelect(); }catch(e){} }
+    if(typeof renderRosterSafe==='function'){ try{ renderRosterSafe(); }catch(e){} }
+    // Welcome only once per session
+    try{
+      if(!window._hasWelcomed){
+        let uname = (typeof safeGet==='function' ? safeGet('repco_username') : localStorage.getItem('repco_username')) || '';
+        if(uname){
+          let users = (typeof safeGetJSON==='function' ? safeGetJSON('retail_roster_users_v1',[]) : []);
+          let found = users.find(x=>x.username.toLowerCase()===uname.toLowerCase());
+          if(found){
+            // Don't spam welcome, just set flag
+            window._hasWelcomed = true;
+          }
+        }
+      }
+    }catch(e){}
+  }catch(e){ console.error('showMain override error', e); }
   try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){}
+  try{ if(typeof updateMyScheduleCard==='function') updateMyScheduleCard(); }catch(e){}
 };
 
 function isManagerRole(r,u){
