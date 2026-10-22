@@ -889,7 +889,7 @@ async function checkForIndexUpdate(isInitial){
 // SAFETY: Backup before GitHub html update - ensures data not lost
 function backupBeforeUpdate(){
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var users=safeGetJSON('retail_roster_users_v1',[]);
     var reqs=safeGetJSON('retail_roster_requests_v2',[]);
     if(fns && fns.length>0){
@@ -911,7 +911,7 @@ function backupBeforeUpdate(){
 
 function recoverDataAfterUpdate(){
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var isEmpty=!fns || fns.length===0;
     var backup=safeGetJSON('retail_roster_backup_autosave_v1',null);
     if(isEmpty && backup && backup.fns && backup.fns.length>0){
@@ -1000,7 +1000,7 @@ db=null; try{ if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
 // === PHONE NOTIFICATIONS OUTSIDE BROWSER: serviceWorker, PushManager, Notification + FCM ready ===
 // Verified, possible with HTTPS + VAPID - ALPHA Build
 
-const VAPID_PUBLIC_KEY = "BGJ3bW_3e0yH8v7F0u6K9L2M5N8P1Q4R7S0T3U6V9W2X5Y8Z1A4B7C0D3E6F9G2H5J8K1L4M7N0P3Q6R9"; // Replace with your actual VAPID public key from Firebase Console > Project Settings > Cloud Messaging
+const VAPID_PUBLIC_KEY = "BCXS2IuNY422eKKDNLevZZoR-Xd2FapTKx-ujxeIXztVo8bvJx4A9EP57OxlqbzGf5p5XsFbsNkTfyk6qwXxi_4"; // Replace with your actual VAPID public key from Firebase Console > Project Settings > Cloud Messaging
 let messaging = null;
 let swRegistration = null;
 
@@ -1245,19 +1245,36 @@ async function subscribeWebPush() {
       return subscription;
     }
 
-    // VAPID key must be converted to Uint8Array
+    // VAPID key must be converted to Uint8Array - FIXED V168 handles invalid key
     function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-      const rawData = window.atob(base64);
-      const outputArray = new Uint8Array(rawData.length);
-      for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
+      try{
+        if(!base64String || base64String.includes('Replace') || base64String.length < 80){
+          throw new Error('Invalid VAPID key - using FCM fallback');
+        }
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+          outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+      }catch(e){
+        console.warn('VAPID decode failed, using FCM only', e.message);
+        throw e;
       }
-      return outputArray;
     }
 
-    const vapidKeyArray = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    let vapidKeyArray;
+    try{
+      vapidKeyArray = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    }catch(vapidErr){
+      console.warn('VAPID invalid, skipping Web Push, using FCM');
+      // Fallback to FCM only - still return true for notification enabled
+      safeSet('repco_notifications_enabled', 'true');
+      safeSet('repco_webpush_vapid_failed', 'true');
+      return {endpoint: 'fcm-fallback', toJSON: function(){return {keys:{}};}};
+    }
     
     subscription = await swRegistration.pushManager.subscribe({
       userVisibleOnly: true,
@@ -2554,7 +2571,7 @@ const INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
 let activityCheckInterval = null;
 let draftSaveTimeout = null;
 function updateActivity(){ try{ lastActivityTs = Date.now(); safeSet('repco_last_activity', String(lastActivityTs)); if(typeof MEMORY_STORE !== 'undefined') MEMORY_STORE['repco_last_activity'] = String(lastActivityTs); }catch(e){} }
-function saveEditDraft(rowIdx, colIdx, value, staffName, dateLabel){ try{ var draft={ rowIdx: rowIdx, colIdx: colIdx, value: value, staffName: staffName||'', dateLabel: dateLabel||'', username: safeGet('repco_username')||'', ts: Date.now(), fortnightId: safeGet('retail_roster_currentFortnightId')||'' }; safeSetJSON('retail_roster_edit_draft_v1', draft); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:draft.username}); } }catch(e){ console.error('saveEditDraft', e); } }
+function saveEditDraft(rowIdx, colIdx, value, staffName, dateLabel){ try{ var draft={ rowIdx: rowIdx, colIdx: colIdx, value: value, staffName: staffName||'', dateLabel: dateLabel||'', username: safeGet('repco_username')||'', ts: Date.now(), fortnightId: safeGet('retail_roster_currentFortnightId')||'' }; safeSetJSON('retail_roster_edit_draft_v1', draft); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); } if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:draft.username}); } }catch(e){ console.error('saveEditDraft', e); } }
 function clearEditDraft(){ try{ localStorage.removeItem('retail_roster_edit_draft_v1'); if(typeof MEMORY_STORE !== 'undefined') delete MEMORY_STORE['retail_roster_edit_draft_v1']; }catch(e){} }
 function getEditDraft(){ try{ var d=safeGetJSON('retail_roster_edit_draft_v1',null); return d; }catch(e){ return null; } }
 
@@ -2585,7 +2602,7 @@ function restoreEditDraftIfNeeded(){
   }catch(e){ console.error('restoreEditDraftIfNeeded', e); }
 }
 
-function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
+function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); } if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); } if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
 
 
 // REMOVED duplicate - SINGLE 
@@ -2600,7 +2617,7 @@ window.doLogin = doLogin;
 function doLogout(){
   try{
     var currentUsername = safeGet('repco_username')||'';
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     if(fns && fns.length>0){
       safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:currentUsername, reason:'logout'});
     }
@@ -2774,7 +2791,7 @@ function populateFortnightSelect(){
     var selEl = document.getElementById('fortnight-select');
     if(selEl && selEl.value) currentSelectedId = selEl.value;
   }catch(e){}
-  var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+  var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
   // V224 RECOVERY: If data is corrupted (0, fallback, or invalid), force reseed
   try{if(fns && Array.isArray(fns)){ var _bef=fns.length; fns=fns.filter(function(fn){return fn && fn.id && fn.id!=='0' && fn.id!==0 && fn.id!=='fallback' && fn.dates && fn.dates.length>0;});}}catch(e){}
   var isCorrupted = false;
@@ -2997,7 +3014,7 @@ function isStaffDeleted(st){
 
 function deduplicateAllRosters(showToast){
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var totalRemoved=0;
     var deletedRemoved=0;
     for(var f=0;f<fns.length;f++){
@@ -3077,10 +3094,22 @@ function filterDeletedStaffFromCloud(fns){
 
 function getCurrentFortnight(){
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
+    // FIX V168: Handle object from Firebase (not array)
+    if(fns && !Array.isArray(fns)){
+      if(typeof fns==='object'){
+        // If it's {id: {...}} or {0: {...}} convert to array
+        var vals = Object.values(fns);
+        // Filter out non-roster objects
+        fns = vals.filter(function(v){ return v && (v.dates || v.id); });
+      }
+    }
     if(!fns || fns.length===0){
       try{ seedIfEmpty(); }catch(e){}
       fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      if(fns && !Array.isArray(fns) && typeof fns==='object'){
+        fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); });
+      }
     }
     if(!fns || fns.length===0){
       return null;
@@ -3132,7 +3161,10 @@ function getCurrentFortnight(){
 
 function getSelectedFortnight(){
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
+    if(fns && !Array.isArray(fns) && typeof fns==='object'){
+      fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); });
+    }
     if(!fns || fns.length===0) return null;
     // Check select element first (user manual selection via dropdown)
     var sel=document.getElementById('fortnight-select');
@@ -3602,7 +3634,7 @@ function renderRosterSafe(){
       if(hiddenInStorage && hiddenInStorage.length>0){
         console.log('Hidden staff in storage but not in roster:', hiddenInStorage.length, hiddenInStorage);
         // Try to auto-add hidden staff that are missing from current roster
-        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
         var curId=safeGet('retail_roster_currentFortnightId');
         var curFn=fns.find(function(f){ return f.id===curId; });
         if(curFn){
@@ -3689,7 +3721,7 @@ function editStaffType(globalIdx){
 }
 function setStaffEmploymentType(globalIdx, type){
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var curId=safeGet('retail_roster_currentFortnightId');
     var fn=fns.find(function(f){ return f.id===curId; });
     if(!fn){ toast('Roster not found'); return; }
@@ -3743,7 +3775,7 @@ function saveStaffName(globalIdx){
     // Format: Firstname, not FIRSTNAME - capitalize first letter only for first name, uppercase for last
     var formattedFirst=first.charAt(0).toUpperCase()+first.slice(1).toLowerCase();
     var formattedLast=last.toUpperCase();
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var curId=safeGet('retail_roster_currentFortnightId');
     var fn=fns.find(function(f){ return f.id===curId; });
     if(!fn || !fn.staff[globalIdx]){ toast('Staff not found'); return; }
@@ -3813,7 +3845,7 @@ function deleteStaffFromRoster(globalIdx, fromAll){
     showCustomConfirm(fromAll ? 'DELETE FROM ALL ROSTERS - LIVE' : 'Delete from this roster', confirmMsg, function(confirmed){
       if(!confirmed) return;
       try{
-        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
         if(fromAll){
           // Delete from ALL rosters
           var deletedCount=0;
@@ -4939,7 +4971,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               if(staff.unavailable) staff.unavailable[colIdx]=false;
             }
           }
-          var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+          var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
           var fnIdx=fns.findIndex(function(f){return f.id===cur.id;});
           if(fnIdx!==-1){
             var targetStaff=fns[fnIdx].staff[rowIdx];
@@ -5274,7 +5306,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               }
               // Update fns array for persistence
               try{
-                var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
+                var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns2 && !Array.isArray(fns2) && typeof fns2==='object'){ fns2 = Object.values(fns2).filter(function(v){ return v && (v.dates || v.id); }); }
                 var fnIdx2=fns2.findIndex(function(f){return f.id===cur.id;});
                 if(fnIdx2!==-1 && fns2[fnIdx2].staff && fns2[fnIdx2].staff[rowIdx]){
                   var s2=fns2[fnIdx2].staff[rowIdx];
@@ -5652,7 +5684,7 @@ function showMain(){
       if(_mt2) _mt2.textContent='☰';
     }catch(e){}
     if(typeof updateActivity==='function') updateActivity();
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     if(fns.length===0){ toast('No roster'); return; }
     document.querySelectorAll('.full-page').forEach(function(e){ e.classList.remove('show'); });
     var repco=document.getElementById('repco-v65');
@@ -5867,7 +5899,7 @@ function sendShiftChangeNotification(employeeName, oldShift, newShift, dateISO){
     if(!targetUsername){
       // Fallback: try to find staff in roster that matches name, get their username if stored in staff
       try{
-        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+        var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
         for(var fi=0; fi<fns.length; fi++){
           var fn=fns[fi];
           if(!fn.staff) continue;
@@ -6420,7 +6452,7 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
     console.log('V169: Cancelled', cancelled.length, 'offers, deleted', deletedNotifIds.length, 'notifications');
     // V197: Force clear any remaining yellow markers - aggressive cleanup
     try{
-      var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns2 && !Array.isArray(fns2) && typeof fns2==='object'){ fns2 = Object.values(fns2).filter(function(v){ return v && (v.dates || v.id); }); }
       var cleaned2=0;
       for(var fi2=0; fi2<fns2.length; fi2++){
         var fn2=fns2[fi2];
@@ -6648,7 +6680,7 @@ function adminEditPendingOffer(offerId){
     offer.editedTs=Date.now();
     safeSetJSON('retail_roster_shift_offers_v1', offers);
     try{
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       for(var fi=0; fi<fns.length; fi++){
         var fn=fns[fi];
         if(!fn.dates || !fn.staff) continue;
@@ -6675,7 +6707,7 @@ function adminEditPendingOffer(offerId){
 function cleanupStalePendingOffers(){
   try{
     var offers=safeGetJSON('retail_roster_shift_offers_v1',[]);
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var cleaned=0;
     for(var fi=0; fi<fns.length; fi++){
       var fn=fns[fi];
@@ -7185,7 +7217,7 @@ function showMain(){
     if(typeof updateActivity==='function') updateActivity();
     // V136: Refresh data when going to main roster - no manual refresh needed
     try{ forceRefreshCurrentData(); }catch(e){}
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     if(fns.length===0){ toast('No roster'); return; }
     document.querySelectorAll('.full-page').forEach(function(e){ e.classList.remove('show'); e.style.display='none'; });
     var repco=document.getElementById('repco-v65');
@@ -7645,7 +7677,7 @@ function importExcelFile(file){
         // Check if already exists with different type (admin changed)
         var existingType=null;
         try{
-          var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+          var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
           if(fns && fns.length>0){
             var curFn=getCurrentFortnight();
             if(curFn){
@@ -7702,7 +7734,7 @@ function importExcelFile(file){
       if(staff.length===0){ toast('No staff found in Column A'); return; }
       
       // Now handle update current if differences found that admin hasn't adjusted OR create next/new roster
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       var curFn=getCurrentFortnight();
       var matchingFn=null;
       // V191: Find matching fortnight by dates - if date doesn't exist, will add new roster (never overwrite)
@@ -7781,7 +7813,7 @@ function importExcelFile(file){
           // Fallback to native confirm
           var ok = confirm('Create New Roster?\nFound '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.\n\nOK = Create NEW roster\nCancel = Update CURRENT roster');
           (function(ok){
-          var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
+          var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns2 && !Array.isArray(fns2) && typeof fns2==='object'){ fns2 = Object.values(fns2).filter(function(v){ return v && (v.dates || v.id); }); }
           if(ok){
             var newFn={
               id:'fn_'+Date.now(),
@@ -7800,7 +7832,7 @@ function importExcelFile(file){
             var cur=getCurrentFortnight();
             if(cur){
               // Update current preserving admin edits
-              var fns3=safeGetJSON('retail_roster_byFortnight_v1',[]);
+              var fns3=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns3 && !Array.isArray(fns3) && typeof fns3==='object'){ fns3 = Object.values(fns3).filter(function(v){ return v && (v.dates || v.id); }); }
               var curIdx=fns3.findIndex(function(f){return f.id===cur.id;});
               if(curIdx!==-1){
                 // Merge logic - preserve admin edits
@@ -7835,7 +7867,7 @@ function importExcelFile(file){
           return;
         }
         _confirmFn('Create New Roster?', 'Found '+dates.length+' days from '+dates[0].date+' to '+dates[dates.length-1].date+' with '+staff.length+' staff.<br><br>Create as new roster or update current?<br><br>Click OK to create NEW roster, Cancel to update CURRENT roster.', function(ok){
-          var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]);
+          var fns2=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns2 && !Array.isArray(fns2) && typeof fns2==='object'){ fns2 = Object.values(fns2).filter(function(v){ return v && (v.dates || v.id); }); }
           if(ok){
             // Create new
             var newFn={
@@ -7910,121 +7942,221 @@ function importExcelFile(file){
 function triggerImport(){
   let hi=document.getElementById('hidden-import-input'); if(!hi){ toast('Import input missing'); return; } hi.value=''; hi.onchange=function(){ if(hi.files && hi.files[0]){ importExcelFile(hi.files[0]); } }; hi.click();
 }
+
+function generatePasswordFromName(firstName, lastName, existingPasswords){
+  if(!firstName) return 'password';
+  var base = firstName.trim();
+  // Capitalize first letter, keep rest as is? Spec says first name as password
+  // We'll use firstName exactly as stored (e.g., Michael)
+  var pwd = base;
+  var lowerMap = {};
+  existingPasswords.forEach(function(p){ lowerMap[p.toLowerCase()]=true; });
+  if(!lowerMap[pwd.toLowerCase()]){
+    return pwd;
+  }
+  // Duplicate first name found, add last name initial
+  if(lastName && lastName.trim()!==''){
+    var initial = lastName.trim()[0].toUpperCase();
+    var withInitial = base + initial;
+    if(!lowerMap[withInitial.toLowerCase()]){
+      return withInitial;
+    }
+    // If still duplicate (e.g., two Michael B), add full last initial + number
+    var i=2;
+    while(lowerMap[(withInitial+String(i)).toLowerCase()]){
+      i++;
+    }
+    return withInitial+String(i);
+  }
+  // No last name, add number
+  var i=2;
+  while(lowerMap[(pwd+String(i)).toLowerCase()]){
+    i++;
+  }
+  return pwd+String(i);
+}
+
+function getAllExistingPasswords(users){
+  var arr=[];
+  if(users) users.forEach(function(u){ if(u.password) arr.push(u.password); });
+  return arr;
+}
+
+
 function renderAccountMgmtPage(){ 
+  try{
   const el=document.getElementById('account-mgmt-inner'); 
-  if(!el) return; 
-  let users=safeGetJSON('retail_roster_users_v1',[]); 
-  const fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-  const cur=getSelectedFortnight() || getCurrentFortnight();
-  // FIXED V162: Include all roster staff + hidden staff in check
-  let allRosterStaff = [];
-  let hiddenStaff = [];
+  if(!el){
+    console.error('account-mgmt-inner not found, retrying');
+    setTimeout(function(){ try{ renderAccountMgmtPage(); }catch(e){} }, 300);
+    return;
+  }
+  let users=safeGetJSON('retail_roster_users_v1',[]);
+  if(!Array.isArray(users)) users=[];
+  let fnsRaw=safeGetJSON('retail_roster_byFortnight_v1',[]);
+  let fns=[];
+  if(Array.isArray(fnsRaw)) fns=fnsRaw;
+  else if(fnsRaw && typeof fnsRaw==='object'){
+    fns = Object.values(fnsRaw).filter(function(v){ return v && (v.dates || v.id || v.staff); });
+  }
+  let cur=null;
+  try{
+    cur=getSelectedFortnight() || getCurrentFortnight();
+  }catch(e){ console.error('get fortnight error in account mgmt', e); }
+  if(!cur && fns.length>0) cur=fns[0];
+  
+  // FIX V168: List ALL staff found on roster including but not duplicating hidden staff
+  let allRosterStaffMap={};
+  let hiddenStaff=[];
   try{ 
-    if(cur && cur.staff) allRosterStaff = cur.staff.slice();
     hiddenStaff = safeGetJSON('retail_roster_hidden_staff_v1',[]) || [];
-    // Also check old hidden key
+    if(!Array.isArray(hiddenStaff)) hiddenStaff=[];
+  }catch(e){ hiddenStaff=[]; }
+  try{
+    // Gather from ALL fortnights to get complete staff list
+    for(var fi=0; fi<fns.length; fi++){
+      var fn=fns[fi];
+      if(!fn.staff) continue;
+      for(var si=0; si<fn.staff.length; si++){
+        var s=fn.staff[si];
+        if(!s) continue;
+        var key=((s.firstName||'')+'_'+(s.lastName||'')).toLowerCase().trim();
+        if(!key || key==='_') continue;
+        if(!allRosterStaffMap[key]){
+          allRosterStaffMap[key]={
+            firstName: s.firstName||'',
+            lastName: s.lastName||'',
+            name: s.name||((s.firstName||'')+' '+(s.lastName||'')),
+            employmentType: s.employmentType||'casual',
+            username: s.username||'',
+            foundIn: []
+          };
+        }
+        if(fn.id && allRosterStaffMap[key].foundIn.indexOf(fn.id)===-1) allRosterStaffMap[key].foundIn.push(fn.id);
+      }
+    }
+    // Also include current
+    if(cur && cur.staff){
+      for(var si=0; si<cur.staff.length; si++){
+        var s=cur.staff[si];
+        var key=((s.firstName||'')+'_'+(s.lastName||'')).toLowerCase().trim();
+        if(!key || key==='_') continue;
+        if(!allRosterStaffMap[key]){
+          allRosterStaffMap[key]={
+            firstName: s.firstName||'',
+            lastName: s.lastName||'',
+            name: s.name||((s.firstName||'')+' '+(s.lastName||'')),
+            employmentType: s.employmentType||'casual',
+            username: s.username||'',
+            foundIn: []
+          };
+        }
+      }
+    }
+  }catch(e){ console.log('Roster staff gather error', e); }
+  
+  // Add hidden staff but don't duplicate
+  try{
     if(hiddenStaff.length===0){
       var oldHidden = safeGetJSON('retail_roster_hidden_v1',[]) || [];
       if(oldHidden.length>0 && typeof oldHidden[0]==='string'){
         hiddenStaff = oldHidden.map(function(name){
           var parts=name.split(' ');
-          return {firstName: parts[0]||name, lastName: parts.slice(1).join(' ')||'', username: (parts[0]||name).toLowerCase()};
+          return {firstName: parts[0]||name, lastName: parts.slice(1).join(' ')||'', username: (parts[0]||name).toLowerCase(), isHidden:true};
         });
       }
     }
-    // Combine for linking check
-    allRosterStaff = allRosterStaff.concat(hiddenStaff.map(function(h){
-      return {firstName: h.firstName||'', lastName: h.lastName||'', username: h.username||''};
-    }));
-  }catch(e){ console.log('Roster staff gather error', e); }
+    for(var hi=0; hi<hiddenStaff.length; hi++){
+      var h=hiddenStaff[hi];
+      if(!h) continue;
+      var key=((h.firstName||'')+'_'+(h.lastName||'')).toLowerCase().trim();
+      if(!key || key==='_') {
+        if(h.username) key=h.username.toLowerCase();
+        else continue;
+      }
+      if(!allRosterStaffMap[key]){
+        allRosterStaffMap[key]={
+          firstName: h.firstName||'',
+          lastName: h.lastName||'',
+          name: (h.firstName||'')+' '+(h.lastName||''),
+          employmentType: 'casual',
+          username: h.username||'',
+          isHidden: true,
+          foundIn: ['hidden']
+        };
+      } else {
+        // Mark as also hidden but keep
+        allRosterStaffMap[key].isHidden=true;
+      }
+    }
+  }catch(e){ console.log('hidden gather error', e); }
   
-  // FIXED V162: Auto-create missing user accounts from roster if not exist (show all staff as in roster)
+  let allRosterStaff = Object.values(allRosterStaffMap).sort(function(a,b){
+    return (a.lastName||'').localeCompare(b.lastName||'') || (a.firstName||'').localeCompare(b.firstName||'');
+  });
+  
+  // Auto-create missing user accounts from roster - password = firstName unless duplicate then + lastname initial
   try{
     var existingUsernames = {};
     users.forEach(function(u){ if(u.username) existingUsernames[u.username.toLowerCase()]=true; });
+    var existingPwds = getAllExistingPasswords(users);
     var toCreate = [];
-    // Check roster staff
-    if(cur && cur.staff){
-      cur.staff.forEach(function(s){
-        var baseUsername = (s.firstName||'').toLowerCase();
-        if(!baseUsername) return;
-        if(existingUsernames[baseUsername]) return;
-        // Special handling for Michaels and others
-        if(s.firstName==='Michael' && s.lastName==='BLAIK') baseUsername='michaelb';
-        if(s.firstName==='Michael' && s.lastName==='EVANS') baseUsername='michaele';
-        if(existingUsernames[baseUsername]) return;
-        // Create
-        toCreate.push({username: baseUsername, firstName: s.firstName, lastName: s.lastName, role: 'staff', employmentType: s.employmentType||'casual'});
-        existingUsernames[baseUsername]=true;
-      });
-    }
-    // Check hidden staff
-    hiddenStaff.forEach(function(h){
-      var baseUsername = (h.username||h.firstName||'').toLowerCase();
+    allRosterStaff.forEach(function(s){
+      var baseUsername = (s.username||s.firstName||'').toLowerCase().trim();
       if(!baseUsername) return;
       if(existingUsernames[baseUsername]) return;
-      toCreate.push({username: baseUsername, firstName: h.firstName||baseUsername, lastName: h.lastName||'', role: 'staff', employmentType: 'casual', isHidden: true});
+      if(s.firstName==='Michael' && s.lastName.toUpperCase()==='BLAIK') baseUsername='michaelb';
+      if(s.firstName==='Michael' && s.lastName.toUpperCase()==='EVANS') baseUsername='michaele';
+      if(existingUsernames[baseUsername]) return;
+      // Generate password per spec: firstName unless duplicate then + last initial
+      var pwd = generatePasswordFromName(s.firstName, s.lastName, existingPwds);
+      existingPwds.push(pwd);
+      toCreate.push({username: baseUsername, firstName: s.firstName, lastName: s.lastName, role: 'staff', employmentType: s.employmentType||'casual', password: pwd});
       existingUsernames[baseUsername]=true;
     });
     if(toCreate.length>0){
-      console.log('V162: Auto-creating', toCreate.length, 'missing users from roster:', toCreate.map(function(u){return u.username;}));
+      console.log('V168: Auto-creating', toCreate.length, 'missing users from roster with firstName passwords');
       toCreate.forEach(function(nu){
-        users.push({username: nu.username, password: nu.firstName||nu.username, firstName: nu.firstName, lastName: nu.lastName, role: nu.role||'staff', employmentType: nu.employmentType||'casual'});
+        users.push({username: nu.username, password: nu.password, firstName: nu.firstName, lastName: nu.lastName, role: nu.role||'staff', employmentType: nu.employmentType||'casual'});
       });
       safeSetJSON('retail_roster_users_v1', users);
     }
-  }catch(e){ console.error('Auto-create users in render error', e); }
+  }catch(e){ console.error('Auto-create users error', e); }
   
-  let html='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🔑 BULK PASSWORD RESET</div><div style="font-size:10px;margin-bottom:8px">Set all employee passwords to their first name (e.g., Chris -> Chris, Daniel -> Daniel). Hidden staff and both Michaels excluded. Admin/manager/master accounts excluded.</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div><div class="card" style="background:#fff;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🧹 FIX DUPLICATES</div><div style="font-size:10px;margin-bottom:8px">If you deleted a duplicate and it came back, click this to remove duplicate staff (same name) from ALL rosters. This prevents cloud from restoring them.</div><button onclick="deduplicateAllRosters(true)" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">REMOVE DUPLICATE STAFF - ALL ROSTERS</button></div><div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS - Linked to roster ('+users.length+' users, '+(cur?cur.staff.length:0)+' roster + '+hiddenStaff.length+' hidden)</div><div id="admin-user-list-all">'; 
+  let html='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🔑 BULK PASSWORD RESET</div><div style="font-size:10px;margin-bottom:8px">Set all employee passwords to their first name (e.g., Chris -> Chris). Hidden staff and both Michaels excluded. Admin/manager/master excluded.</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div>';
+  html+='<div class="card" style="background:#fff;border:3px solid #E30613;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">🧹 FIX DUPLICATES</div><div style="font-size:10px;margin-bottom:8px">If you deleted a duplicate and it came back, click this to remove duplicate staff (same name) from ALL rosters.</div><button onclick="deduplicateAllRosters(true)" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">REMOVE DUPLICATE STAFF - ALL ROSTERS</button></div>';
+  html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL STAFF FROM ROSTER (including hidden, deduped): '+allRosterStaff.length+' - from '+fns.length+' fortnights + '+hiddenStaff.length+' hidden</div><div style="font-size:9px;color:#666;margin-bottom:8px">This lists EVERY staff found in ANY roster (A3 onwards) plus hidden staff, without duplicates. Blank separator rows and Row 18 already ignored on import.</div><div style="max-height:200px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:8px;margin-bottom:12px">';
+  if(allRosterStaff.length===0){
+    html+='<div style="font-size:11px;color:#E30613">No roster staff found - upload an Excel first (B1,D1,F1...AB1 dates, A3 names)</div>';
+  } else {
+    allRosterStaff.forEach(function(s){
+      var hiddenBadge=s.isHidden?'<span style="background:#90CAF9;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;margin-left:4px">HIDDEN</span>':'';
+      html+='<div style="padding:2px 0;font-size:11px;border-bottom:1px solid #f5f5f5"><b>'+(s.lastName||'').toUpperCase()+', '+(s.firstName||'')+'</b> '+hiddenBadge+' <small style="opacity:.6">('+ (s.employmentType||'')+')</small></div>';
+    });
+  }
+  html+='</div></div>';
+  html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS - Linked to roster ('+users.length+' users, '+allRosterStaff.length+' roster unique + '+hiddenStaff.length+' hidden)</div><div id="admin-user-list-all">';
+  
   html+=users.map((u,i)=>{
-    var mapped=null;
-    try{ mapped=mapUsernameToStaffKey(u.username); }catch(e){}
     var rosterLink='Not linked';
     var rosterFound=false;
     var isHiddenUser=false;
-    // Check in all roster staff + hidden
+    // Check in allRosterStaff
     if(allRosterStaff && allRosterStaff.length>0){
       var found=allRosterStaff.find(function(s){
         if(!s.firstName) return false;
         if(u.firstName && u.lastName){
-          return s.firstName && s.lastName && s.firstName.toLowerCase()===u.firstName.toLowerCase() && s.lastName.toLowerCase()===u.lastName.toLowerCase();
+          return s.firstName.toLowerCase()===u.firstName.toLowerCase() && s.lastName.toLowerCase()===u.lastName.toLowerCase();
         }
-        // Also check by username
         if(s.username && u.username && s.username.toLowerCase()===u.username.toLowerCase()) return true;
-        if(mapped){
-          return s.firstName && s.lastName && s.firstName.toLowerCase()===mapped.firstName.toLowerCase() && (mapped.lastName==='' || s.lastName.toLowerCase()===mapped.lastName.toLowerCase() || s.lastName.toLowerCase().includes(mapped.lastName.toLowerCase()));
-        }
-        // Check by first name only (for cases like Kate PHILLIPS)
-        if(s.firstName && u.firstName && s.firstName.toLowerCase()===u.firstName.toLowerCase()){
-          // If last names similar or one contains the other
-          if(!s.lastName || !u.lastName) return true;
-          if(s.lastName.toLowerCase()===u.lastName.toLowerCase()) return true;
-          if(s.lastName.toLowerCase().includes(u.lastName.toLowerCase()) || u.lastName.toLowerCase().includes(s.lastName.toLowerCase())) return true;
-          // Special case: TRATHEN vs TRATHIEN typo
-          if((s.lastName.toLowerCase().includes('trath') && u.lastName.toLowerCase().includes('trath'))) return true;
-        }
+        if(s.firstName && u.username && s.firstName.toLowerCase()===u.username.toLowerCase()) return true;
         return false;
       });
       if(found){
         rosterLink=found.lastName.toUpperCase()+', '+found.firstName;
         rosterFound=true;
-        // Check if hidden
-        isHiddenUser = hiddenStaff.some(function(h){
-          return h.firstName && found.firstName && h.firstName.toLowerCase()===found.firstName.toLowerCase() && 
-                 h.lastName && found.lastName && h.lastName.toLowerCase()===found.lastName.toLowerCase();
-        });
+        isHiddenUser=!!found.isHidden;
         if(isHiddenUser) rosterLink+=' (HIDDEN)';
-      } else if(mapped){
-        rosterLink=mapped.firstName+' '+mapped.lastName+' (mapped)';
-        // Still try to find in hidden
-        var foundHidden = hiddenStaff.find(function(h){
-          return h.firstName && mapped.firstName && h.firstName.toLowerCase()===mapped.firstName.toLowerCase();
-        });
-        if(foundHidden){
-          rosterFound=true;
-          rosterLink=foundHidden.lastName.toUpperCase()+', '+foundHidden.firstName+' (HIDDEN)';
-          isHiddenUser=true;
-        }
       }
     }
     var badge=rosterFound?'<span style="background:'+(isHiddenUser?'#90CAF9':'#B6F7C5')+';color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;font-weight:900">LINKED: '+rosterLink+'</span>':'<span style="background:#FFEB3B;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px">NOT LINKED: '+rosterLink+'</span>';
@@ -8035,7 +8167,13 @@ function renderAccountMgmtPage(){
   html+='<div style="margin-top:8px;font-size:10px;color:#666">Tip: For Michael Blaik use username michaelb + First: Michael Last: BLAIK. For Michael Evans use michaele + First: Michael Last: EVANS. This links them to rostered name.</div>';
   html+='<div class="card" style="margin-top:16px"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div></div>'; 
   el.innerHTML=html; 
+  }catch(err){
+    console.error('renderAccountMgmtPage error', err);
+    var el2=document.getElementById('account-mgmt-inner');
+    if(el2) el2.innerHTML='<div style="padding:20px;color:#E30613"><b>Account page error:</b> '+err.message+'<br><br><button onclick="renderAccountMgmtPage()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px">RETRY</button><pre style="font-size:10px;white-space:pre-wrap;margin-top:10px">'+err.stack+'</pre></div>';
+  }
 }
+function adminAddUserMgmt(){
 function adminAddUserMgmt(){
   const un=(document.getElementById('new-user-name').value||'').trim();
   const pw=(document.getElementById('new-user-pass').value||'').trim();
@@ -8157,7 +8295,7 @@ function adminEditUser(idx){
 
 function adminSetAllPasswordsToFirstname(){
   try{
-    showCustomConfirm('Set all passwords to firstname?', '<div style="font-size:11px">This will set every employee password to their <b>firstname</b> (e.g., Chris -> Chris, Daniel -> Daniel).<br><br><b>Excluded:</b><br>- Hidden staff (in hidden staff list)<br>- Both Michaels (BLAIK & EVANS - keep as Michaelb/Michaele)<br>- Admin/manager/master accounts (admin, manager, master, Chris)<br><br>Are you sure?</div>', function(ok){
+    showCustomConfirm('Set all passwords to firstname?', '<div style="font-size:11px">This will set every employee password to their <b>firstname</b> (e.g., Chris -> Chris, Daniel -> Daniel).<br><br>If duplicate first name found, will use <b>FirstName + LastName initial</b> (e.g., Michael + B = MichaelB).<br><br><b>Excluded:</b><br>- Hidden staff (in hidden staff list)<br>- Both Michaels handled as duplicate (MichaelB, MichaelE)<br>- Admin/manager/master accounts (admin, manager, master, Chris)<br><br>Are you sure?</div>', function(ok){
       if(!ok) return;
       var users=safeGetJSON('retail_roster_users_v1',[]);
       var hidden=safeGetJSON('retail_roster_hidden_staff_v1',[]);
@@ -8165,69 +8303,74 @@ function adminSetAllPasswordsToFirstname(){
       for(var hi=0;hi<hidden.length;hi++){
         if(hidden[hi] && hidden[hi].username) hiddenUsernames[hidden[hi].username.toLowerCase()]=true;
       }
-      var excludedUsernames=['admin','manager','master','michaelb','michaele','christopher.culling.3'];
-      var excludedFirstLast=[{first:'Michael',last:'BLAIK'},{first:'Michael',last:'EVANS'}];
+      var excludedUsernames=['admin','manager','master','christopher.culling.3','chris'];
       var changed=0;
-      var skipped=[];
-      console.log('Setting all passwords to firstname, users:', users.length, 'hidden:', Object.keys(hiddenUsernames).length);
+      // Build list of passwords to avoid duplicates
+      var usedPasswords=[];
+      // First pass: keep excluded as is
+      // Second pass: assign per spec with duplicate check
+      var firstNameCounts={};
+      // Count first names
+      users.forEach(function(u){
+        if(!u.firstName) return;
+        var fn=u.firstName.toLowerCase();
+        if(excludedUsernames.indexOf((u.username||'').toLowerCase())!==-1) return;
+        if(hiddenUsernames[(u.username||'').toLowerCase()]) return;
+        if(['michaelb','michaele'].indexOf((u.username||'').toLowerCase())!==-1) {
+          // Keep as is for count but handle separately
+        }
+        if(!firstNameCounts[fn]) firstNameCounts[fn]=[];
+        firstNameCounts[fn].push(u);
+      });
+      // Now assign
       for(var i=0;i<users.length;i++){
         var u=users[i];
-        if(!u || !u.username) continue;
+        if(!u.username) continue;
         var unameLower=u.username.toLowerCase();
-        var firstLower=(u.firstName||'').toLowerCase();
-        var lastUpper=(u.lastName||'').toUpperCase();
-        // Skip admin/manager/master
-        if(['admin','manager','master'].indexOf(unameLower)!==-1) { skipped.push(u.username+' (admin/manager)'); continue; }
-        // Skip if in excluded list
-        if(excludedUsernames.indexOf(unameLower)!==-1) { skipped.push(u.username+' (excluded Michael/hidden)'); continue; }
-        if(hiddenUsernames[unameLower]) { skipped.push(u.username+' (hidden)'); continue; }
-        // Skip Michaels by first/last
-        var isMichael=false;
-        for(var ei=0;ei<excludedFirstLast.length;ei++){
-          if(firstLower===excludedFirstLast[ei].first.toLowerCase() && lastUpper===excludedFirstLast[ei].last) { isMichael=true; break; }
+        if(excludedUsernames.indexOf(unameLower)!==-1) continue;
+        if(hiddenUsernames[unameLower]) continue;
+        if(['admin','manager','master'].indexOf(u.role)!==-1 && ['michaelb','michaele'].indexOf(unameLower)===-1){
+          // Allow staff only, but if role is manager/admin with username chris keep excluded
+          if(unameLower==='chris' || unameLower==='manager' || unameLower==='admin' || unameLower==='master') continue;
         }
-        if(isMichael) { skipped.push(u.username+' (Michael excluded)'); continue; }
-        // Skip if firstName empty
-        if(!u.firstName) { skipped.push(u.username+' (no firstname)'); continue; }
-        // Set password to firstname (preserve original case as stored, e.g., Chris)
-        var newPass=u.firstName;
-        // Optional: capitalize first letter, rest lower? But user said firstname, so keep as is
-        if(u.password!==newPass){
-          u.password=newPass;
+        if(!u.firstName) continue;
+        var fnLower=u.firstName.toLowerCase();
+        var newPwd='';
+        if(firstNameCounts[fnLower] && firstNameCounts[fnLower].length>1){
+          // Duplicate first name -> firstName + last initial
+          var initial=(u.lastName||'').trim().charAt(0).toUpperCase()||'';
+          newPwd=u.firstName+initial;
+        } else {
+          newPwd=u.firstName;
+        }
+        // Ensure unique among already assigned
+        var basePwd=newPwd;
+        var counter=2;
+        while(usedPasswords.indexOf(newPwd.toLowerCase())!==-1){
+          newPwd=basePwd+counter;
+          counter++;
+        }
+        usedPasswords.push(newPwd.toLowerCase());
+        if(u.password!==newPwd){
+          u.password=newPwd;
           changed++;
         }
       }
-      safeSetJSON('retail_roster_users_v1', users);
-      toast('Set '+changed+' passwords to firstname - skipped '+skipped.length);
+      safeSetJSON('retail_roster_users_v1',users);
+      toast('Set '+changed+' passwords to firstName (+ last initial for duplicates)');
       renderAccountMgmtPage();
-      // Show details
       setTimeout(function(){
-        showCustomConfirm('Bulk reset done - '+changed+' changed', '<div style="font-size:10px"><b>Changed '+changed+':</b><br>'+users.filter(function(u){return u.firstName && excludedUsernames.indexOf(u.username.toLowerCase())===-1 && !hiddenUsernames[u.username.toLowerCase()];}).slice(0,20).map(function(u){return u.username+' -> '+u.firstName;}).join('<br>')+'<br><br><b>Skipped ('+skipped.length+'):</b><br>'+skipped.join('<br>')+'</div>', function(){});
+        try{
+          var state=getAllState(); state._ts=Date.now();
+          if(typeof db!=='undefined' && db && db.ref){
+            db.ref('repco_state').set(state);
+          }
+        }catch(e){}
       },500);
-      // Sync to cloud
-      try{
-        var state=getAllState();
-        state._ts=Date.now();
-        state._lastBulkPassReset=Date.now();
-        function pushWithFallback(url, body){
-          fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:body,mode:'cors',cache:'no-store'}).then(function(res){
-            if(!res.ok){ fetch(url,{method:'PUT',body:body,mode:'no-cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); }); }
-            else { safeSet('repco_cloud_ts', String(state._ts)); }
-          }).catch(function(){ try{ fetch(url,{method:'PUT',body:body,mode:'no-cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); }); }catch(e){} });
-        }
-        if(typeof db!=='undefined' && db && db.ref){
-          db.ref('repco_state').set(state).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); toast('Live: Bulk password reset synced'); }).catch(function(){ pushWithFallback(FIREBASE_DB_URL+'/repco_state.json', JSON.stringify(state)); });
-        } else {
-          pushWithFallback(FIREBASE_DB_URL+'/repco_state.json', JSON.stringify(state));
-        }
-        try{ pushWithFallback(FIREBASE_DB_URL+'/retail_roster_users_v1.json', JSON.stringify(users)); }catch(e){}
-        if(typeof BroadcastChannel!=='undefined'){
-          try{ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'user_edit', users:users, ts:Date.now()}); }catch(e){}
-        }
-      }catch(e){ console.error('bulk sync error', e); }
     });
-  }catch(e){ console.error('adminSetAllPasswordsToFirstname error', e); toast('Error: '+e.message); }
+  }catch(e){ console.error('adminSetAllPasswords error', e); toast('Error: '+e.message); }
 }
+
 
 function adminDelUser(idx){ 
   let users=safeGetJSON('retail_roster_users_v1',[]); 
@@ -8296,7 +8439,7 @@ function applyPublicHolidaysToAllRosters(){
   try{
     var holidays=getPublicHolidays();
     if(holidays.length===0) return;
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var changed=false;
     for(var f=0;f<fns.length;f++){
       var fn=fns[f];
@@ -8411,7 +8554,7 @@ function openCreatePublicHolidayModal(editId){
       editing=holidays.find(function(h){ return h.id===editId; });
     }
     tempPublicHolidayStaff=editing && editing.staffAllocations ? JSON.parse(JSON.stringify(editing.staffAllocations)) : [];
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var allStaffMap={};
     for(var f=0;f<fns.length;f++){
       var fn=fns[f];
@@ -8588,7 +8731,7 @@ function deletePublicHoliday(id){
       var holiday=holidays[idx];
       var dateISO=holiday.dateISO;
       // Restore original shifts for all staff on this date
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       for(var f=0;f<fns.length;f++){
         var fn=fns[f];
         if(!fn.dates) continue;
@@ -8761,7 +8904,7 @@ function editHiddenStaff(idx){
       var u=users.find(function(u){ return u.username && h.username && u.username.toLowerCase()===h.username.toLowerCase(); });
       if(u){ u.firstName=first; u.lastName=last; u.type=type; safeSetJSON('retail_roster_users_v1', users); }
       // Update rosters
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       for(var f=0;f<fns.length;f++){
         var fn=fns[f];
         var s=fn.staff.find(function(st){ return st.username && h.username && st.username.toLowerCase()===h.username.toLowerCase(); });
@@ -8786,7 +8929,7 @@ function deleteHiddenStaff(idx){
       hidden.splice(idx,1);
       safeSetJSON('retail_roster_hidden_staff_v1', hidden);
       // Remove from all rosters if constant or not - clean up
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       for(var f=0;f<fns.length;f++){
         var fn=fns[f];
         fn.staff=fn.staff.filter(function(s){
@@ -8836,7 +8979,7 @@ function addHiddenStaff(){
     try{ cur=getSelectedFortnight(); }catch(e){}
     if(!cur){ try{ cur=getCurrentFortnight(); }catch(e){} }
     if(!cur){
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       if(fns && fns.length>0) cur=fns[0];
     }
     var shifts=[];
@@ -8863,7 +9006,7 @@ function addHiddenStaff(){
     
     // Always add to current roster for admin main view
     try{
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       var curId=null;
       try{ curId=safeGet('retail_roster_currentFortnightId'); }catch(e){}
       var curFn=null;
@@ -8992,7 +9135,7 @@ function deleteHiddenStaff(idx){
       var uIdx=users.findIndex(function(u){ return u.username.toLowerCase()===removed.username.toLowerCase(); });
       if(uIdx>=0){ users.splice(uIdx,1); safeSetJSON('retail_roster_users_v1', users); }
       // Also remove from all rosters
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       for(var f=0;f<fns.length;f++){
         var fn=fns[f];
         if(!fn.staff) continue;
@@ -9067,7 +9210,7 @@ function saveHiddenStaffEdit(idx){
       safeSetJSON('retail_roster_users_v1', users);
     }
     // Update all fortnights
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     for(var f=0;f<fns.length;f++){
       var fn=fns[f];
       if(!fn.staff) continue;
@@ -10542,7 +10685,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     seedIfEmpty();
     // V132: Filter deleted staff that may have returned from cloud before first render
     try{
-      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+      var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
       var removed=filterDeletedStaffFromCloud(fns);
       if(removed>0){ safeSetJSON('retail_roster_byFortnight_v1', fns); console.log('V132 DOMContentLoaded filtered deleted staff', removed); }
     }catch(e){}
@@ -11546,7 +11689,7 @@ function renderMySchedule(){
 function renderBuddies(which){
   try{
     if(typeof updateActivity==='function') updateActivity();
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     if(!fns || fns.length===0){
       var el=document.getElementById(which==='today'?'buddies-today-list':'buddies-tomorrow-list');
       if(el) el.innerHTML='<div class="card">No roster loaded</div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:8px 12px;font-weight:900;width:100%">BACK</button></div>';
@@ -12292,7 +12435,7 @@ function renderUnavailablePage(){
   try{
     var el=document.getElementById('unavail-list');
     if(!el) return;
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     var reqs=safeGetJSON('retail_roster_requests_v2',[]);
     var html='';
     // Approved UA requests
@@ -12755,6 +12898,47 @@ function populateMyScheduleFortnights(){var sel=document.getElementById('mysched
 function renderMySchedule(){var el=document.getElementById('my-schedule-list'); if(!el) return; var sel=document.getElementById('mysched-fortnight'); var fnId=(sel&&sel.value)||getSelectedFortnight(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[fnId]; if(!cur){el.innerHTML='<div class="small">No roster</div>'; return;} var username=(safeGet('repco_username','')||'').toLowerCase(); var staff=(cur.staff||[]).find(function(s){return (s.username||'').toLowerCase()===username||s.name.toLowerCase()===username;}); if(!staff){el.innerHTML='<div class="small">No schedule for '+username+' - My Schedule Live find by username</div>'; return;} var dates=getDatesForFortnight(fnId); var html=''; dates.forEach(function(iso,idx){var sh=(staff.shifts&&staff.shifts[idx]!==undefined)?staff.shifts[idx]:((staff.shifts&&staff.shifts[iso])||'OFF'); html+='<div class="list-item"><b>'+getDDMM(iso)+'</b> '+sh+'</div>';}); el.innerHTML=html;}
 function renderAccountPage(){var user=window.currentUser||{username:safeGet('repco_username','')}; if(!user) return; var uEl=document.getElementById('acc-user'); if(uEl) uEl.value=user.username||'';}
 function saveAccount(){var newUser=document.getElementById('acc-user').value.trim(); var newPass=document.getElementById('acc-pass').value.trim(); var users=safeGetJSON('retail_roster_users_v1',[]); var cur=window.currentUser; if(!cur){toast('No current user'); return;} var idx=users.findIndex(function(u){return u.username===cur.username;}); if(idx===-1){toast('User not found'); return;} if(newUser){if(users.find(function(u){return u.username===newUser&&u.username!==cur.username;})){toast('Username exists'); return;} users[idx].username=newUser; safeSet('repco_username',newUser);} if(newPass) users[idx].password=newPass; safeSetJSON('retail_roster_users_v1',users); window.currentUser=users[idx]; safeSetJSON('repco_currentUser',users[idx]); renderAccountPage(); toast('Account saved'); cloudSave();}
+
+function generatePasswordFromName(firstName, lastName, existingPasswords){
+  if(!firstName) return 'password';
+  var base = firstName.trim();
+  // Capitalize first letter, keep rest as is? Spec says first name as password
+  // We'll use firstName exactly as stored (e.g., Michael)
+  var pwd = base;
+  var lowerMap = {};
+  existingPasswords.forEach(function(p){ lowerMap[p.toLowerCase()]=true; });
+  if(!lowerMap[pwd.toLowerCase()]){
+    return pwd;
+  }
+  // Duplicate first name found, add last name initial
+  if(lastName && lastName.trim()!==''){
+    var initial = lastName.trim()[0].toUpperCase();
+    var withInitial = base + initial;
+    if(!lowerMap[withInitial.toLowerCase()]){
+      return withInitial;
+    }
+    // If still duplicate (e.g., two Michael B), add full last initial + number
+    var i=2;
+    while(lowerMap[(withInitial+String(i)).toLowerCase()]){
+      i++;
+    }
+    return withInitial+String(i);
+  }
+  // No last name, add number
+  var i=2;
+  while(lowerMap[(pwd+String(i)).toLowerCase()]){
+    i++;
+  }
+  return pwd+String(i);
+}
+
+function getAllExistingPasswords(users){
+  var arr=[];
+  if(users) users.forEach(function(u){ if(u.password) arr.push(u.password); });
+  return arr;
+}
+
+
 function renderAccountMgmtPage(){var el=document.getElementById('account-mgmt-list'); if(!el) return; var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)||users.length===0){el.innerHTML='<div class="small">No users</div>'; return;} var html='<table style="width:100%"><tr><th>Username</th><th>Role</th><th>Type</th><th>Actions</th></tr>'; users.forEach(function(u){html+='<tr><td>'+u.username+'</td><td>'+(u.role||'')+'</td><td>'+(u.employmentType||'')+'</td><td><button class="btn-grey" onclick="adminEditUser(\''+u.username+'\')">Edit</button> <button class="btn-grey" onclick="deleteUser(\''+u.username+'\')">Delete</button></td></tr>';}); html+='</table>'; el.innerHTML=html;}
 function addNewUser(){var u=prompt('Username:',''); if(!u) return; var p=prompt('Password:',''); if(!p) return; var users=safeGetJSON('retail_roster_users_v1',[]); if(users.find(function(x){return x.username===u;})){toast('Username exists'); return;} users.push({username:u,password:p,role:'staff',displayName:u,employmentType:'casual'}); safeSetJSON('retail_roster_users_v1',users); renderAccountMgmtPage(); cloudSave(); toast('User added');}
 function adminEditUser(username){var users=safeGetJSON('retail_roster_users_v1',[]); var u=users.find(function(x){return x.username===username;}); if(!u) return; var nu=prompt('New username:',u.username); if(nu) u.username=nu; var np=prompt('New password blank keep:',''); if(np) u.password=np; var nr=prompt('Role staff/manager/admin:',u.role||'staff'); if(nr) u.role=nr; var ne=prompt('Employment Type fulltime/casual:',u.employmentType||'casual'); if(ne) u.employmentType=ne; safeSetJSON('retail_roster_users_v1',users); renderAccountMgmtPage(); cloudSave(); toast('User updated custom modal Employment Type');}
