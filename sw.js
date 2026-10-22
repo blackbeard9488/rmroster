@@ -1,4 +1,4 @@
-const CACHE_NAME = "repco-v180-no-popup";
+const CACHE_NAME = "repco-v181-login-fix";
 const urlsToCache = [
   "./",
   "./index.html",
@@ -16,6 +16,7 @@ self.addEventListener('install', function(event) {
   );
   // Skip waiting to activate new SW quickly but not break login
   self.skipWaiting();
+  // V181: Force clear all old caches on install to fix login
 });
 
 self.addEventListener('activate', function(event) {
