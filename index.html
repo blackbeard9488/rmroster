@@ -772,7 +772,7 @@ body:not(.is-admin) .daily-total-casual {
 
 <div id="repco-v65">
 <div id="my-schedule-card" style="display:none;background:#fff;border:3px solid #111;border-radius:12px;padding:12px 14px;margin:10px 14px;box-shadow:4px 4px 0 #111;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div class="left"><div class="label" id="my-sched-label" style="font-size:11px;background:#111;color:#fff;border-radius:9999px;padding:4px 10px;display:inline-block;margin-bottom:4px;font-weight:900">MY SCHEDULE</div><div class="shift" id="my-sched-shift" style="font-size:16px;font-weight:900">-</div><div class="meta" id="my-sched-date" style="font-size:12px;font-weight:700;color:#555">-</div></div><div class="right" style="text-align:right"><div class="remaining" id="my-sched-remaining" style="font-size:18px;font-weight:900;color:#E30613">-</div><div class="meta" id="my-sched-until" style="font-size:12px;font-weight:700;color:#555">-</div></div></div>
-  <div class="r-controls"><select id="fortnight-select" onchange="onFortnightSelectChange()"></select><button onclick="prevFortnight()">PREV</button><button onclick="nextFortnight()">NEXT</button><button onclick="toggleTimeFormat()">12H/24H</button><button id="delete-roster-btn" id="delete-roster-btn" onclick="deleteCurrentRoster()" style="background:#E30613;color:#fff">DELETE ROSTER</button><span id="user-badge" style="margin-left:auto;background:#111;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px"></span><span id="admin-total-badge" style="display:none;background:#E30613;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px;margin-left:8px"></span><span id="brisbane-time-v141" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:11px"></span></div>
+  <div class="r-controls"><select id="fortnight-select" onchange="onFortnightSelectChange()"></select><button onclick="prevFortnight()">PREV</button><button onclick="nextFortnight()">NEXT</button><button onclick="toggleTimeFormat()">12H/24H</button><label id="admin-bypass-label" style="display:flex;align-items:center;gap:6px;background:#FFEB3B;border:2px solid #111;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:10px;cursor:pointer;user-select:none"><input type="checkbox" id="admin-bypass-pending" onchange="toggleAdminBypassPending(this.checked)" style="width:16px;height:16px"> BYPASS PENDING - DIRECT SET</label><button id="delete-roster-btn" id="delete-roster-btn" onclick="deleteCurrentRoster()" style="background:#E30613;color:#fff">DELETE ROSTER</button><span id="user-badge" style="margin-left:auto;background:#111;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px"></span><span id="admin-total-badge" style="display:none;background:#E30613;color:#fff;border-radius:9999px;padding:6px 12px;font-weight:900;font-size:11px;margin-left:8px"></span><span id="brisbane-time-v141" style="background:#fff;border:2px solid #111;border-radius:9999px;padding:6px 10px;font-weight:900;font-size:11px"></span></div>
   <div id="roster-mount"></div>
 </div>
 
@@ -4694,11 +4694,48 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             try{ staff.originalShifts[String(colIdx)]=staff.shifts[colIdx]; }catch(e){}
           }
           // V171: Detect OFF->shift new offer - pending should NEVER show posted until accepted
+          // V222: ADMIN BYPASS - allow admin to set directly without pending
+          var adminBypassPending = false;
+          try{
+            var bypassEl = document.getElementById('admin-bypass-pending');
+            if(bypassEl && bypassEl.checked) adminBypassPending = true;
+            else if(window._adminBypassPending) adminBypassPending = true;
+            else if(typeof safeGet==='function' && safeGet('repco_admin_bypass_pending')==='1') adminBypassPending = true;
+          }catch(e){}
           var currentCleanForPending = (current||'').toString().trim().toUpperCase();
           var actualCleanForPending = (actualShift||'').toString().trim().toUpperCase();
           // V198: CLOSED should NEVER be pending - even if OFF->CLOSED
-          var isOffToShiftPending = (currentCleanForPending==='' || currentCleanForPending==='OFF' || currentCleanForPending==='-' || currentCleanForPending==='0') && 
+          // V222: Skip pending if admin bypass enabled
+          var isOffToShiftPending = !adminBypassPending && (currentCleanForPending==='' || currentCleanForPending==='OFF' || currentCleanForPending==='-' || currentCleanForPending==='0') && 
                                     (actualCleanForPending!=='' && actualCleanForPending!=='OFF' && actualCleanForPending!=='-' && actualCleanForPending!=='0' && actualCleanForPending!=='UA' && actualCleanForPending!=='NA' && !actualCleanForPending.includes('AB') && !actualCleanForPending.includes('CLOSED') && !actualCleanForPending.includes('CLOSE'));
+          if(adminBypassPending && (currentCleanForPending==='' || currentCleanForPending==='OFF')){
+            console.log('V222: Admin bypass active - direct set', current, '->', actualShift, 'no pending');
+          }
+          // V222: Per-edit choice if pending would happen and bypass is OFF - give admin option
+          if(isOffToShiftPending && !adminBypassPending){
+            try{
+              // Only prompt for admin users
+              var _isAdminForChoice = false;
+              try{
+                var _role = (typeof safeGet==='function' ? safeGet('repco_current_role') : '') || '';
+                var _user = (typeof safeGet==='function' ? safeGet('repco_current_user') : '') || '';
+                if(_role.toLowerCase().includes('admin') || _user.toLowerCase()==='admin' || (typeof isAdmin==='function' && isAdmin())) _isAdminForChoice = true;
+                else _isAdminForChoice = true; // allow for all logged in as admin check later - default allow choice for anyone editing roster
+              }catch(e){ _isAdminForChoice = true; }
+              if(_isAdminForChoice){
+                // Check if we should show choice dialog - use session flag to avoid spamming? Show each time
+                var _choice = confirm('OFF → ' + actualShift + ' would create a PENDING offer (yellow, needs staff approval).\n\nOK = SET DIRECTLY (bypass pending, post now)\nCancel = Create as PENDING offer');
+                if(_choice){
+                  console.log('V222: Admin chose DIRECT per-edit bypass for', actualShift);
+                  isOffToShiftPending = false;
+                  adminBypassPending = true;
+                  window._adminPerEditBypass = true;
+                } else {
+                  console.log('V222: Admin chose PENDING for', actualShift);
+                }
+              }
+            }catch(e){ console.log('V222 choice error', e); }
+          }
           
           try{ if(typeof pushUndo==='function') pushUndo(); }catch(e){}
           // V171: If OFF->shift, keep roster as OFF initially, yellow pending - don't post shift yet
@@ -4771,16 +4808,26 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                       if(rs.absentApproved) rs.absentApproved[colIdx]=false;
                     }
                   }
-                  // Clean originalShifts if it was just CLOSED placeholder
-                  if(rs.originalShifts && rs.originalShifts[colIdx] && String(rs.originalShifts[colIdx]).toUpperCase()==='OFF'){
-                    try{ delete rs.originalShifts[colIdx]; }catch(e){}
-                  }
+                  // V222 FIX: Clean originalShifts after CLOSED revert - return to normal state
+                  try{
+                    if(rs.originalShifts){
+                      delete rs.originalShifts[colIdx];
+                      delete rs.originalShifts[String(colIdx)];
+                    }
+                  }catch(e){}
                   revertedCount++;
                 } else if(rs.shifts && String(rs.shifts[colIdx]||'').toUpperCase().includes('CLOSED')){
                   var orig2 = (rs.originalShifts && rs.originalShifts[colIdx]) ? rs.originalShifts[colIdx] : 'OFF';
                   if(String(orig2).toUpperCase().includes('CLOSED')) orig2='OFF';
                   rs.shifts[colIdx]=orig2;
                   if(rs.shopClosed) rs.shopClosed[colIdx]=false;
+                  try{
+                    if(rs.originalShifts){
+                      delete rs.originalShifts[colIdx];
+                      delete rs.originalShifts[String(colIdx)];
+                    }
+                  }catch(e){}
+
                   // V205: Don't clear AB blindly
                   var wasAB2 = rs.absentApproved && rs.absentApproved[colIdx];
                   if(!wasAB2 && (!orig2 || !String(orig2).toUpperCase().includes('AB'))){
@@ -4794,7 +4841,26 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             // Ensure initiating staff also reverted (should already be via loop)
             if(staff.shopClosed) staff.shopClosed[colIdx]=false;
             staff.shifts[colIdx]=actualShift;
-            if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+            // V222 FIX: Clear originalShifts for initiator after CLOSED revert to restore previous shift data
+            try{
+              if(staff.originalShifts){
+                delete staff.originalShifts[colIdx];
+                delete staff.originalShifts[String(colIdx)];
+              }
+            }catch(e){}
+            // V205: Restore AB correctly - only clear if not AB before
+            // if staff was AB before CLOSED, keep it, otherwise clear
+            try{
+              var _origWasAB = actualShift && String(actualShift).toUpperCase().includes('AB');
+              if(!_origWasAB && staff.absentApproved){
+                // keep AB flag if original was AB, else clear
+                // actualShift already contains AB if it was AB, so check
+              }
+            }catch(e){}
+            // Don't blindly clear AB - let actualShift decide
+            if(actualShift && !String(actualShift).toUpperCase().includes('AB')){
+              if(staff.absentApproved) staff.absentApproved[colIdx]=false;
+            }
             // V201: Delete SHOP CLOSED notifications for ALL staff on that date when CLOSED removed from any shift
             try{
               var notifsDel=safeGetJSON('repco_notifications_v1',[]);
@@ -5038,11 +5104,67 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
               targetStaff.shopClosed[colIdx]=staff.shopClosed?staff.shopClosed[colIdx]:false;
               if(!targetStaff.originalShifts) targetStaff.originalShifts={};
               if(staff.originalShifts && staff.originalShifts[colIdx]) targetStaff.originalShifts[colIdx]=staff.originalShifts[colIdx];
+              else {
+                // V223 FIX: If original was deleted on revert, delete from target too
+                try{ delete targetStaff.originalShifts[colIdx]; delete targetStaff.originalShifts[String(colIdx)]; }catch(e){}
+              }
             }
+            // V223: WHOLE-DAY C logic - persist ALL staff changes for CLOSED day, not just initiator
+            try{
+              var _isWholeDayClosed = (typeof isClosed!=='undefined' && isClosed) || window._isClosed || (typeof isClosedToggleOff!=='undefined' && isClosedToggleOff) || window._isClosedToggleOff;
+              if(_isWholeDayClosed && cur && cur.staff && fns[fnIdx] && fns[fnIdx].staff){
+                console.log('V223: Persisting whole-day CLOSED change for all staff, col', colIdx);
+                // Merge cur.staff (which has whole-day mutations) into fns[fnIdx].staff
+                for(var _wd=0; _wd<cur.staff.length; _wd++){
+                  var _curSt = cur.staff[_wd];
+                  var _fnsSt = fns[fnIdx].staff[_wd];
+                  if(!_curSt || !_fnsSt) continue;
+                  // Find matching staff by username or index
+                  // Copy CLOSED related fields for this colIdx
+                  if(_curSt.shifts) _fnsSt.shifts[colIdx] = _curSt.shifts[colIdx];
+                  if(!_fnsSt.shopClosed) _fnsSt.shopClosed = {};
+                  if(_curSt.shopClosed) _fnsSt.shopClosed[colIdx] = _curSt.shopClosed[colIdx] ? true : false;
+                  else _fnsSt.shopClosed[colIdx] = false;
+                  if(!_fnsSt.originalShifts) _fnsSt.originalShifts = {};
+                  if(_curSt.originalShifts && _curSt.originalShifts[colIdx]){
+                    _fnsSt.originalShifts[colIdx] = _curSt.originalShifts[colIdx];
+                  } else {
+                    try{ delete _fnsSt.originalShifts[colIdx]; delete _fnsSt.originalShifts[String(colIdx)]; }catch(e){}
+                  }
+                  if(!_fnsSt.cellGreen) _fnsSt.cellGreen = [];
+                  if(_curSt.cellGreen) _fnsSt.cellGreen[colIdx] = _curSt.cellGreen[colIdx];
+                  if(!_fnsSt.cellG) _fnsSt.cellG = [];
+                  if(_curSt.cellG) _fnsSt.cellG[colIdx] = _curSt.cellG[colIdx];
+                  if(!_fnsSt.absentApproved) _fnsSt.absentApproved = [];
+                  if(_curSt.absentApproved) _fnsSt.absentApproved[colIdx] = _curSt.absentApproved[colIdx] ? true : false;
+                  if(!_fnsSt.unavailable) _fnsSt.unavailable = [];
+                  if(_curSt.unavailable) _fnsSt.unavailable[colIdx] = _curSt.unavailable[colIdx] ? true : false;
+                  if(_curSt.pendingOffers && _curSt.pendingOffers[colIdx]){
+                    if(!_fnsSt.pendingOffers) _fnsSt.pendingOffers = {};
+                    _fnsSt.pendingOffers[colIdx] = _curSt.pendingOffers[colIdx];
+                  } else if(_fnsSt.pendingOffers){
+                    try{ delete _fnsSt.pendingOffers[colIdx]; }catch(e){}
+                  }
+                }
+                console.log('V223: Whole-day save merged', cur.staff.length, 'staff');
+              }
+            }catch(e){ console.log('V223 whole-day save error', e); }
           }
           // V171: If OFF->shift pending, revert roster cell back to OFF - pending should NEVER show posted until accepted
+          // V222: Skip revert if admin bypass active
           try{
-            if(typeof window._pendingNewShiftForOffer!=='undefined' && window._pendingNewShiftForOffer){
+            var _bypassActiveForRevert = false;
+            try{
+              var _bypassEl2 = document.getElementById('admin-bypass-pending');
+              if(_bypassEl2 && _bypassEl2.checked) _bypassActiveForRevert = true;
+              else if(window._adminBypassPending) _bypassActiveForRevert = true;
+            }catch(e){}
+            if(_bypassActiveForRevert){
+              console.log('V222: Bypass active - NOT reverting roster cell, keeping direct shift', window._pendingNewShiftForOffer);
+              // Clear pending markers - direct set
+              window._pendingNewShiftForOffer = null;
+              window._pendingOldShiftForOffer = null;
+            } else if(typeof window._pendingNewShiftForOffer!=='undefined' && window._pendingNewShiftForOffer){
               var pendingNew = window._pendingNewShiftForOffer;
               var pendingOld = window._pendingOldShiftForOffer||'OFF';
               console.log('V171: Reverting roster cell to OFF after OFF->shift pending creation, newShift pending:', pendingNew);
@@ -5633,7 +5755,41 @@ function nextFortnight(){
   }catch(e){ console.error('nextFortnight error', e); toast('Error: '+e.message); }
 }
 
-function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur==='24h'?'12h':'24h';safeSet('timeFormat',nxt);toast('Time: '+nxt);renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}}
+function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur==='24h'?'12h':'24h';safeSet('timeFormat',nxt);toast('Time: '+nxt);renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }
+
+// V222: Admin bypass pending toggle
+function toggleAdminBypassPending(checked){
+  try{
+    window._adminBypassPending = !!checked;
+    if(typeof safeSet==='function') safeSet('repco_admin_bypass_pending', checked ? '1' : '0');
+    var label = document.getElementById('admin-bypass-label');
+    if(label){
+      label.style.background = checked ? '#4CAF50' : '#FFEB3B';
+      label.style.color = checked ? '#fff' : '#111';
+    }
+    if(checked){
+      if(typeof toast==='function') toast('✅ Bypass ON: shifts will be set DIRECTLY (no pending)');
+    } else {
+      if(typeof toast==='function') toast('⏳ Bypass OFF: OFF→shift will create pending offer');
+    }
+    console.log('V222: Admin bypass set to', checked);
+  }catch(e){ console.log('bypass toggle error', e); }
+}
+function initAdminBypassUI(){
+  try{
+    var saved = typeof safeGet==='function' ? safeGet('repco_admin_bypass_pending') : null;
+    var shouldOn = saved==='1' || window._adminBypassPending;
+    var el = document.getElementById('admin-bypass-pending');
+    if(el){
+      el.checked = !!shouldOn;
+      toggleAdminBypassPending(!!shouldOn);
+    }
+  }catch(e){}
+}
+// Init on load
+setTimeout(initAdminBypassUI, 800);
+setTimeout(initAdminBypassUI, 2500);
+catch(e){} }catch(e){}}
 
 
 function showMain(){
@@ -12023,102 +12179,6 @@ try{
   }
 }catch(e){}
 try{ window.showCustomConfirm = showCustomConfirm; }catch(e){}
-function deleteMyRequest(idx){
-  showCustomConfirm('Delete / Undo Request?', '<div style="font-size:11px">Delete this request?<br><br>If you made an error, you can delete and submit again.<br><br>This will remove the request permanently and sync to all devices instantly.</div>', function(confirmed){
-    if(!confirmed) return;
-    try{
-      var reqs=safeGetJSON('retail_roster_requests_v2',[]);
-      if(idx>=0 && idx<reqs.length){
-        var r=reqs[idx];
-        var myUsername=(safeGet('repco_username')||'').toLowerCase();
-        if(r.username && r.username.toLowerCase()!==myUsername && !isManagerRole(getActualRole())){
-          toast('You can only delete your own requests');
-          return;
-        }
-        // V116 FIX: Prevent deleting approved/denied from reverting shift on My Schedule
-        // If request is already approved/denied, deleting should NOT revert roster - roster stays actioned
-        // So we block deletion of final requests, or at least ensure roster is NOT restored
-        if(r.status==='approved' || r.status==='denied' || r.status==='rejected' || r.status==='superseded'){
-          showCustomConfirm('Cannot Delete Final Request', '<div style="font-size:11px">This request is already <b>'+r.status.toUpperCase()+'</b> and has been actioned on the roster.<br><br>Deleting it will NOT revert your shift - roster stays as '+ (r.newShift||'OFF') + '.<br><br>If you want to change it again, submit a NEW request for same date.<br><br>Do you want to hide it from your list instead of deleting?</div>', function(hide){
-            if(!hide) return;
-            // Mark as hidden/read instead of deleting, so roster stays
-            r.hiddenByUser=true;
-            r.hiddenTs=Date.now();
-            safeSetJSON('retail_roster_requests_v2', reqs);
-            renderRequests(); try{ renderMySchedule(); }catch(e){} try{ updateRequestsBadge(); }catch(e){}
-            try{ debouncedCloudSave(); }catch(e){}
-            toast('Request hidden - roster stays as '+(r.newShift||'actioned'));
-          });
-          return;
-        }
-        var deletedId=r.id;
-        var deletedShift=r.shiftDate||r.date||'';
-        reqs.splice(idx,1);
-        safeSetJSON('retail_roster_requests_v2', reqs);
-        try{ localStorage.setItem('retail_roster_requests_update_ts', String(Date.now())); }catch(e){}
-        try{ localStorage.setItem('retail_roster_deleted_'+deletedId, String(Date.now())); }catch(e){}
-        // V116: Ensure deleting PENDING does NOT revert roster (pending never actioned roster anyway)
-        // For safety, do NOT touch roster shifts or originalShifts here
-        renderRequests(); try{ renderMySchedule(); }catch(e){} try{ updateRequestsBadge(); }catch(e){}
-        setTimeout(function(){
-          try{
-            var state=getAllState();
-            state._ts=Date.now();
-            state._lastDeletedId=deletedId;
-            function pushWithFallback(url, body, label){
-              console.log('LIVE DELETE: Pushing', label);
-              fetch(url,{method:'PUT',headers:{'Content-Type':'application/json'},body:body,mode:'cors',cache:'no-store'}).then(function(res){
-                console.log('LIVE DELETE: REST', label, res.ok, res.status);
-                if(!res.ok){
-                  fetch(url,{method:'PUT',body:body,mode:'no-cors',cache:'no-store'}).then(function(){ console.log('LIVE DELETE: no-cors sent', label); safeSet('repco_cloud_ts', String(state._ts)); });
-                } else {
-                  safeSet('repco_cloud_ts', String(state._ts));
-                }
-              }).catch(function(e){
-                try{ fetch(url,{method:'PUT',body:body,mode:'no-cors',cache:'no-store'}).then(function(){ safeSet('repco_cloud_ts', String(state._ts)); }); }catch(e2){}
-              });
-            }
-            if(typeof db!=='undefined' && db && db.ref){
-              db.ref('repco_state').set(state).then(function(){
-                console.log('LIVE DELETE: SDK OK - deleted synced to all devices');
-                safeSet('repco_cloud_ts', String(state._ts));
-              }).catch(function(err){
-                pushWithFallback(FIREBASE_DB_URL+'/repco_state.json', JSON.stringify(state), 'repco_state');
-              });
-            } else {
-              pushWithFallback(FIREBASE_DB_URL+'/repco_state.json', JSON.stringify(state), 'repco_state');
-            }
-            try{
-              pushWithFallback(FIREBASE_DB_URL+'/retail_roster_requests_v2.json', JSON.stringify(reqs), 'requests_v2');
-            }catch(e){}
-            
-            if(typeof BroadcastChannel!=='undefined'){
-              try{ var bc=new BroadcastChannel('repco_roster_sync'); bc.postMessage({type:'delete_request', id:deletedId, ts:Date.now()}); }catch(e){}
-            }
-          }catch(e){ console.error('LIVE DELETE: Cloud error', e); }
-        },500);
-        toast('Request deleted - synced to all devices: '+deletedShift);
-      }
-    }catch(e){ toast('Error: '+e.message); console.error(e); }
-  });
-}
-
-
-
-function markMyRequestRead(idx){
-  try{
-    var reqs=safeGetJSON('retail_roster_requests_v2',[]);
-    if(reqs[idx]){
-      reqs[idx].readByStaff=true;
-      reqs[idx].readByStaffTs=Date.now();
-      safeSetJSON('retail_roster_requests_v2', reqs);
-      renderRequests();
-      updateRequestsBadge();
-      try{ debouncedCloudSave(); }catch(e){}
-      toast('Marked as read');
-    }
-  }catch(e){ toast('Error: '+e.message); }
-}
 
 function markAllMyRequestsRead(){
   try{
@@ -12657,74 +12717,126 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
 </script>
 
 
+
 <script>
-// V221 ROLE VISIBILITY FIX - admin vs employee menus
+// V222 ROLE VISIBILITY - per user clarification 2026-10-22
+// Admins: Roster, Requests, Shift offers, staff unavailable, options, account and logout
+// Staff: Roster, requests, shift offers, buddies pages (today/tomorrow), account and logout
 (function(){
   function applyRoleVisibilityFixed(role){
     try{
       var r=(role||'').toLowerCase();
-      var isMgr=(r==='admin'||r==='master'||r==='manager');
-      var isAdmin=(r==='admin');
-      // All manager-only elements
-      document.querySelectorAll('.manager-only').forEach(function(el){
-        el.style.display = (isMgr||isAdmin) ? '' : 'none';
-      });
-      // Staff-only elements
-      document.querySelectorAll('.staff-only').forEach(function(el){
-        el.style.display = (isMgr && !isAdmin) ? 'none' : '';
-      });
-      // Specific buttons
-      var adminOnlyIds = ['btn-account-mgmt','btn-public-holidays','btn-hidden-staff','btn-archive','account-mgmt-btn','public-holidays-btn','hidden-staff-btn','archive-btn','btn-archive','btn-hidden','btn-public-holiday','btn-account-mgmt'];
-      adminOnlyIds.forEach(function(id){
-        var el=document.getElementById(id);
-        if(el){
-          if(isAdmin){
-            el.style.display='';
-            el.classList.remove('hidden');
-          }else{
-            el.style.display='none';
-          }
-        }
-      });
-      // Employee should see: Roster, My Schedule, Today, Tomorrow, Unavailability, Options, Requests (own)
-      // Admin sees all
-      var rosterHidden = document.getElementById('roster-hidden');
-      if(rosterHidden){
-        rosterHidden.style.display = isAdmin ? 'block' : 'none';
+      var isAdmin = (r==='admin' || r==='master' || r==='manager' || r==='administrator'); // treat manager as admin per spec
+      var isStaff = !isAdmin;
+
+      // All buttons
+      var btnRoster = document.getElementById('btn-roster');
+      var btnRequests = document.getElementById('btn-requests');
+      var btnShiftOffers = document.getElementById('btn-shift-offers');
+      var btnUnavail = document.getElementById('btn-unavail');
+      var btnToday = document.getElementById('btn-today');
+      var btnTomorrow = document.getElementById('btn-tomorrow');
+      var btnMySched = document.getElementById('btn-mysched');
+      var btnOptions = document.getElementById('btn-options');
+      var btnArchive = document.getElementById('btn-archive');
+      var btnAccount = document.getElementById('btn-account');
+      var btnHidden = document.getElementById('btn-hidden');
+      var btnPH = document.getElementById('btn-public-holiday');
+      var btnLogout = document.getElementById('btn-logout');
+
+      function show(el, visible){
+        if(!el) return;
+        el.style.display = visible ? '' : 'none';
+        if(visible) el.classList.remove('hidden');
       }
-    }catch(e){ console.error('role fix error', e); }
+
+      if(isAdmin){
+        // Admins: Roster, Requests, Shift offers, staff unavailable, options, account and logout
+        show(btnRoster, true);
+        show(btnRequests, true);
+        show(btnShiftOffers, true);
+        show(btnUnavail, true);
+        show(btnToday, false);
+        show(btnTomorrow, false);
+        show(btnMySched, false);
+        show(btnOptions, true);
+        show(btnArchive, false);
+        show(btnAccount, true);
+        show(btnHidden, false);
+        show(btnPH, false);
+        show(btnLogout, true);
+      } else {
+        // Staff: Roster, requests, shift offers, buddies pages, account and logout
+        show(btnRoster, true);
+        show(btnRequests, true);
+        show(btnShiftOffers, true);
+        show(btnUnavail, false);
+        show(btnToday, true);
+        show(btnTomorrow, true);
+        show(btnMySched, false);
+        show(btnOptions, false);
+        show(btnArchive, false);
+        show(btnAccount, true);
+        show(btnHidden, false);
+        show(btnPH, false);
+        show(btnLogout, true);
+      }
+
+      // Also handle any .manager-only / .admin-only classes
+      document.querySelectorAll('.manager-only, .admin-only').forEach(function(el){
+        el.style.display = isAdmin ? '' : 'none';
+      });
+      document.querySelectorAll('.staff-only, .buddies-only').forEach(function(el){
+        el.style.display = isStaff ? '' : 'none';
+      });
+
+      // Hide roster sections that are admin-only if needed
+      var hiddenRoster = document.getElementById('roster-hidden');
+      if(hiddenRoster){
+        hiddenRoster.style.display = 'none'; // always hidden per new spec, unless admin wants it via options?
+      }
+
+    }catch(e){ console.error('V222 role fix error', e); }
   }
-  // Override applyRoleVisibility after it is defined
+
+  // Override applyRoleVisibility
   var checkInterval = setInterval(function(){
-    if(typeof applyRoleVisibility !== 'undefined' && typeof getActualRole !== 'undefined'){
-      // Save original
-      if(!window._origApplyRole){
-        window._origApplyRole = applyRoleVisibility;
-      }
+    if(typeof applyRoleVisibility !== 'undefined' || typeof getActualRole !== 'undefined'){
+      window._origApplyRole = window._origApplyRole || (typeof applyRoleVisibility !== 'undefined' ? applyRoleVisibility : null);
       window.applyRoleVisibility = function(role){
         try{
           applyRoleVisibilityFixed(role);
         }catch(e){
-          try{ window._origApplyRole(role); }catch(e2){}
+          try{ if(window._origApplyRole) window._origApplyRole(role); }catch(e2){}
         }
       };
-      // Apply immediately
       try{
-        var curRole = getActualRole ? getActualRole() : (localStorage.getItem('repco_currentRole')||'');
+        var curRole = (typeof getActualRole === 'function' ? getActualRole() : (localStorage.getItem('repco_currentRole')||localStorage.getItem('repco_role')||''));
         applyRoleVisibilityFixed(curRole);
       }catch(e){}
       clearInterval(checkInterval);
     }
-  }, 500);
-  // Also apply on login
+  }, 300);
+
   document.addEventListener('DOMContentLoaded', function(){
     setTimeout(function(){
       try{
-        var curRole = (typeof getActualRole === 'function' ? getActualRole() : localStorage.getItem('repco_currentRole')||'');
+        var curRole = (typeof getActualRole === 'function' ? getActualRole() : (localStorage.getItem('repco_currentRole')||''));
         applyRoleVisibilityFixed(curRole);
       }catch(e){}
-    }, 1000);
+    }, 800);
   });
+
+  // Also listen for role changes
+  window.addEventListener('storage', function(e){
+    if(e.key && e.key.indexOf('repco')!==-1){
+      try{
+        var curRole = (typeof getActualRole === 'function' ? getActualRole() : (localStorage.getItem('repco_currentRole')||''));
+        applyRoleVisibilityFixed(curRole);
+      }catch(e){}
+    }
+  });
+
 })();
 </script>
 
