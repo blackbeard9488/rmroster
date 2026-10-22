@@ -7858,11 +7858,13 @@ function adminAddUserMgmt(){
 
 
 function adminEditUser(idx){ 
-  try{ if(typeof showCustomPrompt==="undefined" && window.showCustomPrompt){ window.showCustomPrompt=window.showCustomPrompt; } }catch(e){}
+  var _showPrompt = (typeof window.showCustomPrompt==='function'? window.showCustomPrompt : (typeof showCustomPrompt==='function'? showCustomPrompt : null));
+  if(!_showPrompt){ console.error('showCustomPrompt not ready'); toast('Editor loading, try again'); return; }
+
   let users=safeGetJSON('retail_roster_users_v1',[]); 
   const u=users[idx]; 
   if(!u) return; 
-  showCustomPrompt('Edit User', '<div style="display:flex;flex-direction:column;gap:8px"><input id="edit-u-name" value="'+u.username+'" style="padding:10px;border-radius:9999px;border:2px solid #111"><input id="edit-u-pass" placeholder="New password (blank to keep)" type="password" style="padding:10px;border-radius:9999px;border:2px solid #111"><select id="edit-u-role" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="staff" '+(u.role==='staff'?'selected':'')+'>staff</option><option value="manager" '+(u.role==='manager'?'selected':'')+'>manager</option><option value="admin" '+(u.role==='admin'?'selected':'')+'>admin</option><option value="master" '+(u.role==='master'?'selected':'')+'>master</option></select><input id="edit-u-first" value="'+(u.firstName||'')+'" placeholder="First Name" style="padding:10px;border-radius:9999px;border:2px solid #111"><input id="edit-u-last" value="'+(u.lastName||'')+'" placeholder="Last Name" style="padding:10px;border-radius:9999px;border:2px solid #111"></div>', (ok)=>{ 
+  _showPrompt('Edit User', '<div style="display:flex;flex-direction:column;gap:8px"><input id="edit-u-name" value="'+u.username+'" style="padding:10px;border-radius:9999px;border:2px solid #111"><input id="edit-u-pass" placeholder="New password (blank to keep)" type="password" style="padding:10px;border-radius:9999px;border:2px solid #111"><select id="edit-u-role" style="padding:10px;border-radius:9999px;border:2px solid #111"><option value="staff" '+(u.role==='staff'?'selected':'')+'>staff</option><option value="manager" '+(u.role==='manager'?'selected':'')+'>manager</option><option value="admin" '+(u.role==='admin'?'selected':'')+'>admin</option><option value="master" '+(u.role==='master'?'selected':'')+'>master</option></select><input id="edit-u-first" value="'+(u.firstName||'')+'" placeholder="First Name" style="padding:10px;border-radius:9999px;border:2px solid #111"><input id="edit-u-last" value="'+(u.lastName||'')+'" placeholder="Last Name" style="padding:10px;border-radius:9999px;border:2px solid #111"></div>', (ok)=>{ 
     if(!ok) return; 
     const nu=(document.getElementById('edit-u-name')?.value||'').trim(); 
     const np=(document.getElementById('edit-u-pass')?.value||'').trim(); 
@@ -12292,12 +12294,7 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
     toast('Failed to submit: '+e.message); 
     console.error('submitShiftCorrectionRequest error', e);
   }
-}
-
-
-
-
-}</script>
+</script>
 <div id="hidden-staff-page" class="full-page" style="display:none">
   <div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER - HIDDEN STAFF</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div>
   <div class="page-inner" style="padding:14px">
