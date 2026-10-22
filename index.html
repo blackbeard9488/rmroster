@@ -4488,7 +4488,6 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
             staff.originalShifts[colIdx]=staff.shifts[colIdx];
             try{ staff.originalShifts[String(colIdx)]=staff.shifts[colIdx]; }catch(e){}
           }
-          // V171: Detect OFF->shift new offer - pending should NEVER show posted until accepted
           var adminBypassPending = false;
           try{
             var bypassEl = document.getElementById('admin-bypass-pending');
