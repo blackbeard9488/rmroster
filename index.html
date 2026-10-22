@@ -3,7 +3,7 @@
 <head><link rel="icon" href="data:image/x-icon;,">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
-<title>REPCO ROSTER V211 LIVE PERMANENT - FIXES</title>
+<title>REPCO ROSTER V212 FIXED ACCOUNT & PROMPT</title>
 
 <script>
 // V211 EARLY STUBS - prevent ReferenceError before full script loads
@@ -7004,30 +7004,34 @@ function openPage(id){
     if(mt) mt.textContent='☰'; 
   }catch(e){}
   
-  // Render immediately
+  // Render immediately - V211 FIX: safe calls with window and typeof checks to prevent ReferenceError
   try{
-    if(id==='options-page') renderOptions();
-    if(id==='today-workers-page') renderTodayWorkers();
-    if(id==='requests-page') renderRequests();
-    if(id==='shift-offers-page'){ try{ renderShiftOffers(); }catch(e){} try{ updateShiftOffersBadge(); }catch(e){} }
-    if(id==='buddies-today-page-v141') renderBuddies('today');
-    if(id==='buddies-tomorrow-page-v141') renderBuddies('tomorrow');
-    if(id==='mysched-page') renderMySchedule();
-    if(id==='account-page') renderAccountPage();
-    if(id==='hidden-staff-page'){ try{ renderHiddenStaffPage(); }catch(e){} }
-    if(id==='public-holiday-page'){ try{ renderPublicHolidayPage(); }catch(e){} }
-    if(id==='unavail-page') { try{ renderUnavailablePage(); }catch(e){ try{ renderUnavailable(); }catch(e2){} } }
-    if(id==='account-mgmt-page') renderAccountMgmtPage();
-    if(id==='archive-page') renderArchivePage();
-    if(id==='import-export-page') renderImportExportPage();
+    if(id==='options-page'){ if(typeof renderOptions==='function') renderOptions(); else if(window.renderOptions) window.renderOptions(); }
+    if(id==='today-workers-page'){ if(typeof renderTodayWorkers==='function') renderTodayWorkers(); else if(window.renderTodayWorkers) window.renderTodayWorkers(); }
+    if(id==='requests-page'){ if(typeof renderRequests==='function') renderRequests(); else if(window.renderRequests) window.renderRequests(); }
+    if(id==='shift-offers-page'){ try{ if(typeof renderShiftOffers==='function') renderShiftOffers(); else if(window.renderShiftOffers) window.renderShiftOffers(); }catch(e){} try{ if(typeof updateShiftOffersBadge==='function') updateShiftOffersBadge(); }catch(e){} }
+    if(id==='buddies-today-page-v141'){ if(typeof renderBuddies==='function') renderBuddies('today'); else if(window.renderBuddies) window.renderBuddies('today'); }
+    if(id==='buddies-tomorrow-page-v141'){ if(typeof renderBuddies==='function') renderBuddies('tomorrow'); else if(window.renderBuddies) window.renderBuddies('tomorrow'); }
+    if(id==='mysched-page'){ if(typeof renderMySchedule==='function') renderMySchedule(); else if(window.renderMySchedule) window.renderMySchedule(); }
+    if(id==='account-page'){ 
+      if(typeof renderAccountPage==='function') renderAccountPage(); 
+      else if(window.renderAccountPage) window.renderAccountPage(); 
+      else { console.log('renderAccountPage not yet loaded, retrying'); setTimeout(function(){ if(window.renderAccountPage) window.renderAccountPage(); }, 500); }
+    }
+    if(id==='hidden-staff-page'){ try{ if(typeof renderHiddenStaffPage==='function') renderHiddenStaffPage(); else if(window.renderHiddenStaffPage) window.renderHiddenStaffPage(); }catch(e){} }
+    if(id==='public-holiday-page'){ try{ if(typeof renderPublicHolidayPage==='function') renderPublicHolidayPage(); else if(window.renderPublicHolidayPage) window.renderPublicHolidayPage(); }catch(e){} }
+    if(id==='unavail-page') { try{ if(typeof renderUnavailablePage==='function') renderUnavailablePage(); else if(window.renderUnavailablePage) window.renderUnavailablePage(); }catch(e){ try{ if(typeof renderUnavailable==='function') renderUnavailable(); }catch(e2){} } }
+    if(id==='account-mgmt-page'){ if(typeof renderAccountMgmtPage==='function') renderAccountMgmtPage(); else if(window.renderAccountMgmtPage) window.renderAccountMgmtPage(); }
+    if(id==='archive-page'){ if(typeof renderArchivePage==='function') renderArchivePage(); else if(window.renderArchivePage) window.renderArchivePage(); }
+    if(id==='import-export-page'){ if(typeof renderImportExportPage==='function') renderImportExportPage(); else if(window.renderImportExportPage) window.renderImportExportPage(); }
   }catch(e){ console.error('openPage render error', e); }
   
   setTimeout(function(){
     try{
-      if(id==='options-page') renderOptions();
-      if(id==='requests-page') renderRequests();
-      if(id==='mysched-page') renderMySchedule();
-      if(id==='account-page') renderAccountPage();
+      if(id==='options-page'){ if(typeof renderOptions==='function') renderOptions(); else if(window.renderOptions) window.renderOptions(); }
+      if(id==='requests-page'){ if(typeof renderRequests==='function') renderRequests(); else if(window.renderRequests) window.renderRequests(); }
+      if(id==='mysched-page'){ if(typeof renderMySchedule==='function') renderMySchedule(); else if(window.renderMySchedule) window.renderMySchedule(); }
+      if(id==='account-page'){ if(typeof renderAccountPage==='function') renderAccountPage(); else if(window.renderAccountPage) window.renderAccountPage(); }
     }catch(e){}
   }, 200);
   
@@ -7854,6 +7858,7 @@ function adminAddUserMgmt(){
 
 
 function adminEditUser(idx){ 
+  try{ if(typeof showCustomPrompt==="undefined" && window.showCustomPrompt){ window.showCustomPrompt=window.showCustomPrompt; } }catch(e){}
   let users=safeGetJSON('retail_roster_users_v1',[]); 
   const u=users[idx]; 
   if(!u) return; 
@@ -10088,7 +10093,6 @@ function exportPDF(){
   });
 }
 
-function exportPDF_fallback(){
 function exportPDF_fallback(){
   try{
     let cur=getSelectedFortnight() || getCurrentFortnight(); if(!cur){ toast('No roster'); return; }
