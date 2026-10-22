@@ -3,6 +3,15 @@
 <head><link rel="icon" href="data:image/x-icon;,">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=5,user-scalable=yes">
+
+<script>
+// V213 EXTRA EARLY STUBS
+window.toggleMobileMenu = window.toggleMobileMenu || function(e){ try{ if(e) e.preventDefault(); }catch(err){} var gh=document.getElementById('global-header'); if(gh){ gh.classList.toggle('mobile-open'); var btn=document.getElementById('mobile-menu-toggle'); if(btn) btn.textContent=gh.classList.contains('mobile-open')?'✕':'☰'; } };
+window.doLogin = window.doLogin || function(){ console.log('doLogin early stub'); };
+window.showMain = window.showMain || function(){ console.log('showMain early stub'); };
+window.openPage = window.openPage || function(id){ console.log('openPage early',id); var el=document.getElementById(id); if(el){ el.classList.add('show'); el.style.display='block'; } };
+</script>
+
 <title>REPCO ROSTER V212 FIXED ACCOUNT & PROMPT</title>
 
 <script>
@@ -12294,6 +12303,7 @@ function submitShiftCorrectionRequest(idx, dateLabel, oldShift, newShift, reason
     toast('Failed to submit: '+e.message); 
     console.error('submitShiftCorrectionRequest error', e);
   }
+}
 </script>
 <div id="hidden-staff-page" class="full-page" style="display:none">
   <div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER - HIDDEN STAFF</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div>
