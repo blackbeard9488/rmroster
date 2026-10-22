@@ -3202,27 +3202,23 @@ function getCurrentFortnight(){
 
 function getSelectedFortnight(){
   try{
-    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
-    if(fns && !Array.isArray(fns) && typeof fns==='object'){
-      fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); });
-    }
-    if(!fns || fns.length===0) return null;
-    // Check select element first (user manual selection via dropdown)
+    // 1. Check select element first
     var sel=document.getElementById('fortnight-select');
-    if(sel && sel.value){
-      var found=fns.find(function(f){ return f.id===sel.value; });
-      if(found) return found;
-    }
-    // Then check stored ID (from PREV/NEXT)
+    if(sel && sel.value) return sel.value;
+    // 2. Check stored ID
     var curId=safeGet('retail_roster_currentFortnightId');
-    if(curId){
-      var found=fns.find(function(f){ return f.id===curId; });
-      if(found) return found;
-    }
-    return getCurrentFortnight();
+    if(curId) return curId;
+    // 3. Fallback to currentFortnightId var
+    if(typeof currentFortnightId!=='undefined' && currentFortnightId) return currentFortnightId;
+    if(typeof selectedFortnightKey!=='undefined' && selectedFortnightKey) return selectedFortnightKey;
+    // 4. Fallback to first roster
+    var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{});
+    var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;});
+    if(fns.length>0) return fns[0].id;
+    return null;
   }catch(e){
-    console.error('getSelectedFortnight error', e);
-    return getCurrentFortnight();
+    console.error('getSelectedFortnight error',e);
+    return null;
   }
 }
 
@@ -7898,9 +7894,6 @@ function renderAccountMgmtPage(){
     if(!Array.isArray(users)) users=[];
     var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{});
     var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;});
-    var cur=null;
-    try{ cur=getSelectedFortnight() ? fns.find(function(f){return f.id===getSelectedFortnight();}) : null; }catch(e){}
-    if(!cur && fns.length>0) cur=fns[0];
     var allRosterStaffMap={};
     var hiddenStaff=[];
     try{ hiddenStaff=safeGetJSON('retail_roster_hidden_staff_v1',[])||[]; if(!Array.isArray(hiddenStaff)) hiddenStaff=[]; }catch(e){ hiddenStaff=[]; }
@@ -7957,7 +7950,7 @@ function renderAccountMgmtPage(){
     var html='';
     html+='<div class="card" style="background:#111;color:#fff;padding:12px;margin-bottom:12px"><div style="font-weight:900;margin-bottom:8px">BULK PASSWORD RESET - FirstName + Initial if duplicate</div><button onclick="adminSetAllPasswordsToFirstname()" style="background:#E30613;color:#fff;border:2px solid #fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">SET ALL PASSWORDS TO FIRSTNAME</button></div>';
     html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL STAFF FROM ROSTER (including hidden, deduped): '+allRosterStaff.length+' - from '+fns.length+' fortnights</div><div style="max-height:200px;overflow:auto;border:1px solid #eee;padding:8px;border-radius:8px;margin-bottom:12px">';
-    if(allRosterStaff.length===0){ html+='<div style="font-size:11px;color:#E30613">No roster staff found - upload Excel first (B1,D1,F1...AB1 dates, A3 names, Row18 ignored)</div>'; }
+    if(allRosterStaff.length===0){ html+='<div style="font-size:11px;color:#E30613">No roster staff found - upload Excel first</div>'; }
     else{ allRosterStaff.forEach(function(s){ var hiddenBadge=s.isHidden?'<span style="background:#90CAF9;color:#111;border-radius:9999px;padding:2px 6px;font-size:8px;margin-left:4px">HIDDEN</span>':''; html+='<div style="padding:2px 0;font-size:11px;border-bottom:1px solid #f5f5f5"><b>'+(s.lastName||'').toUpperCase()+', '+(s.firstName||'')+'</b> '+hiddenBadge+'</div>'; }); }
     html+='</div></div>';
     html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ALL USERS ('+users.length+' users)</div><div id="admin-user-list-all">';
@@ -11585,21 +11578,34 @@ function cleanupCorruptedRequests(){
     if(!Array.isArray(reqs)) return;
     var cleaned=reqs.filter(function(r){
       if(!r || typeof r!=='object') return false;
-      // Remove corrupted new_shift_offer that belongs in shift offers
       if(r.type && r.type.indexOf('new_shift_offer')!==-1){
-        // Keep only recent valid ones, remove junk with ts:0 and huge deniedTs
         if(!r.ts || r.ts===0){
-          if(r.deniedTs && r.deniedTs>1e12) return false; // Remove future junk like 1792601634310
-          if(r.approvedTs===0 && r.deniedTs===0) return false; // Remove ts:0 junk
+          if(r.deniedTs && r.deniedTs>1e12) return false;
+          if(r.approvedTs===0 && r.deniedTs===0 && r.ts===0) return false;
         }
+        // Remove if no valid username or shiftDate
+        if(!r.username || !r.shiftDate) return false;
       }
-      // Remove entries with no username
       if(!r.username) return false;
       return true;
     });
     if(cleaned.length!==reqs.length){
       console.log('Cleaned corrupted requests', reqs.length, '->', cleaned.length);
       safeSetJSON('retail_roster_requests_v2',cleaned);
+    }
+    // Also clean shift offers with ts:0 junk
+    var offers=safeGetJSON('retail_roster_shift_offers_v1',[]);
+    if(Array.isArray(offers)){
+      var cleanedOffers=offers.filter(function(o){
+        if(!o || typeof o!=='object') return false;
+        if(o.timestamp===0 && o.status==='denied' && o.deniedTs && o.deniedTs>1e12) return false;
+        if(!o.targetUsername) return false;
+        return true;
+      });
+      if(cleanedOffers.length!==offers.length){
+        console.log('Cleaned shift offers', offers.length, '->', cleanedOffers.length);
+        safeSetJSON('retail_roster_shift_offers_v1',cleanedOffers);
+      }
     }
   }catch(e){}
 }
@@ -12670,7 +12676,7 @@ function renderBuddiesToday(){var today=getISO(new Date()); var byFRaw=safeGetJS
 function renderBuddiesTomorrow(){var tomorrow=getISO(new Date(Date.now()+86400000)); var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var selId=getSelectedFortnight(); var cur=fns.find(function(f){return f.id===selId;}); if(!cur && fns.length>0) cur=fns[0]; if(!cur) return; var datesRaw=cur.dates||[]; var dates=datesRaw.map(function(d){return d.iso||d;}); if(dates.length===0) dates=getDatesForFortnight(cur.id); var idx=dates.indexOf(tomorrow); var elDate=document.getElementById('buddy-tomorrow-date'); if(elDate) elDate.textContent=tomorrow+' '+getDDMM(tomorrow); var listEl=document.getElementById('buddy-tomorrow-list'); if(!listEl) return; if(idx<0){listEl.innerHTML='<div class="small">Tomorrow not in current fortnight</div>'; return;} var buddies=[]; (cur.staff||[]).forEach(function(s){if(s.hidden) return; var sh=(s.shifts&&s.shifts[idx]!==undefined)?s.shifts[idx]:((s.shifts&&s.shifts[tomorrow])||'OFF'); if(sh!=='OFF') buddies.push(s.name+' - '+sh);}); listEl.innerHTML=buddies.length?buddies.map(function(b){return '<div class="list-item">'+b+'</div>';}).join(''):'<div class="small">No buddies</div>';}
 function renderBuddies(){renderBuddiesToday(); renderBuddiesTomorrow();}
 function populateMyScheduleFortnights(){var sel=document.getElementById('mysched-fortnight'); if(!sel) return; var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var keys=fns.map(function(f){return f.id;}).sort(); sel.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; sel.appendChild(opt);});}
-function renderMySchedule(){var el=document.getElementById('my-schedule-list'); if(!el) return; var sel=document.getElementById('mysched-fortnight'); var fnId=(sel&&sel.value)||getSelectedFortnight(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[fnId]; if(!cur){el.innerHTML='<div class="small">No roster</div>'; return;} var username=(safeGet('repco_username','')||'').toLowerCase(); var staff=(cur.staff||[]).find(function(s){return (s.username||'').toLowerCase()===username||s.name.toLowerCase()===username;}); if(!staff){el.innerHTML='<div class="small">No schedule for '+username+' - My Schedule Live find by username</div>'; return;} var dates=getDatesForFortnight(fnId); var html=''; dates.forEach(function(iso,idx){var sh=(staff.shifts&&staff.shifts[idx]!==undefined)?staff.shifts[idx]:((staff.shifts&&staff.shifts[iso])||'OFF'); html+='<div class="list-item"><b>'+getDDMM(iso)+'</b> '+sh+'</div>';}); el.innerHTML=html;}
+function renderMySchedule(){var el=document.getElementById('my-schedule-list'); if(!el) return; try{ var countdownEl=document.getElementById('my-schedule-countdown'); if(countdownEl && !countdownEl.innerHTML){ countdownEl.innerHTML='<div style="padding:10px;background:#FFEB3B;border-radius:8px;font-weight:900">Next shift countdown loading...</div>'; } }catch(e){}  var sel=document.getElementById('mysched-fortnight'); var fnId=(sel&&sel.value)||getSelectedFortnight(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[fnId]; if(!cur){el.innerHTML='<div class="small">No roster</div>'; return;} var username=(safeGet('repco_username','')||'').toLowerCase(); var staff=(cur.staff||[]).find(function(s){return (s.username||'').toLowerCase()===username||s.name.toLowerCase()===username;}); if(!staff){el.innerHTML='<div class="small">No schedule for '+username+' - My Schedule Live find by username</div>'; return;} var dates=getDatesForFortnight(fnId); var html=''; dates.forEach(function(iso,idx){var sh=(staff.shifts&&staff.shifts[idx]!==undefined)?staff.shifts[idx]:((staff.shifts&&staff.shifts[iso])||'OFF'); html+='<div class="list-item"><b>'+getDDMM(iso)+'</b> '+sh+'</div>';}); el.innerHTML=html;}
 function renderAccountPage(){var user=window.currentUser||{username:safeGet('repco_username','')}; if(!user) return; var uEl=document.getElementById('acc-user'); if(uEl) uEl.value=user.username||'';}
 function saveAccount(){var newUser=document.getElementById('acc-user').value.trim(); var newPass=document.getElementById('acc-pass').value.trim(); var users=safeGetJSON('retail_roster_users_v1',[]); var cur=window.currentUser; if(!cur){toast('No current user'); return;} var idx=users.findIndex(function(u){return u.username===cur.username;}); if(idx===-1){toast('User not found'); return;} if(newUser){if(users.find(function(u){return u.username===newUser&&u.username!==cur.username;})){toast('Username exists'); return;} users[idx].username=newUser; safeSet('repco_username',newUser);} if(newPass) users[idx].password=newPass; safeSetJSON('retail_roster_users_v1',users); window.currentUser=users[idx]; safeSetJSON('repco_currentUser',users[idx]); renderAccountPage(); toast('Account saved'); cloudSave();}
 function renderAccountMgmtPage(){var el=document.getElementById('account-mgmt-list'); if(!el) return; var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)||users.length===0){el.innerHTML='<div class="small">No users</div>'; return;} var html='<table style="width:100%"><tr><th>Username</th><th>Role</th><th>Type</th><th>Actions</th></tr>'; users.forEach(function(u){html+='<tr><td>'+u.username+'</td><td>'+(u.role||'')+'</td><td>'+(u.employmentType||'')+'</td><td><button class="btn-grey" onclick="adminEditUser(\''+u.username+'\')">Edit</button> <button class="btn-grey" onclick="deleteUser(\''+u.username+'\')">Delete</button></td></tr>';}); html+='</table>'; el.innerHTML=html;}
@@ -12684,7 +12690,15 @@ function importExcel(event){handleExcel(event);}
 function exportCSV(){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur||!cur.staff||cur.staff.length===0){toast('No roster'); return;} var dates=getDatesForFortnight(getSelectedFortnight()); var csv='Staff,'+dates.map(getDDMM).join(',')+',Total\n'; cur.staff.forEach(function(s){var shifts=s.shifts||[]; var row=s.name; var tot=0; dates.forEach(function(iso,idx){var sh=Array.isArray(shifts)?(shifts[idx]||'OFF'):(shifts[iso]||'OFF'); row+=','+sh; if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!=='') tot+=calcHours(sh);}); row+=','+tot.toFixed(1); csv+=row+'\n';}); var blob=new Blob([csv],{type:'text/csv'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=getSelectedFortnight()+'.csv'; a.click(); URL.revokeObjectURL(url); toast('CSV exported');}
 function deleteRoster(){var fid=getSelectedFortnight(); if(!fid){toast('No fortnight'); return;} if(!confirm('Delete Roster '+fid+'?')) return; pushUndo(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var arch=safeGetJSON('repco_archive',{}); if(byF[fid]){arch[fid]=byF[fid]; delete byF[fid]; safeSetJSON('retail_roster_byFortnight_v1',byF); safeSetJSON('repco_archive',arch); toast('Deleted '+fid); var keys=Object.keys(byF).sort(); if(keys.length>0){setSelectedFortnight(keys[keys.length-1]); populateFortnightSelect(); renderRosterSafe();} cloudSave();}}
 function getSelectedFortnight(){return currentFortnightId||selectedFortnightKey;}
-function setSelectedFortnight(k){currentFortnightId=k; selectedFortnightKey=k; var sel=document.getElementById('fortnight-select'); if(sel) sel.value=k; var mySel=document.getElementById('mysched-fortnight'); if(mySel) mySel.value=k;}
+function setSelectedFortnight(k){
+  currentFortnightId=k;
+  selectedFortnightKey=k;
+  safeSet('retail_roster_currentFortnightId', k);
+  var sel=document.getElementById('fortnight-select');
+  if(sel) sel.value=k;
+  var mySel=document.getElementById('mysched-fortnight');
+  if(mySel) mySel.value=k;
+}
 function getCurrentRoster(){
   try{
     var byF=safeGetJSON('retail_roster_byFortnight_v1',{});
@@ -12783,7 +12797,6 @@ function showPage(id){
   if(main) main.style.display='none';
   var target=document.getElementById(id);
   if(target) target.style.display='block';
-  // Handle all page IDs - fix blank pages
   if(id==='requests-page') renderRequestsSafe();
   if(id==='staff-unavailable-page' || id==='unavail-page'){ renderUnavailCalendar(); renderMyRequests(); populateCorrectionDates(); populateCorrectionDropdown(); }
   if(id==='hidden-staff-page'){ renderHiddenStaffFormGrid(); renderHiddenStaffList(); }
@@ -12798,6 +12811,13 @@ function showPage(id){
   if(id==='shift-offers-page'){ try{ renderShiftOffers(); }catch(e){} }
   if(id==='today-workers-page'){ try{ renderBuddiesToday(); }catch(e){} }
   if(id==='import-export-page'){ try{ if(typeof renderImportExportPage==='function') renderImportExportPage(); }catch(e){} }
+  // Fix blank staff unavailable and my schedule countdown
+  if(id==='unavail-page' || id==='staff-unavailable-page'){
+    setTimeout(function(){ try{ renderUnavailCalendar(); }catch(e){} },100);
+  }
+  if(id==='mysched-page' || id==='my-schedule-page'){
+    setTimeout(function(){ try{ renderMySchedule(); }catch(e){} },100);
+  }
 }
 function showMain(){hideAllPages(); var main=document.getElementById('repco-v65'); if(main){main.style.display='block'; main.classList.add('show');} renderRosterSafe();}
 async function populateFortnightSelect(){var sel=document.getElementById('fortnight-select'); var mySel=document.getElementById('mysched-fortnight'); var byFRaw=safeGetJSON('retail_roster_byFortnight_v1',{}); var fns=Array.isArray(byFRaw)?byFRaw:Object.values(byFRaw).filter(function(v){return v&&v.id;}); var keys=fns.map(function(f){return f.id;}).sort(); if(keys.length===0){var id=generateFortnightId(new Date()); if(!byF[id]){byF[id]={id:id,dates:getDatesForFortnight(id),staff:[],createdAt:Date.now()}; safeSetJSON('retail_roster_byFortnight_v1',byF);} keys=[id];} function fill(s){if(!s) return; s.innerHTML=''; keys.forEach(function(k){var opt=document.createElement('option'); opt.value=k; opt.textContent=k; s.appendChild(opt);});} fill(sel); fill(mySel); if(!currentFortnightId) currentFortnightId=keys[0]; if(sel) sel.value=currentFortnightId; if(mySel) mySel.value=currentFortnightId; updateFortnightInfo();}
