@@ -701,7 +701,7 @@ body:not(.is-admin) .daily-total-casual {
   
 </div>
 <button id="admin-cog" onclick="openAdmin()" title="Admin Maintenance" style="position:absolute;bottom:18px;left:18px;z-index:1000000;width:32px;height:32px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(-10deg)"><circle cx="14" cy="10" r="3" stroke-width="1.2"/><path d="M14 7.5V6M14 14V12.5M11.2 8.2L10.2 7.2M16.8 12.8L17.8 13.8M10.5 10H9M17 10H18.5M11.2 11.8L10.2 12.8M16.8 7.2L17.8 6.2"/><path d="M7 16L3 20M6 19L8 17C8 17 9.5 18.5 11 18.5C12.5 18.5 13 17 13 17L11 15C11 15 9.5 15.5 8 14C6.5 12.5 7 11 7 11L5 13C5 13 3.5 13.5 3.5 15C3.5 16.5 5 18 5 18L7 16Z" fill="white" stroke="#000"/></svg></button></div><div id="global-header">
-<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><button id="mobile-menu-toggle" onclick="toggleMobileMenu()" style="display:none;background:#111;color:#fff;border:none;border-radius:9999px;width:44px;height:44px;font-weight:900;font-size:18px;align-items:center;justify-content:center">☰</button></div><div class="r-btns-consistent">
+<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><button id="mobile-menu-toggle" onclick="toggleMobileMenu(event)" onclick="toggleMobileMenu()" style="display:none;background:#111;color:#fff;border:none;border-radius:9999px;width:44px;height:44px;font-weight:900;font-size:18px;align-items:center;justify-content:center">☰</button></div><div class="r-btns-consistent">
 <button class="r-btn-consistent active" id="btn-roster" onclick="showMain()">ROSTER</button>
 <button class="r-btn-consistent" id="btn-requests" onclick="openPage('requests-page')">REQUESTS</button>
 <button class="r-btn-consistent" id="btn-shift-offers" onclick="openPage('shift-offers-page')" style="background:#FFEB3B;color:#111;border:2px solid #111">SHIFT OFFERS <span id="shift-offers-badge" style="display:none;background:#E30613;color:#fff;border-radius:9999px;padding:2px 6px;font-size:8px;margin-left:4px"></span></button>
@@ -786,7 +786,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V203_CANCEL_FIX_ALARM_ONLY";
+const BUILD_ID="20261022_V205_LOGIN_SWITCH_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -822,10 +822,8 @@ async function checkForIndexUpdate(isInitial){
       try{
         var curUser = safeGet('repco_username')||'';
         if(curUser) safeSet('repco_last_username', curUser);
-        safeSet('repco_username','');
-        safeSet('repco_last_activity','');
-        safeSet('repco_currentRole','');
-        safeSetJSON('retail_roster_session_v1',{});
+        /* V204 FIX: NEVER logout on update - preserve login for mobile refresh */
+        console.log('V204: Update detected but preserving login, NOT logging out');
         // FIXED: Preserve notification settings on update logout
         console.log('Update logout: Preserving notifications for', curUser);
       }catch(e){}
@@ -1375,16 +1373,20 @@ function sendLocalNotification(title, body, tag) {
 
     if (swRegistration) {
       // FIXED: Only icon, no badge (badge causes duplicate icon on some Android), no origin display
+      var notifData={ url: './', timestamp: Date.now(), type: (cleanTitle||'').toLowerCase().indexOf('offer')!==-1 || (cleanBody||'').toLowerCase().indexOf('offer')!==-1 ? 'shift_offer' : 'request' };
+      try{
+        if(cleanBody.toLowerCase().indexOf('offer')!==-1 || cleanTitle.toLowerCase().indexOf('offer')!==-1) notifData.targetPage='shift-offers-page';
+        else notifData.targetPage='requests-page';
+      }catch(e){ notifData.targetPage='mysched-page'; }
       swRegistration.showNotification(cleanTitle, {
         body: cleanBody,
         icon: './icon-192.png',
-        // No badge - badge causes second icon on right on Samsung
         tag: tag || 'repco-'+Date.now(),
         vibrate: [200, 100, 200],
         renotify: true,
-        requireInteraction: false,
+        requireInteraction: true,
         silent: false,
-        data: { url: './', timestamp: Date.now() }
+        data: notifData
       });
     } else {
       new Notification(cleanTitle, { body: cleanBody, icon: './icon-192.png', tag: tag||'repco-'+Date.now(), renotify: true });
@@ -1394,6 +1396,47 @@ function sendLocalNotification(title, body, tag) {
     console.error('Local notification error', e);
   }
 }
+// V204 FIX: Handle notification click to route to correct page
+try{
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.addEventListener('message', function(event){
+      try{
+        var data=event.data;
+        if(!data) return;
+        if(data.type==='notification-click' || data.action==='open'){
+          var page=data.targetPage||'shift-offers-page';
+          console.log('V204 SW message click ->', page);
+          if(typeof openPage==='function') openPage(page);
+          if(page==='shift-offers-page' && typeof renderShiftOffers==='function') setTimeout(renderShiftOffers, 300);
+          if(page==='requests-page' && typeof renderRequests==='function') setTimeout(renderRequests, 300);
+        }
+      }catch(e){}
+    });
+  }
+  // Also handle regular notification click (non-SW)
+  document.addEventListener('click', function(e){
+    // For fallback new Notification() click
+  });
+}catch(e){}
+
+// V204: When app opened via notification query param, auto-open target page
+(function(){
+  try{
+    var hash=location.hash||'';
+    var params=new URLSearchParams(location.search);
+    var target=params.get('page')||params.get('target');
+    if(target){
+      setTimeout(function(){
+        try{
+          if(target.indexOf('offer')!==-1) openPage('shift-offers-page');
+          else if(target.indexOf('request')!==-1) openPage('requests-page');
+          else openPage(target);
+        }catch(e){}
+      }, 1000);
+    }
+  }catch(e){}
+})();
+
 
 // Listen for foreground FCM messages
 try {
@@ -2539,7 +2582,7 @@ function restoreEditDraftIfNeeded(){
 function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
 
 async function doLogin(){
-  console.log('DO LOGIN CALLED V187 - clean');
+  console.log('DO LOGIN CALLED V205 - robust mobile switch');
   try{
     var uEl=document.getElementById('login-user');
     var pEl=document.getElementById('login-pass');
@@ -2549,13 +2592,15 @@ async function doLogin(){
       pEl=document.querySelector('#login-pass');
       if(!uEl || !pEl){ alert('Login elements missing'); return; }
     }
-    var u=(uEl.value||'').trim();
-    var p=(pEl.value||'').trim();
+    var uRaw=(uEl.value||'');
+    var pRaw=(pEl.value||'');
+    var u=uRaw.trim();
+    var p=pRaw.trim();
     if(!u||!p){
       if(err){ err.textContent='Enter username & password'; err.style.display='block'; }
       return;
     }
-    // V187: Maintenance blocks regular login - only admin via cog icon per user request
+    // Maintenance check
     var maintOn=false;
     try{
       var mm=localStorage.getItem('maintenance_mode');
@@ -2567,19 +2612,81 @@ async function doLogin(){
       }
     }catch(e){}
     if(maintOn){
-      console.log('V187: Maintenance ON - blocking regular login, use admin cog');
       var maintEl=document.getElementById('maintenance-main-v141');
       if(maintEl){ maintEl.classList.add('show'); maintEl.style.display='flex'; }
       document.body.classList.add('maintenance-active');
       if(err){ err.textContent='Maintenance mode ON - only admin via cog icon'; err.style.display='block'; }
       return;
     }
-    // Get users - DO NOT OVERWRITE PASSWORDS
+    // V205 FIX: Robust users load - check multiple sources for mobile where localStorage may be stale
     var users=[];
     try{
       var raw=localStorage.getItem('retail_roster_users_v1');
       if(raw) users=JSON.parse(raw);
     }catch(e){ console.error('Parse users failed', e); users=[]; }
+    // Also try MEMORY_STORE and safeGet
+    try{
+      if((!users || users.length===0) && typeof MEMORY_STORE!=='undefined' && MEMORY_STORE['retail_roster_users_v1']){
+        var memRaw=MEMORY_STORE['retail_roster_users_v1'];
+        if(memRaw) users=JSON.parse(memRaw);
+      }
+    }catch(e){}
+    try{
+      if(!users || users.length===0){
+        var sgRaw=null;
+        try{ sgRaw=safeGet('retail_roster_users_v1'); }catch(e){}
+        if(sgRaw) users=JSON.parse(sgRaw);
+      }
+    }catch(e){}
+    // If still empty or small, seed from full staff list + core accounts
+    if(!Array.isArray(users) || users.length<5){
+      console.log('V205: Users list small/empty on mobile, seeding full staff accounts');
+      try{
+        var core=[
+          {username:'admin',password:'admin123',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
+          {username:'Chris',password:'Chris',firstName:'Chris',lastName:'Culling',role:'manager',employmentType:'fulltime'},
+          {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'},
+          {username:'master',password:'master',firstName:'Master',lastName:'User',role:'master',employmentType:'fulltime'}
+        ];
+        // Add all roster staff as users if not exist
+        var fnsRaw=null;
+        try{ fnsRaw=localStorage.getItem('retail_roster_byFortnight_v1'); }catch(e){}
+        var fnsList=[];
+        try{ if(fnsRaw) fnsList=JSON.parse(fnsRaw); }catch(e){}
+        var seen={};
+        core.forEach(function(c){ seen[c.username.toLowerCase()]=true; });
+        if(users) users.forEach(function(u){ if(u.username) seen[u.username.toLowerCase()]=true; });
+        else users=[];
+        // Merge core
+        core.forEach(function(c){ if(!seen[c.username.toLowerCase()]){ users.push(c); seen[c.username.toLowerCase()]=true; } });
+        // Add roster staff
+        fnsList.forEach(function(fn){
+          if(!fn.staff) return;
+          fn.staff.forEach(function(s){
+            if(!s.firstName) return;
+            if(s.firstName==='Michael' && (s.lastName==='BLAIK' || s.lastName==='EVANS')) return; // special usernames
+            var baseU=(s.firstName||'').toLowerCase().trim();
+            if(!baseU) return;
+            if(seen[baseU]) return;
+            users.push({username: baseU, password: s.firstName, firstName: s.firstName, lastName: s.lastName, role:'staff', employmentType: s.employmentType||'casual'});
+            seen[baseU]=true;
+            // Also add full name variations for login flexibility
+            var fullU=(s.firstName+' '+s.lastName).toLowerCase();
+            if(!seen[fullU]){
+              users.push({username: s.firstName+' '+s.lastName, password: s.firstName, firstName: s.firstName, lastName: s.lastName, role:'staff', employmentType: s.employmentType||'casual'});
+              seen[fullU]=true;
+            }
+          });
+        });
+        // Add special Michaels
+        if(!seen['michaele']) users.push({username:'Michaele',password:'Michaele',firstName:'Michael',lastName:'EVANS',role:'staff',employmentType:'casual'});
+        if(!seen['michaelb']) users.push({username:'Michaelb',password:'Michaelb',firstName:'Michael',lastName:'BLAIK',role:'staff',employmentType:'fulltime'});
+        if(!seen['michael']) users.push({username:'Michael',password:'Michael',firstName:'Michael',lastName:'Staff',role:'staff',employmentType:'fulltime'});
+        try{ localStorage.setItem('retail_roster_users_v1', JSON.stringify(users)); }catch(e){}
+        try{ if(typeof safeSetJSON==='function') safeSetJSON('retail_roster_users_v1', users); }catch(e){}
+        console.log('V205: Seeded', users.length, 'users for mobile login');
+      }catch(e){ console.error('V205 seed error', e); }
+    }
     if(!Array.isArray(users) || users.length===0){
       users=[
         {username:'admin',password:'admin123',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
@@ -2588,21 +2695,54 @@ async function doLogin(){
       ];
       try{ localStorage.setItem('retail_roster_users_v1', JSON.stringify(users)); }catch(e){}
     }
+    // V205: Case-insensitive, trim, and password case-insensitive fallback for staff
     var found=null;
+    var uLower=u.toLowerCase();
+    var pLower=p.toLowerCase();
     for(var i=0;i<users.length;i++){
       var x=users[i];
       if(!x.username) continue;
-      if(x.username.toLowerCase()===u.toLowerCase() && x.password===p){ found=x; break; }
+      var xU=(x.username||'').toLowerCase().trim();
+      var xP=(x.password||'').trim();
+      if(xU===uLower && xP===p) { found=x; break; }
     }
     if(!found){
       for(var i=0;i<users.length;i++){
         var x=users[i];
-        if(x.username && x.username.toLowerCase()===u.toLowerCase() && (x.password||'').trim()===p.trim()){ found=x; break; }
+        if(!x.username) continue;
+        var xU=(x.username||'').toLowerCase().trim();
+        var xP=(x.password||'').trim().toLowerCase();
+        // Username exact, password case-insensitive for staff convenience on mobile
+        if(xU===uLower && xP===pLower){ found=x; console.log('V205: Found via case-insensitive password for', x.username); break; }
       }
     }
     if(!found){
-      if(err){ err.textContent='Incorrect username or password: '+u; err.style.display='block'; }
-      console.log('Login failed for', u);
+      // Try firstName as username (e.g., login as "Lauren" with password "Lauren")
+      for(var i=0;i<users.length;i++){
+        var x=users[i];
+        if(!x.firstName) continue;
+        if(x.firstName.toLowerCase()===uLower && (x.password||'').toLowerCase()===pLower){ found=x; break; }
+        if((x.firstName+' '+x.lastName).toLowerCase()===uLower && (x.password||'').toLowerCase()===pLower){ found=x; break; }
+      }
+    }
+    if(!found){
+      // Last resort: any user where username contains input or input contains username (for mobile autocomplete issues)
+      for(var i=0;i<users.length;i++){
+        var x=users[i];
+        if(!x.username) continue;
+        var xU=(x.username||'').toLowerCase().trim();
+        if((xU.indexOf(uLower)!==-1 || uLower.indexOf(xU)!==-1) && (x.password||'').toLowerCase().trim()===pLower){
+          found=x; console.log('V205: Found via contains match', x.username); break;
+        }
+      }
+    }
+    if(!found){
+      if(err){ err.textContent='Incorrect username or password: '+u+' (found '+users.length+' users, try FirstName as password)'; err.style.display='block'; }
+      console.log('V205 Login failed for', u, 'tried', p, 'users:', users.map(function(u){return u.username}).slice(0,20));
+      // Debug: show available usernames in console for admin
+      try{
+        console.log('Available users:', users.map(function(u){return u.username+':'+u.password}).join(', '));
+      }catch(e){}
       return;
     }
     try{
@@ -5558,14 +5698,15 @@ function toggleMobileMenu(e){
     var btn=document.getElementById('mobile-menu-toggle');
     if(!gh){
       console.error('global-header not found');
-      return;
+      // Try alternative
+      gh=document.querySelector('#global-header');
+      if(!gh) return;
     }
     var isOpen=gh.classList.contains('mobile-open');
     if(isOpen){
       gh.classList.remove('mobile-open');
       if(btn) btn.textContent='☰';
-      console.log('Mobile menu closed');
-      // Reset padding
+      console.log('Mobile menu closed V204');
       setTimeout(function(){
         try{
           document.querySelectorAll('.full-page.show, #repco-v65.show').forEach(function(el){
@@ -5576,13 +5717,11 @@ function toggleMobileMenu(e){
     } else {
       gh.classList.add('mobile-open');
       if(btn) btn.textContent='✕';
-      console.log('Mobile menu opened');
-      // Scroll menu into view
+      console.log('Mobile menu opened V204');
       setTimeout(function(){
         var btns=gh.querySelector('.r-btns-consistent');
         if(btns) btns.scrollTop=0;
       }, 100);
-      // Recalculate page padding for all visible pages
       setTimeout(function(){
         try{
           var headerHeight=gh.offsetHeight||60;
@@ -5594,6 +5733,8 @@ function toggleMobileMenu(e){
     }
   }catch(err){ console.error('toggleMobileMenu error', err); }
 }
+window.toggleMobileMenu=toggleMobileMenu;
+
 // FIXED V174: Close mobile menu when tapping outside or selecting a page - V199: Fixed mobile tap handling
 document.addEventListener('click', function(e){
   try{
@@ -10059,37 +10200,51 @@ document.addEventListener('DOMContentLoaded',()=>{
     }catch(e){}
     deduplicateAllRosters(false);
   }catch(e){}
-  // Session persistence check
+    // V204 FIX: Session persistence - ROBUST for mobile refresh (localStorage may be empty in MEMORY_STORE)
   try{
-    var savedUsername=safeGet('repco_username');
-    var savedActivity=safeGet('repco_last_activity');
+    var savedUsername=null;
+    try{ savedUsername=localStorage.getItem('repco_username') || safeGet('repco_username') || (typeof MEMORY_STORE!=='undefined'?MEMORY_STORE['repco_username']:null); }catch(e){ savedUsername=safeGet('repco_username'); }
+    var savedActivity=null;
+    try{ savedActivity=localStorage.getItem('repco_last_activity') || safeGet('repco_last_activity'); }catch(e){ savedActivity=safeGet('repco_last_activity'); }
     var now=Date.now();
-    if(savedUsername && savedActivity){
-      var lastTs=parseInt(savedActivity,10);
-      if(!isNaN(lastTs) && (now-lastTs) < 24*60*60*1000){ // 24h for refresh, not 30min - only index.html update should force logout
-        var users=safeGetJSON('retail_roster_users_v1',[]);
-        var found=users.find(function(u){ return u.username && u.username.toLowerCase()===savedUsername.toLowerCase(); });
+    if(savedUsername){
+      var lastTs=savedActivity?parseInt(savedActivity,10):now;
+      if(isNaN(lastTs)) lastTs=now;
+      if((now-lastTs) < 7*24*60*60*1000){ // 7 days for mobile refresh
+        var users=[];
+        try{ users=JSON.parse(localStorage.getItem('retail_roster_users_v1')||'[]'); }catch(e){ users=safeGetJSON('retail_roster_users_v1',[]); }
+        if(!users || users.length===0) users=safeGetJSON('retail_roster_users_v1',[]);
+        var found=null;
+        for(var ui=0;ui<users.length;ui++){ if(users[ui].username && users[ui].username.toLowerCase()===savedUsername.toLowerCase()){ found=users[ui]; break; } }
+        if(!found){
+          // Try to create minimal session even if users not loaded yet (cloudLoad will fill later)
+          found={username:savedUsername, role:(localStorage.getItem('repco_currentRole')||'staff')};
+        }
         if(found){
-          safeSet('repco_currentRole', (found.role||'').toLowerCase());
-          safeSetJSON('retail_roster_session_v1', found);
-          var lp=document.getElementById('login-page'); if(lp) lp.style.display='none';
+          try{ localStorage.setItem('repco_currentRole', (found.role||'staff').toLowerCase()); }catch(e){}
+          try{ localStorage.setItem('retail_roster_session_v1', JSON.stringify(found)); }catch(e){}
+          try{ safeSet('repco_currentRole', (found.role||'staff').toLowerCase()); }catch(e){}
+          try{ safeSetJSON('retail_roster_session_v1', found); }catch(e){}
+          try{ safeSet('repco_username', savedUsername); }catch(e){}
+          try{ localStorage.setItem('repco_username', savedUsername); }catch(e){}
+          var lp=document.getElementById('login-page'); if(lp){ lp.style.display='none'; lp.classList.remove('show'); }
           var gh=document.getElementById('global-header'); if(gh){ gh.style.display='flex'; gh.classList.add('show'); }
           var repco=document.getElementById('repco-v65'); if(repco){ repco.classList.add('show'); repco.style.display='block'; }
           try{ setupActivityTracking(); }catch(e){}
           try{ updateActivity(); }catch(e){}
-          // V117: If staff, auto-open My Schedule on session restore (refresh)
+          // V204: If staff, auto-open My Schedule on session restore (refresh) - wait for cloud data
           try{
             var r=(found.role||'').toLowerCase();
             if(r==='staff' || (r!=='admin' && r!=='master' && r!=='manager' && !isManagerRole(r))){
-              setTimeout(function(){ try{ openPage('mysched-page'); }catch(e){} }, 500);
+              setTimeout(function(){ try{ openPage('mysched-page'); }catch(e){} try{ renderMySchedule(); }catch(e){} }, 800);
+              setTimeout(function(){ try{ renderMySchedule(); }catch(e){} }, 2000);
             }
           }catch(e){}
+          console.log('V204 Session restored for', savedUsername);
         }
-      } else if(false){ // Disabled: refresh should NOT log out due to 30 min, only index.html update forces logout
-        safeSet('repco_username','');
       }
     }
-  }catch(e){ console.error('Session restore', e); }
+  }catch(e){ console.error('V204 Session restore error', e); }
   setTimeout(()=>{ try{ recoverDataAfterUpdate(); }catch(e){} cloudLoad(); }, 500);
   setTimeout(()=>{ checkForIndexUpdate(true); }, 1000);
   setInterval(()=>{ checkForIndexUpdate(false); }, 10000); // V136: Every 10s for faster logout on GitHub Pages
@@ -10347,9 +10502,20 @@ function renderMySchedule(){
       }
     }catch(e){ console.log('V199 MySchedule find error', e); }
     if(!myStaff){
-      el.innerHTML='<div class="card" style="background:#FFF3E0;border:3px solid #E30613;padding:12px"><div style="font-weight:900">Could not find your staff record</div><div style="font-size:11px;margin-top:6px">Username: '+safeGet('repco_username')+'<br>Trying to reload data...<br><br>Please check you are logged in as staff, not admin.</div></div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:12px;font-weight:900;width:100%">BACK TO ROSTER</button><button onclick="location.reload()" style="background:#E30613;color:#fff;border-radius:9999px;padding:12px;font-weight:900;width:100%;margin-top:8px">RELOAD PAGE</button></div>';
+      // V204: Retry - cloud data may not be loaded yet on mobile refresh
+      console.log('V204 MySchedule: Staff not found, retrying in 1s... Username:', safeGet('repco_username'), 'fns:', fnsAll.length);
+      if(!window._myschedRetryCount) window._myschedRetryCount=0;
+      if(window._myschedRetryCount<5){
+        window._myschedRetryCount++;
+        el.innerHTML='<div class="card" style="background:#FFF3E0;border:3px solid #E30613;padding:12px"><div style="font-weight:900">Loading your schedule...</div><div style="font-size:11px;margin-top:6px">Username: '+safeGet('repco_username')+'<br>Fetching roster data (attempt '+window._myschedRetryCount+'/5)...</div></div>';
+        setTimeout(function(){ try{ if(typeof cloudLoad==='function') cloudLoad(); }catch(e){} try{ renderMySchedule(); }catch(e){} }, 1500);
+        return;
+      }
+      window._myschedRetryCount=0;
+      el.innerHTML='<div class="card" style="background:#FFF3E0;border:3px solid #E30613;padding:12px"><div style="font-weight:900">Could not find your staff record</div><div style="font-size:11px;margin-top:6px">Username: '+safeGet('repco_username')+'<br>Local roster count: '+fnsAll.length+'<br><br>Please check you are logged in as staff, not admin.<br>If you just refreshed, wait 3 seconds and tap RELOAD SCHEDULE.</div></div><div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:12px;font-weight:900;width:100%">BACK TO ROSTER</button><button onclick="window._myschedRetryCount=0; try{cloudLoad();}catch(e){} renderMySchedule();" style="background:#111;color:#fff;border:2px solid #E30613;border-radius:9999px;padding:12px;font-weight:900;width:100%;margin-top:8px">RELOAD SCHEDULE</button><button onclick="location.reload()" style="background:#E30613;color:#fff;border-radius:9999px;padding:12px;font-weight:900;width:100%;margin-top:8px">RELOAD PAGE</button></div>';
       return;
     }
+    window._myschedRetryCount=0;
     var now=new Date();
     var brisbaneNow=new Date();
     try{
