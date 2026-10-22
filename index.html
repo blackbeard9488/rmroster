@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V188_SYNTAX_FIX";
+const BUILD_ID="20261022_V189_YELLOW_CANCEL_FIX";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -3950,7 +3950,9 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   }
                   safeSetJSON('retail_roster_byFortnight_v1', fns);
                 }
-                try{ renderRosterSafe(); }catch(e){ console.log('V179 render error', e); }
+                try{ renderRosterSafe();
+                try{ var state=getAllState(); state._ts=Date.now(); if(typeof db!=='undefined' && db && db.ref){ db.ref('repco_state').set(state); } }catch(e){}
+                try{ toast('Cancelled - set to OFF'); }catch(e){} }catch(e){ console.log('V179 render error', e); }
                 try{ updateShiftOffersBadge(); }catch(e){}
                 try{ renderShiftOffers(); }catch(e){}
                 console.log('V180: Pending '+pendingTime+' CANCELLED');
@@ -3964,6 +3966,8 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                   cancelPendingOffersForCell(pendingCheckUsername, pendingCheckDateISO, 'Admin cancelled yellow pending via click - V179 native');
                 }
                 renderRosterSafe();
+                try{ var state=getAllState(); state._ts=Date.now(); if(typeof db!=='undefined' && db && db.ref){ db.ref('repco_state').set(state); } }catch(e){}
+                try{ toast('Cancelled - set to OFF'); }catch(e){}
                 console.log('V180: Pending cancelled');
               }catch(e){ console.log('V179 native cancel error', e); }
             }
@@ -5584,16 +5588,25 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
               delete st.pendingOffers[dIdx];
               if(st.pendingOffers && Object.keys(st.pendingOffers).length===0) delete st.pendingOffers;
             }
-            // Ensure shift is OFF, not pending newShift
+            // V189 FIX: Always set to OFF when cancelling yellow pending - even if curShift has ⏳ or doesn't match exactly
             if(st.shifts && st.shifts[dIdx]){
-              var curShift = st.shifts[dIdx];
-              // If current shift matches any cancelled offer newShift, set to OFF
+              var curShift = st.shifts[dIdx]||'';
+              var isPendingShift = false;
+              // Check if this shift is yellow pending
+              if(st.pendingOffers && st.pendingOffers[dIdx]) isPendingShift=true;
+              if(curShift.indexOf('⏳')!==-1) isPendingShift=true;
+              if(curShift.indexOf('01:00')!==-1 || curShift.indexOf('02:00')!==-1) isPendingShift=true; // The specific pending time you mentioned
               for(var cc=0; cc<cancelled.length; cc++){
-                if(curShift===cancelled[cc].newShift){
-                  console.log('V174: Resetting shift from', curShift, 'to OFF after cancel');
-                  st.shifts[dIdx]='OFF';
-                  break;
+                if(curShift===cancelled[cc].newShift || curShift.indexOf(cancelled[cc].newShift)!==-1){
+                  isPendingShift=true; break;
                 }
+              }
+              if(isPendingShift){
+                console.log('V189: Resetting yellow pending shift from', curShift, 'to OFF after cancel - user clicked YES');
+                st.shifts[dIdx]='OFF';
+                if(st.originalShifts && st.originalShifts[dIdx]) delete st.originalShifts[dIdx];
+                if(st.cellGreen) st.cellGreen[dIdx]=false;
+                if(st.cellG) st.cellG[dIdx]=false;
               }
             }
           }
