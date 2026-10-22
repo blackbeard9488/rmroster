@@ -786,7 +786,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V201_CLOSED_WHOLE_DAY";
+const BUILD_ID="20261022_V202C_ROSTER_MENU_AUTO_HIDE";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -3375,11 +3375,17 @@ function renderRosterSafe(){
         var pendingOfferData = null;
         try{
           var isClosedForPendingCheck=(sh||'').toString().toUpperCase().includes('CLOSED');
-          if(!isClosedForPendingCheck && st.pendingOffers && st.pendingOffers[idx] && st.pendingOffers[idx].status==='pending'){
+          // Also check if any pending offer newShift is CLOSED - those are invalid
+          var pendingIsClosedShift=false;
+          if(st.pendingOffers && st.pendingOffers[idx] && st.pendingOffers[idx].newShift){
+            var nsCheck=(st.pendingOffers[idx].newShift||'').toString().toUpperCase();
+            if(nsCheck.includes('CLOSED')) pendingIsClosedShift=true;
+          }
+          if(!isClosedForPendingCheck && !pendingIsClosedShift && st.pendingOffers && st.pendingOffers[idx] && st.pendingOffers[idx].status==='pending'){
             hasPendingOffer = true;
             pendingOfferData = st.pendingOffers[idx];
           } else {
-            // V198: CLOSED cells never show as pending
+            // V198: CLOSED cells never show as pending + V202: pending newShift CLOSED invalid
             var isClosedGlobalCheck=(sh||'').toString().toUpperCase().includes('CLOSED');
             if(!isClosedGlobalCheck){
               var allOffers = safeGetJSON('retail_roster_shift_offers_v1',[]);
@@ -3388,11 +3394,14 @@ function renderRosterSafe(){
               for(var oi=0; oi<allOffers.length; oi++){
                 var o = allOffers[oi];
                 if(o && o.status==='pending' && o.targetUsername===myUsernameLower && o.date===curDate){
-                hasPendingOffer = true;
-                pendingOfferData = o;
-                break;
+                  // V202: Skip if newShift is CLOSED
+                  var oNs=(o.newShift||'').toString().toUpperCase();
+                  if(oNs.includes('CLOSED')) continue;
+                  hasPendingOffer = true;
+                  pendingOfferData = o;
+                  break;
+                }
               }
-            }
             }
           }
         }catch(e){}
@@ -3420,6 +3429,33 @@ function renderRosterSafe(){
         var cls=''; 
         
         // V172: Yellow pending - SHOW offered shift time for admin, but roster data stays OFF (0h) until accepted
+        // V202: CLOSED must NEVER show as pending - if offered time is CLOSED, treat as not pending and clean up
+        if(hasPendingOffer && pendingOfferData){
+          var offeredTimeCheck = (pendingOfferData.newShift||'').toString().toUpperCase();
+          if(offeredTimeCheck.includes('CLOSED') || offeredTimeCheck.includes('CLOSE') && offeredTimeCheck.length<=10){
+            // This pending offer is for CLOSED - invalid, clear it and don't show as pending
+            hasPendingOffer=false;
+            pendingOfferData=null;
+            try{
+              // Clean up this invalid pending offer immediately
+              var cleanOffers=safeGetJSON('retail_roster_shift_offers_v1',[]);
+              var cleanedOffers=cleanOffers.filter(function(o){
+                if(!o) return true;
+                if(o.status!=='pending') return true;
+                var ns=(o.newShift||'').toString().toUpperCase();
+                if(ns.includes('CLOSED')) return false;
+                return true;
+              });
+              if(cleanedOffers.length!==cleanOffers.length){
+                safeSetJSON('retail_roster_shift_offers_v1', cleanedOffers);
+                console.log('V202: Cleaned invalid CLOSED pending offers');
+              }
+              if(st.pendingOffers && st.pendingOffers[idx]){
+                delete st.pendingOffers[idx];
+              }
+            }catch(e){}
+          }
+        }
         if(hasPendingOffer && pendingOfferData){
           cls='cell-pending';
           var offeredTime = pendingOfferData.newShift || pendingOfferData.newShift || '';
@@ -4694,6 +4730,39 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
                 }
               }
               staff.shifts[colIdx]='CLOSED';
+              // V202: Clean any pending offers for this date for all staff - CLOSED overrides pending
+              try{
+                var offersForClean=safeGetJSON('retail_roster_shift_offers_v1',[]);
+                var dateISOForClean=wholeDayISO;
+                var cleaned=offersForClean.filter(function(o){
+                  if(!o) return true;
+                  if(o.status!=='pending') return true;
+                  var oDate=o.date||'';
+                  var match=oDate===dateISOForClean || (oDate && dateISOForClean && oDate.substring(0,10)===dateISOForClean.substring(0,10));
+                  if(match){
+                    // If pending for same date, remove it - shop closed overrides
+                    console.log('V202: Removing pending offer for closed day', o.targetUsername, oDate);
+                    return false;
+                  }
+                  // Also remove any pending where newShift is CLOSED (invalid)
+                  var ns=(o.newShift||'').toString().toUpperCase();
+                  if(ns.includes('CLOSED')) return false;
+                  return true;
+                });
+                if(cleaned.length!==offersForClean.length){
+                  safeSetJSON('retail_roster_shift_offers_v1', cleaned);
+                  console.log('V202: Cleaned', offersForClean.length-cleaned.length, 'pending offers for closed day', wholeDayLabel);
+                  // Push to Firebase
+                  try{
+                    if(typeof FIREBASE_DB_URL!=='undefined'){
+                      fetch(FIREBASE_DB_URL+'/retail_roster_shift_offers_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cleaned),mode:'cors'}).catch(function(){});
+                    }
+                    if(window.db){
+                      try{ window.db.ref('retail_roster_shift_offers_v1').set(cleaned); }catch(e){}
+                    }
+                  }catch(e){}
+                }
+              }catch(e){ console.log('V202 clean pending on close error', e); }
             }catch(e){ console.log('V201 whole day close error', e); }
             if(staff.cellGreen) staff.cellGreen[colIdx]=false;
             if(staff.cellG) staff.cellG[colIdx]=false;
@@ -5404,9 +5473,24 @@ function toggleTimeFormat(){const cur=safeGet('timeFormat')||'24h';const nxt=cur
 
 
 function showMain(){
-  try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){}
+  try{
+    // V202: Auto-hide mobile menu when navigating to roster
+    try{
+      var _gh=document.getElementById('global-header');
+      if(_gh) _gh.classList.remove('mobile-open');
+      var _mt=document.getElementById('mobile-menu-toggle');
+      if(_mt) _mt.textContent='☰';
+    }catch(e){}
+    if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){}
 
   try{
+    // V202: Auto-hide mobile menu when navigating to roster
+    try{
+      var _gh2=document.getElementById('global-header');
+      if(_gh2) _gh2.classList.remove('mobile-open');
+      var _mt2=document.getElementById('mobile-menu-toggle');
+      if(_mt2) _mt2.textContent='☰';
+    }catch(e){}
     if(typeof updateActivity==='function') updateActivity();
     var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
     if(fns.length===0){ toast('No roster'); return; }
@@ -6043,15 +6127,40 @@ function cancelPendingOffersForCell(targetUsername, dateISO, reason){
             }
             // Also if there's any pending offer for this user/date, treat as pending
             if(cancelled.length>0) isPendingShift=true;
+            // V202: Always clear pending marker, even if 0 offers found (fix for CLOSED yellow stuck)
             if(st.pendingOffers && st.pendingOffers[dIdx]){
-              console.log('V190: Clearing pending marker from roster', st.username, dIdx, 'hadPending', hadPendingMarker, 'isPending', isPendingShift, 'curShift', curShift);
+              console.log('V202: Clearing pending marker from roster', st.username, dIdx, 'hadPending', hadPendingMarker, 'isPending', isPendingShift, 'curShift', curShift);
               delete st.pendingOffers[dIdx];
               if(st.pendingOffers && Object.keys(st.pendingOffers).length===0) delete st.pendingOffers;
+            } else {
+              // Even if no marker, ensure any CLOSED pending visual is cleared
+              try{
+                if(st.pendingOffers){
+                  // Check all pending for this staff and clear those matching date
+                  var keys=Object.keys(st.pendingOffers);
+                  for(var pk=0; pk<keys.length; pk++){
+                    var k=keys[pk];
+                    if(parseInt(k)===dIdx || k==dIdx){
+                      delete st.pendingOffers[k];
+                    }
+                  }
+                }
+              }catch(e){}
             }
-            if(isPendingShift){
-              console.log('V190: Resetting yellow pending shift from', curShift, 'to OFF after cancel - user clicked YES');
+            // V202: If this is a CLOSED cell showing as pending, force clear to CLOSED or OFF as appropriate
+            var curShiftUpper=String(curShift||'').toUpperCase();
+            var isClosedCell=curShiftUpper.includes('CLOSED');
+            if(isPendingShift || isClosedCell){
+              console.log('V202: Resetting yellow/CLOSED pending shift from', curShift, 'to OFF after cancel - user clicked YES');
               if(!st.shifts) st.shifts=[];
-              st.shifts[dIdx]='OFF';
+              // If it was CLOSED before, restore original if available, else OFF
+              var origForCancel = (st.originalShifts && st.originalShifts[dIdx]) ? st.originalShifts[dIdx] : null;
+              if(isClosedCell && origForCancel && !String(origForCancel).toUpperCase().includes('CLOSED')){
+                st.shifts[dIdx]=origForCancel;
+                if(st.shopClosed) st.shopClosed[dIdx]=false;
+              } else {
+                st.shifts[dIdx]='OFF';
+              }
               if(st.originalShifts){
                 try{ delete st.originalShifts[dIdx]; delete st.originalShifts[String(dIdx)]; }catch(e){}
               }
@@ -6817,7 +6926,17 @@ function openPage(id){
   }
   try{ 
     var gh2=document.getElementById('global-header'); 
-    if(gh2) gh2.classList.remove('mobile-open'); 
+    if(gh2){
+      gh2.classList.remove('mobile-open');
+      // Reset padding after close
+      setTimeout(function(){
+        try{
+          document.querySelectorAll('.full-page.show, #repco-v65.show').forEach(function(el){
+            el.style.paddingTop='70px';
+          });
+        }catch(e){}
+      },50);
+    }
     var mt=document.getElementById('mobile-menu-toggle'); 
     if(mt) mt.textContent='☰'; 
   }catch(e){}
@@ -6851,8 +6970,34 @@ function openPage(id){
   
   try{ if(typeof applyRoleVisibility==='function') try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){}
 }
+// V202: Global auto-hide mobile menu when any menu button clicked
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    document.addEventListener('click', function(e){
+      var btn=e.target.closest('.r-btn-consistent');
+      if(btn && btn.closest('#global-header')){
+        // It's a menu button in header - close mobile menu after click
+        setTimeout(function(){
+          try{
+            var gh=document.getElementById('global-header');
+            if(gh) gh.classList.remove('mobile-open');
+            var mt=document.getElementById('mobile-menu-toggle');
+            if(mt) mt.textContent='☰';
+          }catch(err){}
+        }, 100);
+      }
+    });
+  }catch(e){}
+});
 function showMain(){
   try{
+    // V202: Auto-hide mobile menu when navigating
+    try{
+      var gh=document.getElementById('global-header');
+      if(gh) gh.classList.remove('mobile-open');
+      var mt=document.getElementById('mobile-menu-toggle');
+      if(mt) mt.textContent='☰';
+    }catch(e){}
     if(typeof updateActivity==='function') updateActivity();
     // V136: Refresh data when going to main roster - no manual refresh needed
     try{ forceRefreshCurrentData(); }catch(e){}
