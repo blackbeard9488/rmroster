@@ -1,116 +1,93 @@
-// sw.js - Main Service Worker for REPCO Roster ALPHA
-// Phone notifications outside browser: serviceWorker, PushManager, Notification + FCM ready
-// FIXED V157: Clean notifications, no blackbeard, single icon, Monday 22/10
-
-const CACHE_NAME = "repco-v171";
-// const CACHE_NAME = 'repco-roster-alpha-v167-fix-off-shift-notif-guaranteed';
-
+const CACHE_NAME = "repco-v172-yellow-time-persist-login";
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/icon-192.png',
-  '/icon-512.png'
+  "./",
+  "./index.html",
+  "./manifest.json"
 ];
 
-self.addEventListener('install', event => {
-  console.log('[SW] Install V167 FIX OFF TO SHIFT NOTIF GUARANTEED - Instant SHIFT OFFERS - Accept adds, Deny removes + admin notified - Instant - works even when logged out');
+self.addEventListener('install', function(event) {
+  // Don't skipWaiting immediately - let old SW handle current page until reload
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        return cache.addAll(urlsToCache).catch(e => console.log('Cache add failed', e));
+      .then(function(cache) {
+        console.log('V172 SW: Caching');
+        return cache.addAll(urlsToCache);
       })
   );
+  // Skip waiting to activate new SW quickly but not break login
   self.skipWaiting();
 });
 
-self.addEventListener('activate', event => {
-  console.log('[SW] Activate V167 FIX OFF TO SHIFT NOTIF GUARANTEED - Instant SHIFT OFFERS - Accept adds, Deny removes + admin notified - Instant - works even when logged out');
+self.addEventListener('activate', function(event) {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
+    caches.keys().then(function(cacheNames) {
       return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
+        cacheNames.map(function(cacheName) {
+          // Delete old caches but keep current
+          if (cacheName !== CACHE_NAME && cacheName.startsWith('repco-')) {
+            console.log('V172 SW: Deleting old cache', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
+    }).then(function(){
+      // Claim clients so new SW takes over without requiring reload that loses login
+      return self.clients.claim();
     })
   );
-  event.waitUntil(clients.claim());
 });
 
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        if (response) {
-          return response;
-        }
-        return fetch(event.request).catch(() => {
-          if (event.request.destination === 'document') {
-            return caches.match('/index.html');
-          }
+self.addEventListener('fetch', function(event) {
+  // For index.html, always try network first, then cache - ensures HTML updates work but login stays
+  if (event.request.url.includes('index.html') || event.request.url.endsWith('/') || event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).then(function(response){
+        // Clone and cache new version
+        var responseClone = response.clone();
+        caches.open(CACHE_NAME).then(function(cache){
+          cache.put(event.request, responseClone);
+        });
+        return response;
+      }).catch(function(){
+        // Network failed, use cache
+        return caches.match(event.request).then(function(response){
+          return response || caches.match('./index.html') || caches.match('./');
         });
       })
-  );
-});
-
-self.addEventListener('push', function(event) {
-  console.log('[SW] Push received - will show even if logged out (V158)', event);
-  let data = {};
-  if (event.data) {
-    try {
-      data = event.data.json();
-    } catch(e) {
-      data = { body: event.data.text() };
-    }
+    );
+  } else {
+    event.respondWith(
+      caches.match(event.request).then(function(response){
+        return response || fetch(event.request);
+      })
+    );
   }
-  
-  let title = (data.title || 'REPCO').replace(/blackbeard.*$/gi,'').replace(/github\.io/gi,'').trim();
-  if(title.length>30) title = title.substring(0,30);
-  if(title.includes('...')) title = 'REPCO';
-  
-  let body = (data.body || 'Your roster has been updated').replace(/blackbeard9488\.github\.io/g,'').replace(/blackbeard9\.\.\./g,'').replace(/https?:\/\/[^\s]+/g,'').trim();
-  
-  try{
-    body = body.replace(/(\d{4})-(\d{2})-(\d{2})/g, function(match, y, m, d){
-      try{
-        const date = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
-        const dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-        return dayNames[date.getDay()] + ' ' + d + '/' + m;
-      }catch(e){ return d + '/' + m; }
-    });
-  }catch(e){}
-  
-  body = body.substring(0,120);
-  
-  const options = {
-    body: body,
-    icon: './icon-192.png',
-    tag: data.tag || 'repco-push-'+Date.now(),
-    vibrate: [200, 100, 200],
-    renotify: true,
-    data: { url: './', timestamp: Date.now() }
-  };
-  
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
 });
 
-self.addEventListener('notificationclick', function(event) {
+// V172: Handle push notifications even when user hasn't logged in recently - keep login alive
+self.addEventListener('push', function(event){
+  console.log('V172 SW: Push received', event);
+  var data = {};
+  try{
+    data = event.data ? event.data.json() : {};
+  }catch(e){
+    data = {title: 'REPCO Roster', body: event.data ? event.data.text() : 'New notification'};
+  }
+  var title = data.title || 'REPCO Roster';
+  var options = {
+    body: data.body || data.message || 'New shift update',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    tag: data.tag || 'repco-notif',
+    data: data,
+    requireInteraction: true
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', function(event){
   event.notification.close();
   event.waitUntil(
-    clients.matchAll({type: 'window', includeUncontrolled: true}).then(function(clientList) {
-      for (let i = 0; i < clientList.length; i++) {
-        let client = clientList[i];
-        if (client.url.includes('blackbeard9488.github.io') && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow('./');
-      }
-    })
+    clients.openWindow('./')
   );
 });

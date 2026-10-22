@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V167_FIX_OFF_TO_SHIFT_NOTIFICATION_GUARANTEED";
+const BUILD_ID="20261022_V172_YELLOW_SHOW_TIME_PERSIST_LOGIN";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -703,8 +703,24 @@ async function checkForIndexUpdate(isInitial){
     const h=computeHashSync(txt);
     if(isInitial){ currentHtmlHash=h; if(remoteBuild) currentBuildId=remoteBuild; return; }
     if(remoteBuild && remoteBuild!==currentBuildId){
-      console.log('V136: BUILD_ID changed from', currentBuildId, 'to', remoteBuild, '- forcing logout');
-      toast("New version detected ("+remoteBuild+") - logging out and reloading - backing up - notifications preserved"); try{ backupBeforeUpdate(); }catch(e){}
+      console.log('V172: BUILD_ID changed from', currentBuildId, 'to', remoteBuild, '- updating without logout to preserve phone login');
+      try{
+        // V172 FIX: Don't force logout on HTML update - preserve phone login so notifications keep working
+        // Save current login before update
+        var savedUsername = localStorage.getItem('repco_username');
+        var savedRole = localStorage.getItem('repco_currentRole');
+        var savedUsers = localStorage.getItem('retail_roster_users_v1');
+        // Just reload with new version, keep login
+        if(savedUsername){
+          console.log('V172: Preserving login for', savedUsername, 'across update', currentBuildId, '->', remoteBuild);
+        }
+        // Update build ID and reload without logout
+        currentBuildId = remoteBuild;
+        toast("New version " + remoteBuild + " - updating, login preserved");
+        setTimeout(function(){ location.reload(); }, 1500);
+        return;
+      }catch(e){ console.log('V172 update preserve error', e); }
+      try{ backupBeforeUpdate(); }catch(e){}
       try{
         var curUser = safeGet('repco_username')||'';
         if(curUser) safeSet('repco_last_username', curUser);
@@ -719,21 +735,24 @@ async function checkForIndexUpdate(isInitial){
       return;
     }
     if(currentHtmlHash!==null && h!==currentHtmlHash){
-      console.log('V136: Hash changed - forcing logout, old', currentHtmlHash, 'new', h);
-      toast("New version detected - logging out and reloading - backing up"); try{ backupBeforeUpdate(); }catch(e){}
+      console.log('V172: Hash changed - updating without logout, preserving login, old', currentHtmlHash, 'new', h);
+      try{ backupBeforeUpdate(); }catch(e){}
       try{
-        safeSet('repco_username','');
-        safeSet('repco_last_activity','');
-        safeSet('repco_currentRole','');
-        safeSetJSON('retail_roster_session_v1',{});
+        // V172 FIX: Don't clear login on hash change - preserve phone login
+        var savedU = localStorage.getItem('repco_username');
+        console.log('V172: Preserving login', savedU, 'on hash change update');
       }catch(e){}
+      toast("New version - updating, login preserved");
       setTimeout(()=>{ location.reload(true); },1500);
       return;
     }
-    // V136: Also check if BUILD_ID missing but hash changed - GitHub Pages CDN may delay BUILD_ID extraction
+    // V172: Hash changed but no BUILD_ID - still preserve login
     if(currentBuildId && !remoteBuild && currentHtmlHash!==null && h!==currentHtmlHash){
-      console.log('V136: Hash changed but no BUILD_ID found - forcing reload for GitHub Pages');
-      toast("Update detected - reloading - backing up"); try{ backupBeforeUpdate(); }catch(e){}
+      console.log('V172: Hash changed but no BUILD_ID - reloading but preserving login for phone');
+      try{ backupBeforeUpdate(); }catch(e){}
+      var savedU2 = localStorage.getItem('repco_username');
+      console.log('V172: Preserving login', savedU2, 'on GitHub Pages delay update');
+      toast("Update - reloading, login preserved");
       setTimeout(()=>{ location.reload(true); },1500);
     }
   }catch(e){ console.error('checkForIndexUpdate', e); }
@@ -2201,6 +2220,18 @@ function isManagerRole(r,u){
   if(['admin','master','manager'].includes(u) && r!=='staff') return true;
   return false;
 }
+
+function getCurrentUsernameRobust(){
+  try{
+    var u = safeGet('repco_username');
+    if(u) return u.toLowerCase();
+    var ls = localStorage.getItem('repco_username');
+    if(ls) return ls.toLowerCase();
+    if(MEMORY_STORE['repco_username']) return MEMORY_STORE['repco_username'].toLowerCase();
+  }catch(e){}
+  return '';
+}
+
 function getActualRole(){
   // Get role from users array as source of truth
   try{
@@ -3107,55 +3138,7 @@ function renderRosterSafe(){
       var isLukeChris=(st.firstName||'').toLowerCase()==='luke' || (st.firstName||'').toLowerCase()==='chris' || (st.firstName||'').toLowerCase()==='christopher' || (st.lastName||'').toUpperCase()==='CULLING' && ((st.firstName||'').toLowerCase()==='chris');
       rows+='<tr class="'+rowClass+'"><td class="staff-cell" '+(isMgr?'onclick="editStaffType('+globalStaffIdx+')" style="cursor:pointer"':'')+'>'+st.lastName.toUpperCase()+', '+st.firstName+(own?' ← YOU':'')+'</td>';
       (st.shifts||[]).forEach(function(sh,idx){
-        var na=st.unavailable && st.unavailable[idx]; var isAbsentApproved=st.absentApproved && st.absentApproved[idx]; var isGreen=st.cellGreen && st.cellGreen[idx]; var orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : null;
-        var disp=sh;
-        // For UA/NA unavailable: show UA (black with UA) but remember original
-        if(na){
-          if((sh||'').toUpperCase()==='UA' || (sh||'').toUpperCase()==='NA' || (sh||'').toUpperCase()==='UNAVAILABLE' || (sh||'').toUpperCase()==='U'){
-            disp=(sh||'').toUpperCase()==='UA'?'UA':'UA';
-          } else {
-            disp='UA';
-          }
-        }
-        var dispOriginal = disp;
-        // V171: Pending should NEVER show posted on roster - keep OFF visible, yellow pending
-        // Don't show newShift time until accepted
-        var txt=fmt(disp);
-        if(hasPendingOffer){
-          // Show OFF with pending indicator, not new shift
-          // Keep original OFF display but yellow
-          txt = ''; // OFF shows as empty grey, but we override with yellow + pending text
-          if((dispOriginal||'').toUpperCase()==='OFF' || dispOriginal==='' || !dispOriginal){
-            txt = '⏳ PENDING';
-          } else {
-            txt = fmt(dispOriginal) + ' ⏳';
-          }
-        }
-        // FIX: If manually green, keep original shift text, don't show G
-        if(isGreen){
-          // Keep original shift text, just green background
-        } else if(isG){
-          txt='G';
-          // Keep original shift in title for reference, but display G
-        } else if(isAbsentApproved){
-          // FIX: Show "08:00-16:00 AB" - keep times, add AB, red cell
-          var shiftVal=disp||sh||'';
-          var cleanShift=shiftVal.replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim();
-          var origClean=orig ? String(orig).replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim() : '';
-          var timeToShow=cleanShift||origClean||'';
-          var fmtTime=fmt(timeToShow);
-          if(!fmtTime || fmtTime.toUpperCase()==='OFF' || fmtTime===''){
-            txt='AB';
-          } else if(fmtTime.toUpperCase()==='AB'){
-            txt='AB';
-          } else {
-            txt=fmtTime+' AB';
-          }
-        }
-        else if(na && orig){ txt=fmt(disp)+' ('+fmt(orig)+')'; if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA') txt='UA'; }
-        else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
-        else if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA'){ txt='UA'; }
-        // V171: Check if this cell has pending shift offer - MUST be before disp handling, should be YELLOW awaiting feedback
+        // V172: Check pending FIRST - before any other logic, so yellow shows offered time but data stays OFF
         var hasPendingOffer = false;
         var pendingOfferData = null;
         try{
@@ -3177,24 +3160,66 @@ function renderRosterSafe(){
           }
         }catch(e){}
         
+        var na=st.unavailable && st.unavailable[idx]; 
+        var isAbsentApproved=st.absentApproved && st.absentApproved[idx]; 
+        var isGreen=st.cellGreen && st.cellGreen[idx]; 
+        var orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : null;
+        var disp=sh;
+        // For UA/NA unavailable: show UA (black with UA) but remember original
+        if(na){
+          if((sh||'').toUpperCase()==='UA' || (sh||'').toUpperCase()==='NA' || (sh||'').toUpperCase()==='UNAVAILABLE' || (sh||'').toUpperCase()==='U'){
+            disp=(sh||'').toUpperCase()==='UA'?'UA':'UA';
+          } else {
+            disp='UA';
+          }
+        }
+        var dispOriginal = disp;
         var isG=isGShift(disp, st.firstName) || (st.cellG && st.cellG[idx]);
-        var off=['OFF',''].includes((disp||'').toUpperCase().trim()) || (isG && false); var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
+        var off=['OFF',''].includes((disp||'').toUpperCase().trim()) || (isG && false); 
+        var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
         var isUA=['UA','NA','UNAVAILABLE','U'].includes((disp||'').toUpperCase().trim()) || na;
         
+        var txt=fmt(disp);
         var cls=''; 
-        // FIX: Manual green (G typed) takes priority over auto G for Luke/Chris
-        // V169: Pending yellow takes priority over all except green/AB
-        if(hasPendingOffer){
+        
+        // V172: Yellow pending - SHOW offered shift time for admin, but roster data stays OFF (0h) until accepted
+        if(hasPendingOffer && pendingOfferData){
           cls='cell-pending';
+          var offeredTime = pendingOfferData.newShift || pendingOfferData.newShift || '';
+          txt = fmt(offeredTime) + ' ⏳';
+          // Add title for hover showing full details
         } else if(isGreen){
           cls='cell-green';
         } else if(isG){ 
           cls='cell-g'; 
-        } else if(isUA) cls='cell-na'; 
-        else if(na) cls='cell-na'; 
-        else if(absent) cls='cell-absent'; 
-        else if(off) cls='cell-off'; 
-        else cls='cell-work';
+          txt='G';
+        } else if(isUA) {
+          cls='cell-na'; 
+          txt='UA';
+        } else if(na) {
+          cls='cell-na'; 
+          if(orig) txt=fmt(disp)+' ('+fmt(orig)+')'; 
+          if(disp.toUpperCase()==='UA' || disp.toUpperCase()==='NA') txt='UA';
+        } else if(absent) {
+          cls='cell-absent'; 
+          var shiftVal=disp||sh||'';
+          var cleanShift=shiftVal.replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim();
+          var origClean=orig ? String(orig).replace(/\s*AB$/i,'').replace(/\s*ABSENT$/i,'').trim() : '';
+          var timeToShow=cleanShift||origClean||'';
+          var fmtTime=fmt(timeToShow);
+          if(!fmtTime || fmtTime.toUpperCase()==='OFF' || fmtTime===''){
+            txt='AB';
+          } else if(fmtTime.toUpperCase()==='AB'){
+            txt='AB';
+          } else {
+            txt=fmtTime+' AB';
+          }
+        } else if(off) {
+          cls='cell-off'; 
+          txt='';
+        } else {
+          cls='cell-work';
+        }
         var isWeekendCol=isWeekend(cur.dates[idx].day); var weekendClass=''; if(isWeekendCol){ var prevWeekend=idx>0?isWeekend(cur.dates[idx-1].day):false; var nextWeekend=idx<cur.dates.length-1?isWeekend(cur.dates[idx+1].day):false; if(!prevWeekend) /*weekendClass+=' weekend-start'*/; if(!nextWeekend) /*weekendClass+=' weekend-end'*/; cls+=' col-weekend'+weekendClass; }
         var isFull=!isCasual(st); var net; 
         // V171: Pending shift should NEVER count hours until accepted - stays OFF
@@ -5583,9 +5608,9 @@ function checkAndShowNotifications(){
         safeSet('repco_last_request_check_ts', String(nowTs));
       }
     }catch(e){ console.log('V164 instant request check error', e); }
-    // FIXED V158: If logged in, ONLY show notifications for current user, not previous user on same device
-    let currentUsername = safeGet('repco_username');
-    let myUsername = currentUsername || safeGet('repco_last_username');
+    // V172 FIX: Phone user has to log back in after HTML update - use robust username from localStorage even if MEMORY_STORE cleared
+    let currentUsername = (typeof getCurrentUsernameRobust==='function' ? getCurrentUsernameRobust() : safeGet('repco_username')) || safeGet('repco_username') || localStorage.getItem('repco_username') || '';
+    let myUsername = currentUsername || safeGet('repco_last_username') || localStorage.getItem('repco_last_username') || localStorage.getItem('repco_username') || '';
     if(!myUsername) return;
     const wasLoggedOut = !currentUsername;
     if(wasLoggedOut){
