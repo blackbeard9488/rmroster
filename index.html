@@ -688,7 +688,7 @@ body:not(.is-admin) .daily-total-casual {
 <div id="toast-v141"></div>
 
 <script>
-const BUILD_ID="20261022_V181_LOGIN_FIX";
+const BUILD_ID="20261022_V185_MAINT_BLOCKS_LOGIN";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -1592,6 +1592,70 @@ function applyCloudState(state,isInitial){
     }
     if(state[k]!==undefined){
       try{
+        // V184: Users merge - passwords live, always updated, never overwritten with old
+        if(k==='retail_roster_users_v1'){
+          try{
+            var cloudUsers=null;
+            try{ cloudUsers=JSON.parse(state[k]); }catch(e){ cloudUsers=null; }
+            if(!Array.isArray(cloudUsers) || cloudUsers.length===0){
+              console.log('V184: Cloud users empty, keeping local');
+              return;
+            }
+            var localUsers=safeGetJSON(k,[]);
+            if(!Array.isArray(localUsers) || localUsers.length===0){
+              try{ localStorage.setItem(k,state[k]); }catch(e){}
+              if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE[k]=state[k];
+              console.log('V184: Using cloud users (no local)');
+              return;
+            }
+            var mergedUsers=localUsers.slice();
+            var localByUsername={};
+            for(var li=0; li<mergedUsers.length; li++){
+              if(mergedUsers[li] && mergedUsers[li].username) localByUsername[mergedUsers[li].username.toLowerCase()]=li;
+            }
+            var cloudTs = state._ts || 0;
+            var localCloudTs = parseInt(safeGet('repco_cloud_ts')||'0')||0;
+            var isCloudNewer = cloudTs > localCloudTs;
+            var changed=false;
+            for(var ci=0; ci<cloudUsers.length; ci++){
+              var cu=cloudUsers[ci];
+              if(!cu || !cu.username) continue;
+              var key=cu.username.toLowerCase();
+              if(localByUsername[key]===undefined){
+                mergedUsers.push(cu);
+                localByUsername[key]=mergedUsers.length-1;
+                changed=true;
+                console.log('V184: Added new user from cloud', cu.username);
+              } else {
+                var lu=mergedUsers[localByUsername[key]];
+                if(cu.password && lu.password && cu.password!==lu.password){
+                  if(isCloudNewer){
+                    console.log('V184: LIVE password update for', cu.username, '- cloud newer, updating local');
+                    lu.password=cu.password;
+                    changed=true;
+                  } else {
+                    console.log('V184: Keeping local password for', cu.username, '- local is newer (preserving change)');
+                  }
+                } else if(!lu.password && cu.password){
+                  lu.password=cu.password;
+                  changed=true;
+                }
+                if(isCloudNewer){
+                  if(cu.role && cu.role!==lu.role) { lu.role=cu.role; changed=true; }
+                  if(cu.firstName && cu.firstName!==lu.firstName) { lu.firstName=cu.firstName; changed=true; }
+                  if(cu.lastName && cu.lastName!==lu.lastName) { lu.lastName=cu.lastName; changed=true; }
+                }
+              }
+            }
+            if(changed){
+              var jsonStr=JSON.stringify(mergedUsers);
+              try{ localStorage.setItem(k,jsonStr); }catch(e){}
+              if(typeof MEMORY_STORE!=='undefined') MEMORY_STORE[k]=jsonStr;
+              console.log('V184: Users merged - LIVE password sync, count', mergedUsers.length);
+            }
+          }catch(e){ console.error('V184 users merge error', e); }
+          return;
+        }
         if(k==='retail_roster_byFortnight_v1'){
           try{
             var parsed=JSON.parse(state[k]);
@@ -2390,32 +2454,14 @@ async function doLogin(){
     }
     var u=(uEl.value||'').trim();
     var p=(pEl.value||'').trim();
-    console.log('V181 Attempt login', u, 'pass len', p.length);
-    // V181 FIX: Hard bypass for admin if maintenance or users corrupted
-    if((u.toLowerCase()==='admin' && (p==='admin123' || p==='admin')) || (u.toLowerCase()==='chris' && p==='Chris') || (u.toLowerCase()==='manager' && p==='manager')){
-      console.log('V181: Hard bypass login for', u);
-      try{
-        var bypassUser={username:u,password:p,firstName:u,lastName:'User',role: (u.toLowerCase()==='admin'?'admin':'manager'), employmentType:'fulltime'};
-        localStorage.setItem('repco_username', bypassUser.username);
-        localStorage.setItem('repco_currentRole', bypassUser.role);
-        localStorage.setItem('repco_last_activity', String(Date.now()));
-        localStorage.setItem('retail_roster_session_v1', JSON.stringify(bypassUser));
-        // Clear maintenance if admin
-        try{ localStorage.setItem('maintenance_mode','false'); }catch(e){}
-        var lp=document.getElementById('login-page');
-        if(lp) lp.style.display='none';
-        var v65=document.getElementById('repco-v65');
-        if(v65){ v65.style.display='block'; v65.classList.add('show'); }
-        var gh=document.getElementById('global-header');
-        if(gh){ gh.style.display='flex'; gh.classList.add('show'); }
-        var maintEl=document.getElementById('maintenance-main-v141');
-        if(maintEl) maintEl.classList.remove('show');
-        document.body.classList.remove('maintenance-active');
-        if(typeof renderRosterSafe==='function'){ try{ renderRosterSafe(); }catch(e){} }
-        if(typeof showMain==='function'){ try{ showMain(); }catch(e){} }
-        return;
-      }catch(e){ console.log('V181 bypass error', e); }
-    }
+    console.log('V184 Attempt login', u, 'pass len', p.length);
+    // V184: Allow login even if maintenance ON - hide overlay for login attempt
+    try{
+      var maintElCheck=document.getElementById('maintenance-main-v141');
+      if(maintElCheck && maintElCheck.classList.contains('show')){
+        console.log('V184: Maintenance ON but allowing login attempt');
+      }
+    }catch(e){}
     console.log('Attempt login', u);
     if(!u||!p){
       if(err){ err.textContent='Enter username & password'; err.style.display='block'; }
@@ -2429,16 +2475,15 @@ async function doLogin(){
       if(raw) users=JSON.parse(raw);
     }catch(e){ console.error('Parse users failed', e); users=[]; }
     
-    // If empty, create defaults
+    // V184: Only create defaults if truly empty - preserves changed passwords
     if(!Array.isArray(users) || users.length===0){
       users=[
         {username:'admin',password:'admin123',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
-        {username:'admin',password:'admin',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
         {username:'Chris',password:'Chris',firstName:'Chris',lastName:'Culling',role:'manager',employmentType:'fulltime'},
-        {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'},
-        {username:'Michaele',password:'Michaele',firstName:'Michael',lastName:'EVANS',role:'staff',employmentType:'casual'}
+        {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'}
       ];
       try{ localStorage.setItem('retail_roster_users_v1', JSON.stringify(users)); }catch(e){}
+      console.log('V184: Created default users - storage was empty');
     }
     
     console.log('Users available', users.length);
@@ -2459,10 +2504,7 @@ async function doLogin(){
         }
       }
     }
-    if(!found && u.toLowerCase()==='admin'){
-      // Admin fallback - allow any admin password
-      found={username:'admin',password:p,firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'};
-    }
+    // V184: No fallback - require exact password match, preserves changed passwords
     
     if(!found){
       if(err){ err.textContent='Incorrect username or password: '+u; err.style.display='block'; }
@@ -8981,10 +9023,15 @@ function toggleMaintenance(){
 
 
 function checkMaintenance(){
+  // V185: Maintenance ON = block ALL users from logging in, only admin via cog icon can access
   try{
     var maintEl=document.getElementById('maintenance-main-v141');
     if(!maintEl) return;
+    // V185: Check both maintenance flags - maintenance_mode (simple) and repco_maintenance_first_v1 (detailed)
+    var maintMode = false;
+    try{ maintMode = safeGet('maintenance_mode')==='true'; }catch(e){}
     var local=safeGetJSON('repco_maintenance_first_v1',{enabled:false});
+    if(maintMode) local.enabled=true;
     var timeEl=document.getElementById('maint-time-display');
     if(timeEl){
       try{
