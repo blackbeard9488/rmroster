@@ -694,12 +694,12 @@ body:not(.is-admin) .daily-total-casual {
 
 <script>
 
-var FIREBASE_ENABLED = (typeof FIREBASE_DB_URL !== 'undefined' && FIREBASE_DB_URL && FIREBASE_DB_URL.indexOf('repco-roster-default') !== -1);
+var FIREBASE_ENABLED = true;
 var FIREBASE_404_COUNT = 0;
 var _origFetch = window.fetch.bind(window);
 function safeCloudFetch(url, opts){
   if(!FIREBASE_ENABLED) return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
-  if(url.indexOf('repco-roster-default-rtdb') !== -1 && FIREBASE_404_COUNT > 3){
+  if((url.indexOf('repco-roster-default-rtdb') !== -1 || url.indexOf('testing-de079') !== -1) && FIREBASE_404_COUNT > 20){
     return Promise.resolve({ok:false, status:404, json:function(){return Promise.resolve(null)}});
   }
   return _origFetch(url, opts).then(function(r){
@@ -2778,6 +2778,11 @@ function populateFortnightSelect(){
   // V224 RECOVERY: If data is corrupted (0, fallback, or invalid), force reseed
   var isCorrupted = false;
   if(!fns || !Array.isArray(fns) || fns.length===0) isCorrupted = true;
+    // V227 FIX: also filter out id=0 which shows as "0" in dropdown
+if(fns && Array.isArray(fns)){
+  fns=fns.filter(f=>f && f.id && f.id!=='0' && f.id!==0 && f.id!=='fallback' && f.dates && f.dates.length>0);
+  if(fns.length===0) isCorrupted=true;
+}
   else if(fns.length===1 && (fns[0].id==='0' || fns[0].id===0 || fns[0].id==='fallback' || !fns[0].dates || fns[0].dates.length===0)) isCorrupted = true;
   else if(fns.some(function(fn){ return !fn || !fn.id || !fn.dates || fn.dates.length===0; })) {
     // If more than half are invalid, treat as corrupted
@@ -9943,22 +9948,21 @@ function toggleMaintenance(){
 
 
 function checkMaintenance(){
-  // V185: Maintenance ON = block ALL users from logging in, only admin via cog icon can access
   try{
     var maintEl=document.getElementById('maintenance-main-v141');
     if(!maintEl) return;
-    // V185: Check both maintenance flags - maintenance_mode (simple) and repco_maintenance_first_v1 (detailed)
-    var maintMode = false;
-    try{ maintMode = safeGet('maintenance_mode')==='true'; }catch(e){}
-    var local=safeGetJSON('repco_maintenance_first_v1',{enabled:false});
+    var maintMode=false;
+    try{maintMode=localStorage.getItem('maintenance_mode')==='true';}catch(e){}
+    var local=JSON.parse(localStorage.getItem('repco_maintenance_first_v1')||'{"enabled":false}');
     if(maintMode) local.enabled=true;
-    var timeEl=document.getElementById('maint-time-display');
-    if(timeEl){
-      try{
-        var now=new Date();
-        var timeFmt=new Intl.DateTimeFormat('en-AU',{timeZone:'Australia/Brisbane',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
-        timeEl.textContent='Time: '+timeFmt.format(now);
-      }catch(e){ timeEl.textContent='Time: '+new Date().toLocaleString(); }
+    // Auto-clear if older than 5 mins
+    if(local.enabled && local.ts){
+      var age=Date.now()-local.ts;
+      if(age>5*60*1000){
+        localStorage.removeItem('maintenance_mode');
+        localStorage.removeItem('repco_maintenance_first_v1');
+        local.enabled=false;
+      }
     }
     if(local.enabled){
       maintEl.classList.add('show');
@@ -9967,21 +9971,21 @@ function checkMaintenance(){
       maintEl.classList.remove('show');
       document.body.classList.remove('maintenance-active');
     }
-    fetch('https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app/maintenance.json').then(function(r){return r.json();}).then(function(j){
+    fetch('https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app/maintenance.json').then(r=>r.json()).then(j=>{
       if(j && j.enabled){
-        safeSetJSON('repco_maintenance_first_v1',j);
-        maintEl.classList.add('show');
-        document.body.classList.add('maintenance-active');
-      } else {
-        if(!local.enabled){
+        var fAge=j.ts?(Date.now()-j.ts):999999999;
+        if(fAge<5*60*1000){
+          maintEl.classList.add('show');
+          document.body.classList.add('maintenance-active');
+        } else {
+          fetch('https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app/maintenance.json',{method:'DELETE',mode:'cors'}).catch(()=>{});
           maintEl.classList.remove('show');
           document.body.classList.remove('maintenance-active');
         }
       }
-    }).catch(function(e){});
-  }catch(e){ console.error('checkMaintenance', e); }
+    }).catch(()=>{});
+  }catch(e){}
 }
-
 function exportCSV(){
   // V193: Export Excel matching original template exactly with colours - Row1 dates from Col B every 2 cols, Row2 days, Col A names, 2 cols per day for start/end
   let cur=getCurrentFortnight() || getSelectedFortnight();
