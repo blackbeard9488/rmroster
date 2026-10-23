@@ -11,8 +11,9 @@
      ALLOWED_ORIGIN     https://blackbeard9488.github.io  (optional, defaults to *)
      GEMINI_API_KEY     Google AI Studio key, as a *Secret* (for the roster photo check)
      GEMINI_MODEL       optional, defaults to gemini-flash-latest (Google's always-current Flash model)
-     GITHUB_MODELS_TOKEN  GitHub token with "Models: read", as a *Secret* (first backup: GPT-4.1 via GitHub Models)
-     GITHUB_MODEL       optional, defaults to openai/gpt-4.1
+     GEMINI_BACKUP_MODEL  optional, defaults to gemini-flash-lite-latest (has its own free allowance)
+     OPENROUTER_API_KEY optional *Secret*: a second provider (OpenRouter), tried after Gemini
+     OPENROUTER_MODEL   optional, defaults to qwen/qwen2.5-vl-72b-instruct:free
      AI                 Workers AI binding: last-resort reader (weaker, so its suggestions arrive unticked)
 */
 
@@ -61,7 +62,7 @@ export default {
 async function scanRoster(body, env, cors) {
   const { idToken, image, mime, roster } = body || {};
   if (!idToken || !image || !roster || !Array.isArray(roster.rows) || !Array.isArray(roster.dates)) return json({ error: 'bad request' }, 400, cors);
-  if (!env.GEMINI_API_KEY && !env.GITHUB_MODELS_TOKEN && !env.AI) return json({ error: 'photo check is not set up' }, 501, cors);
+  if (!env.GEMINI_API_KEY && !env.OPENROUTER_API_KEY && !env.AI) return json({ error: 'photo check is not set up' }, 501, cors);
   if (image.length > 14000000) return json({ error: 'photo is too large' }, 413, cors);
   // Only managers can read mgrdata, so the database rules decide who may use this
   const db = env.DB_URL.replace(/\/$/, '');
@@ -86,13 +87,20 @@ async function scanRoster(body, env, cors) {
     'Reply with JSON only: {"changes":[{"name":"","date":"","photo":"","mark":"","confidence":0}]}. If nothing is changed, reply {"changes":[]}.'
   ].join('\n');
 
-  // Gemini first, then GPT-4.1 on GitHub Models, then Cloudflare's own model. All within Cloudflare's 100s limit.
+  // Gemini Flash, then Gemini Flash-Lite, then OpenRouter, then Cloudflare's own model.
+  // Each gets only the time left so the whole check ends inside Cloudflare's 100-second limit.
+  const deadline = Date.now() + 90000;
+  const left = (cap) => Math.max(0, Math.min(cap, deadline - Date.now() - 12000));
   const tries = [];
-  if (env.GEMINI_API_KEY) tries.push(['Gemini', () => askGemini(env, image, mime, prompt)]);
-  if (env.GITHUB_MODELS_TOKEN) tries.push(['GPT-4.1 (GitHub)', () => askGitHubModels(env, image, mime, prompt)]);
+  if (env.GEMINI_API_KEY) {
+    tries.push(['Gemini', () => askGemini(env, image, mime, prompt, env.GEMINI_MODEL || 'gemini-flash-latest', left(45000))]);
+    tries.push(['Gemini Lite', () => askGemini(env, image, mime, prompt, env.GEMINI_BACKUP_MODEL || 'gemini-flash-lite-latest', left(30000))]);
+  }
+  if (env.OPENROUTER_API_KEY) tries.push(['OpenRouter', () => askOpenRouter(env, image, mime, prompt, left(30000))]);
   if (env.AI) tries.push(['Cloudflare AI', () => askWorkersAI(env, image, mime, prompt), true]);
   const failed = [];
   for (const [name, run, weak] of tries) {
+    if (!weak && deadline - Date.now() < 20000) { failed.push({ name, why: 'skipped (out of time)', error: 'skipped' }); continue; }
     const res = await run();
     if (!res.error) return json({ changes: res.changes, service: name + (failed.length ? ' (backup - ' + failed.map(f => f.name + ' ' + f.why).join(', ') + ')' : ''), weak: !!weak }, 200, cors);
     failed.push({ name, why: res.why || 'failed', error: res.error });
@@ -106,10 +114,9 @@ function parseChanges(raw) {
   return Array.isArray(parsed.changes) ? parsed.changes.slice(0, 200) : [];
 }
 
-async function askGemini(env, image, mime, prompt) {
-  const model = env.GEMINI_MODEL || 'gemini-flash-latest';
+async function askGemini(env, image, mime, prompt, model, timeoutMs) {
   const ask = (thinking) => {
-    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 45000);
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), timeoutMs);
     return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
@@ -130,18 +137,18 @@ async function askGemini(env, image, mime, prompt) {
     return { changes: parseChanges(raw) };
   } catch (e) {
     const slow = e && e.name === 'AbortError';
-    return { error: slow ? 'took longer than 45 seconds' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
+    return { error: slow ? 'took too long' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
   }
 }
 
-async function askGitHubModels(env, image, mime, prompt) {
-  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000);
+async function askOpenRouter(env, image, mime, prompt, timeoutMs) {
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const r = await fetch('https://models.github.ai/inference/chat/completions', {
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST', signal: ctl.signal,
-      headers: { 'Content-Type': 'application/json', Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + env.GITHUB_MODELS_TOKEN, 'X-GitHub-Api-Version': '2022-11-28' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.OPENROUTER_API_KEY, 'X-Title': 'Repco Roster' },
       body: JSON.stringify({
-        model: env.GITHUB_MODEL || 'openai/gpt-4.1', temperature: 0, max_tokens: 3000, response_format: { type: 'json_object' },
+        model: env.OPENROUTER_MODEL || 'qwen/qwen2.5-vl-72b-instruct:free', temperature: 0, max_tokens: 3000,
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: 'data:' + (mime || 'image/jpeg') + ';base64,' + image, detail: 'high' } }] }]
       })
     });
@@ -150,7 +157,7 @@ async function askGitHubModels(env, image, mime, prompt) {
     return { changes: parseChanges(((out.choices || [])[0] || {}).message ? out.choices[0].message.content : '') };
   } catch (e) {
     const slow = e && e.name === 'AbortError';
-    return { error: slow ? 'took longer than 30 seconds' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
+    return { error: slow ? 'took too long' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
   } finally { clearTimeout(timer); }
 }
 

@@ -324,6 +324,7 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
 function rcReqSummary(r) {
   if (!r) return '';
   if (r.type === 'unavailability') { var d = rcAsArray(r.dates); return 'Unavailable ' + (d.length > 1 ? d[0] + ' - ' + d[d.length - 1] : (d[0] || '')) + (r.reason ? ' (' + r.reason + ')' : ''); }
+  if (r.type === 'shift-correction' && rcIsEmptyVal(r.newShift)) return "Didn't work " + (r.shiftDate || '') + (r.oldShift && !rcIsEmptyVal(r.oldShift) ? ' (rostered ' + r.oldShift + ')' : '') + (r.reason ? ' - ' + r.reason : '');
   if (r.type === 'shift-correction' && rcIsUAVal(r.newShift)) return "Can't work " + (r.shiftDate || '') + (r.oldShift ? ' (' + r.oldShift + ')' : '') + (r.reason ? ' - ' + r.reason : '');
   if (r.type === 'shift-correction') return 'Shift change ' + (r.shiftDate || '') + ': ' + (r.oldShift || '') + ' -> ' + (r.newShift || '') + (r.reason ? ' - ' + r.reason : '');
   return r.type || 'request';
@@ -1031,7 +1032,7 @@ function rcDecide(id, approve) {
         affected.push(fn.dates[di].day + ' ' + fn.dates[di].date + ': ' + req.newShift);
         if (String(req.newShift).toUpperCase() === 'AB') rcMarkAbsent(st, di);
         else if (rcIsUAVal(req.newShift)) rcMarkUnavailable(st, di);
-        else { if (!st.originalShifts) st.originalShifts = {}; if (!st.absentApproved) st.absentApproved = {}; if (st.originalShifts[di] == null) st.originalShifts[di] = st.shifts[di]; st.shifts[di] = req.newShift; st.absentApproved[di] = false; }
+        else { if (!st.originalShifts) st.originalShifts = {}; if (!st.absentApproved) st.absentApproved = {}; if (st.originalShifts[di] == null && !rcIsUAVal(st.shifts[di]) && !rcIsAbsentVal(st.shifts[di])) st.originalShifts[di] = st.shifts[di]; st.shifts[di] = rcIsEmptyVal(req.newShift) ? 'OFF' : req.newShift; st.absentApproved[di] = false; if (st.unavailable) st.unavailable[di] = false; }
         hit++;
       }
     });
@@ -1826,6 +1827,7 @@ function rcMyRows() {
   return out;
 }
 function rcSchedDismissed(key) { try { return localStorage.getItem('repco_sched_dismiss') === key; } catch (e) { return false; } }
+function rcSchedUndismiss() { try { localStorage.removeItem('repco_sched_dismiss'); } catch (e) {} renderMySchedule(); }
 function rcSchedDismiss(key) { try { localStorage.setItem('repco_sched_dismiss', key); } catch (e) {} renderMySchedule(); }
 /* Shift changes are asked for right under the day on My Schedule */
 function rcMyPendingChange(fnId, i, date) {
@@ -1837,7 +1839,7 @@ function rcMyPendingChange(fnId, i, date) {
   }) || null;
 }
 function rcSchedToggle(key) { RC.schedOpen = RC.schedOpen === key ? null : key; renderMySchedule(); }
-function rcSchedPanel(r, pend) {
+function rcSchedPanel(r, pend, pastMode) {
   var id = 'ms-ed';
   if (pend) {
     return '<div class="ms-edit" onclick="event.stopPropagation()"><div class="ms-edit-h">You asked for: ' + rcEsc(rcReqSummary(pend)) + '</div><div class="rc-small">Waiting for a manager.</div>'
@@ -1845,6 +1847,17 @@ function rcSchedPanel(r, pend) {
   }
   var p = parseShiftRange(r.sh), pad = function (n) { return String(n).padStart(2, '0'); };
   var st = p ? pad(Math.floor(p.start / 60) % 24) + ':' + pad(p.start % 60) : '', en = p ? pad(Math.floor(p.end / 60) % 24) + ':' + pad(p.end % 60) : '';
+  if (pastMode) {
+    var rostered = r.t ? fmt(r.sh) : (r.ab ? 'absent' : r.na ? 'unavailable' : 'OFF');
+    return '<div class="ms-edit" onclick="event.stopPropagation()">'
+      + '<div class="ms-edit-h">Correct ' + rcEsc(r.d.day + ' ' + r.d.date) + ' • rostered ' + rcEsc(rostered) + '</div>'
+      + '<div class="rc-small" style="margin-bottom:6px">Enter the times you actually worked.</div>'
+      + '<div class="ms-edit-row"><label>Start<input type="time" id="' + id + '-s" value="' + st + '"></label><label>Finish<input type="time" id="' + id + '-e" value="' + en + '"></label></div>'
+      + '<input id="' + id + '-r" class="ms-reason" placeholder="Reason (optional)">'
+      + '<div class="rc-btns" style="margin-top:8px"><button class="rc-b" onclick="rcSchedSend(\'' + rcEsc(r.fn.id) + '\',' + r.i + ',false)">SEND ACTUAL TIMES</button>'
+      + (r.t ? '<button class="rc-b rc-red" onclick="rcSchedSend(\'' + rcEsc(r.fn.id) + '\',' + r.i + ',\'off\')">I DIDN\'T WORK IT</button>' : '')
+      + '<button class="rc-b rc-white" onclick="rcSchedToggle(null)">CANCEL</button></div></div>';
+  }
   return '<div class="ms-edit" onclick="event.stopPropagation()">'
     + '<div class="ms-edit-h">Change ' + rcEsc(r.d.day + ' ' + r.d.date) + ' • ' + rcEsc(fmt(r.sh)) + '</div>'
     + '<div class="ms-edit-row"><label>Start<input type="time" id="' + id + '-s" value="' + st + '"></label><label>Finish<input type="time" id="' + id + '-e" value="' + en + '"></label></div>'
@@ -1857,7 +1870,8 @@ function rcSchedSend(fnId, i, cant) {
   var fn = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (f) { return f.id === fnId; });
   var me = fn && findMyStaff(fn); if (!me) { toast('Could not find your roster row'); return; }
   var old = me.shifts[i] || 'OFF', newShift;
-  if (cant) newShift = 'UA';
+  if (cant === 'off') newShift = 'OFF';
+  else if (cant) newShift = 'UA';
   else {
     var s = (document.getElementById('ms-ed-s') || {}).value, e = (document.getElementById('ms-ed-e') || {}).value;
     if (!s || !e) { toast('Enter a start and finish time'); return; }
@@ -1869,7 +1883,7 @@ function rcSchedSend(fnId, i, cant) {
   all.push({ username: RC.session.profile.username, type: 'shift-correction', fnId: fnId, shiftDate: fn.dates[i].date, shiftIdx: i, oldShift: old, newShift: newShift, reason: reason, status: 'pending', ts: Date.now(), dates: [fn.dates[i].date] });
   RC.schedOpen = null;
   safeSetJSON('retail_roster_requests_v2', all);
-  toast(cant ? 'Sent - a manager will review it' : 'New times sent to a manager');
+  toast(cant ? 'Sent - a manager will review it' : 'Times sent to a manager');
   renderMySchedule();
 }
 function rcSchedWithdraw(id) {
@@ -1907,11 +1921,13 @@ renderMySchedule = function () {
         h += '<div class="ms-panel ms-next" data-start="' + next.t.start.getTime() + '"><button class="ms-x" title="Hide" onclick="rcSchedDismiss(\'' + rcEsc(key).replace(/'/g, '') + '\')">✕</button><div class="ms-kicker">NEXT SHIFT</div>'
           + '<div class="ms-big">starts in <span class="ms-count">' + rcDur(next.t.start - now) + '</span></div>'
           + '<div class="ms-sub">' + rcEsc(next.d.day + ' ' + next.d.date) + ' • ' + rcEsc(fmt(next.sh)) + (next.d.iso === today ? ' • TODAY' : '') + '</div></div>';
+      } else {
+        h += '<button class="ms-show" onclick="rcSchedUndismiss()">⏱ SHOW COUNTDOWN TO NEXT SHIFT</button>';
       }
     } else {
       h += '<div class="ms-panel ms-none"><div class="ms-kicker">NO UPCOMING SHIFTS</div><div class="ms-sub">Nothing on the roster for you yet.</div></div>';
     }
-    h += '<div class="ms-hint">Need a change? Tap an upcoming shift.</div>';
+    h += '<div class="ms-hint">Need a change? Tap a shift. Days already worked this fortnight can be corrected too.</div>';
     var byFn = {}, order = [];
     rows.forEach(function (r) { if (!byFn[r.fn.id]) { byFn[r.fn.id] = []; order.push(r.fn); } byFn[r.fn.id].push(r); });
     order.filter(function (fn) { var last = fn.dates[fn.dates.length - 1]; return last && last.iso >= today; }).slice(0, 2).forEach(function (fn) {
@@ -1923,12 +1939,14 @@ renderMySchedule = function () {
         var past = r.d.iso < today, isToday = r.d.iso === today, work = !!r.t;
         var cls = 'ms-day' + (isToday ? ' ms-today' : '') + (past ? ' ms-past' : '') + (work ? '' : ' ms-off');
         var right = r.ab ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ua">UNAVAILABLE</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
-        var tap = work && !past && (!r.t || r.t.start.getTime() > now);
+        var started = past || (r.t && r.t.start.getTime() <= now);
+        var fixPast = isCur && started;                       // worked (or missed) days in this fortnight can be corrected
+        var tap = fixPast || (work && !past && (!r.t || r.t.start.getTime() > now));
         var pend = tap ? rcMyPendingChange(r.fn.id, r.i, r.d.date) : null;
         var key = r.fn.id + '|' + r.i, open = tap && RC.schedOpen === key;
         if (pend) right += '<span class="ms-tag ms-req">CHANGE REQUESTED</span>';
         h += '<div class="' + cls + (tap ? ' ms-tap' + (open ? ' ms-open' : '') + '" onclick="rcSchedToggle(\'' + rcEsc(key) + '\')"' : '"') + '><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">' + (open ? '⌄' : '›') + '</span>' : '') + '</span></div>';
-        if (open) h += rcSchedPanel(r, pend);
+        if (open) h += rcSchedPanel(r, pend, fixPast);
       });
       h += '</div>';
     });
@@ -2365,6 +2383,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.pc-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #eee;cursor:pointer;flex-wrap:wrap}.pc-item input[type=checkbox]{width:22px;height:22px;accent-color:#E30613}'
     + '.pc-who{flex:1;min-width:150px}.pc-vals{display:flex;align-items:center;gap:6px;font-weight:900}.pc-cur{color:#999;text-decoration:line-through}.pc-vals input{width:120px;padding:7px 10px;border:2px solid #111;border-radius:9999px;font-size:16px;font-weight:700}'
     + '.am-ok{color:#1a7f37;font-weight:700}.am-no{color:#E30613;font-weight:700}'
+    + '.ms-show{display:block;width:100%;margin:0 0 12px;padding:10px;border:2px dashed #E30613;border-radius:14px;background:#fff;color:#E30613;font-weight:900;font-size:12px;cursor:pointer}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
