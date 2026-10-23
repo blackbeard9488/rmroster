@@ -2,16 +2,51 @@
 <html lang="en">
 <head>
 <script>
-// V182 NUKE - destroys corrupted numeric fortnights
-try{
-  localStorage.removeItem('retail_roster_byFortnight_v1');
-  localStorage.removeItem('retail_roster_currentFortnightId');
-  localStorage.removeItem('retail_roster_requests_v2');
-  localStorage.removeItem('retail_roster_shift_offers_v1');
-  localStorage.removeItem('retail_roster_public_holidays_v1');
-  localStorage.removeItem('fortnightDatesCache');
-  console.log('V182 NUKE: Cleared all corrupted data');
-}catch(e){}
+// V183 NUKE - Clears local AND Firebase, prevents restore of 1000s
+(function(){
+  try{
+    console.log('V183 NUKE START - clearing 1000s of corrupted fortnights');
+    // Clear local immediately
+    localStorage.removeItem('retail_roster_byFortnight_v1');
+    localStorage.removeItem('retail_roster_currentFortnightId');
+    localStorage.removeItem('retail_roster_requests_v2');
+    localStorage.removeItem('retail_roster_shift_offers_v1');
+    localStorage.removeItem('repco_state');
+    localStorage.removeItem('repco_cloud_ts');
+    
+    // Try to clear Firebase - will be executed after Firebase loads
+    window._v183_clearFirebase = function(){
+      try{
+        var empty = [];
+        // Method 1: via db ref if available
+        if(typeof db!=='undefined' && db && db.ref){
+          try{ db.ref('retail_roster_byFortnight_v1').set([]); console.log('V183 cleared db.ref retail_roster_byFortnight_v1'); }catch(e){}
+          try{ db.ref('repco_state/retail_roster_byFortnight_v1').set([]); }catch(e){}
+          try{ db.ref('repco_state').remove(); }catch(e){}
+        }
+        // Method 2: via REST
+        if(typeof FIREBASE_DB_URL!=='undefined' && FIREBASE_DB_URL){
+          try{
+            fetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'[]',mode:'cors'}).then(function(){console.log('V183 cleared Firebase REST fortnight');}).catch(function(){});
+            fetch(FIREBASE_DB_URL+'/repco_state.json',{method:'DELETE',mode:'cors'}).catch(function(){});
+            fetch(FIREBASE_DB_URL+'/repco_state/retail_roster_byFortnight_v1.json',{method:'DELETE',mode:'cors'}).catch(function(){});
+          }catch(e){}
+        }
+        // Method 3: safeCloudFetch
+        if(typeof safeCloudFetch!=='undefined'){
+          try{ safeCloudFetch(FIREBASE_DB_URL+'/retail_roster_byFortnight_v1.json',{method:'PUT',headers:{'Content-Type':'application/json'},body:'[]',mode:'cors'}).catch(function(){}); }catch(e){}
+        }
+      }catch(e){ console.error('V183 firebase clear',e); }
+    };
+    // Run now and after 1s, 3s
+    setTimeout(function(){ if(window._v183_clearFirebase) window._v183_clearFirebase(); }, 1000);
+    setTimeout(function(){ if(window._v183_clearFirebase) window._v183_clearFirebase(); }, 3000);
+    setTimeout(function(){ if(window._v183_clearFirebase) window._v183_clearFirebase(); }, 6000);
+    
+    // Prevent auto-restore for 30 seconds
+    localStorage.setItem('_v183_nuke_active', String(Date.now()));
+  }catch(e){ console.error('V183 nuke',e); }
+})();
 </script>
 
 
@@ -553,6 +588,28 @@ body:not(.is-admin) .daily-total-casual {
   margin-top: 10px !important;
 }
 </style>
+
+<script>
+(function(){
+  var origFetch = window.fetch;
+  // Intercept cloud restore of fortnight data within 30s of nuke
+  var _origSafeCloudFetch = window.safeCloudFetch;
+  window.safeCloudFetch = function(url, opts){
+    try{
+      var nukeTs = localStorage.getItem('_v183_nuke_active');
+      if(nukeTs && url && url.indexOf('retail_roster_byFortnight_v1')!==-1 && (Date.now()-parseInt(nukeTs,10))<30000){
+        if(opts && opts.method==='GET' || !opts || !opts.method){
+          console.log('V183 blocking cloud restore of fortnight during nuke window', url);
+          return Promise.resolve({ ok: true, json: function(){ return Promise.resolve([]); } });
+        }
+      }
+    }catch(e){}
+    if(_origSafeCloudFetch) return _origSafeCloudFetch(url, opts);
+    return origFetch(url, opts);
+  };
+})();
+</script>
+
 </head>
 <body>
 <div class="global-bg"><div class="red-corner-global"></div><div class="black-corner-global"></div></div>
@@ -795,9 +852,13 @@ function toast(msg){var c=document.getElementById('toast-v141'); if(!c){alert(ms
 function generateFortnightId(d){
   try{
     if(!d) d=new Date();
-    var start=new Date(d); start.setDate(start.getDate()-start.getDay());
+    var start=new Date(d);
+    var day=start.getDay();
+    var diff = (day===0?-6:1-day); // Monday as start
+    start.setDate(start.getDate()+diff);
+    start.setHours(0,0,0,0);
     var end=new Date(start); end.setDate(start.getDate()+13);
-    var sISO=getISO(start); var eISO=getISO(end);
+    var sISO=start.toISOString().split('T')[0]; var eISO=end.toISOString().split('T')[0];
     return sISO+'_to_'+eISO;
   }catch(e){ return '2026-10-21_to_2026-11-03'; }
 }
