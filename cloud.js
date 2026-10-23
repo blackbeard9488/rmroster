@@ -282,7 +282,7 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
         if (uids.length) notes.push({ uids: uids, note: { type: 'roster-new', title: 'New roster published', body: fnLabel + ' is now on the roster.' } });
       }
     });
-    if (newFns.length && prev) setTimeout(function () { rcApplyApprovedUnavailability(); }, 50);
+    if (newFns.length && prev) setTimeout(function () { rcEnsureHiddenRows(); rcApplyApprovedUnavailability(); }, 50);
   }
   if (spec.kind === 'list') {
     Object.keys(next || {}).forEach(function (id) {
@@ -382,6 +382,13 @@ function rcScheduleRender() {
 }
 function rcRenderLive() {
   if (!RC.session) return;
+  // Redrawing after someone else's change is not activity, so it must not reset the 30-minute idle timer
+  var keepActivity = safeGet('repco_last_activity'), keepTs = lastActivityTs;
+  try { rcRenderLiveInner(); } finally {
+    if (keepActivity) { _rcOrigSafeSet('repco_last_activity', keepActivity); try { lastActivityTs = keepTs; } catch (e) {} }
+  }
+}
+function rcRenderLiveInner() {
   try {
     var v65 = document.getElementById('repco-v65');
     if (v65 && v65.classList.contains('show')) {
@@ -404,7 +411,7 @@ function rcRenderLive() {
       else if (id === 'unavail-page') renderUnavail();
       else if (id === 'mysched-page') renderMySchedule();
       else if (id === 'notif-page') rcRenderNotifPage();
-      else if (id === 'account-mgmt-page' && !document.getElementById('rc-migrate-users')) renderAccountMgmtPage();
+      else if (id === 'account-mgmt-page' && !document.getElementById('rc-migrate-users') && !(document.getElementById('rc-bulk-log') || {}).textContent) renderAccountMgmtPage();
       else if (id === 'buddies-today-page-v141') renderBuddies('today');
       else if (id === 'buddies-tomorrow-page-v141') renderBuddies('tomorrow');
       else if (id === 'today-workers-page') renderTodayWorkers();
@@ -497,6 +504,7 @@ async function rcStartSession(user) {
     if (cur) safeSet('retail_roster_currentFortnightId', cur.id);
   }
   enterApp(profile);
+  if (!rcIsMgrRole(profile.role)) setTimeout(function () { openPage('mysched-page'); }, 0);
   var badge = document.getElementById('user-badge'); if (badge) badge.textContent = String(profile.username).toUpperCase() + ' • ' + String(profile.role || 'staff').toUpperCase();
   rcSetStatus(RC.online === false ? 'offline' : 'live');
   rcRenderBell(); rcRenderOfferBanner();
@@ -669,6 +677,7 @@ renderAccountMgmtPage = function () {
     + '<select id="new-user-role"><option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option><option value="master">master</option></select>'
     + '<select id="new-user-type"><option value="casual">casual</option><option value="fulltime">full time</option></select></div>'
     + '<button class="rc-b rc-red rc-wide" onclick="adminAddUserMgmt()">ADD USER</button></div>';
+  h += '<div class="card"><div class="rc-h">STAFF PASSWORDS</div><div class="rc-small">Sets every staff login (not admins or managers) to their first and last name in lowercase with no space, e.g. Michael EVANS becomes <b>michaelevans</b>.</div><button class="rc-b rc-red rc-wide" style="margin-top:8px" onclick="rcResetAllToFullName()">SET ALL STAFF PASSWORDS TO FULL NAME</button><div id="rc-bulk-log" class="rc-small" style="white-space:pre-line;margin-top:6px"></div></div>';
   h += rcMigrationCardHtml();
   h += '<div class="card"><div class="rc-h">DATA SAFETY</div><div class="rc-small">Downloads everything (rosters, requests, offers, users without passwords) as a backup file.</div><button class="rc-b rc-wide" onclick="rcDownloadBackup()">DOWNLOAD FULL BACKUP</button></div>';
   h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
@@ -721,6 +730,24 @@ function rcResetUserPassword(uid) {
     if (pw.length < 6) { toast('Password must be at least 6 characters'); return; }
     if (uid === RC.session.uid) { toast('Change your own password on the ACCOUNT page'); return; }
     rcResetPassword(uid, pw).then(function () { toast('Password reset for ' + u.username); renderAccountMgmtPage(); }).catch(function (e) { toast('Reset failed: ' + rcErrMsg(e)); });
+  });
+}
+function rcFullNamePassword(u) { return (String(u.firstName || '') + String(u.lastName || '')).toLowerCase().replace(/\s+/g, ''); }
+function rcResetAllToFullName() {
+  var staff = rcUserList().filter(function (u) { return !rcIsMgrRole(u.role) && u.uid !== RC.session.uid; });
+  showCustomConfirm('Set ' + staff.length + ' staff passwords?', 'Each staff member\'s password becomes their first + last name in lowercase (e.g. <b>michaelevans</b>). Their current password stops working.<br><br><b style="color:#E30613">Anyone who knows a colleague\'s name could then log in as them.</b> Ask staff to change it on the ACCOUNT page.', async function (ok) {
+    if (!ok) return;
+    var log = document.getElementById('rc-bulk-log'), say = function (t) { if (log) log.textContent += t + '\n'; };
+    if (log) log.textContent = '';
+    var done = 0, skipped = 0;
+    for (var i = 0; i < staff.length; i++) {
+      var u = staff[i], pw = rcFullNamePassword(u);
+      if (!u.firstName || !u.lastName || pw.length < 6) { say('✗ ' + u.username + ': name missing or too short - set by hand'); skipped++; continue; }
+      try { await rcResetPassword(u.uid, pw); say('✓ ' + u.username + ' → ' + pw); done++; }
+      catch (e) { say('✗ ' + u.username + ': ' + rcErrMsg(e)); skipped++; }
+    }
+    say('Done: ' + done + ' changed, ' + skipped + ' skipped.');
+    toast(done + ' staff passwords set');
   });
 }
 function rcDeleteUser(uid) {
@@ -815,6 +842,23 @@ function rcMarkUnavailable(st, i) {
   st.absentApproved[i] = true;
   st.shifts[i] = 'AB';
 }
+/* Hidden staff aren't in the Excel files, so a newly uploaded fortnight gets their rows (empty) */
+function rcEnsureHiddenRows() {
+  if (!rcIsMgr()) return;
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), people = {}, changed = false;
+  var nameOf = function (s) { return (String(s.firstName || '') + ' ' + String(s.lastName || '')).trim().toLowerCase(); };
+  fns.forEach(function (fn) { (fn.staff || []).forEach(function (st) { if (isHiddenStaffRow(st)) people[nameOf(st)] = st; }); });
+  fns.forEach(function (fn) {
+    Object.keys(people).forEach(function (n) {
+      if ((fn.staff || []).some(function (st) { return nameOf(st) === n; })) return;
+      var p = people[n], len = fn.dates.length;
+      fn.staff.push({ firstName: p.firstName, lastName: p.lastName, role: 'staff', employmentType: p.employmentType || 'casual', shifts: Array(len).fill('OFF'), originalShifts: {}, absentApproved: {}, cellGreen: {}, unavailable: Array(len).fill(false), isHidden: true });
+      changed = true;
+    });
+  });
+  if (changed) safeSetJSON('retail_roster_byFortnight_v1', fns);
+}
+
 /* Approved unavailability also applies to rosters uploaded after the approval */
 function rcApplyApprovedUnavailability() {
   if (!rcIsMgr()) return;
@@ -1107,8 +1151,28 @@ function rcMyPendingOffers() {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
+/* Shows whether the roster on screen is the one containing today, with a quick way back to it */
+function rcCurrentIndicator() {
+  var sel = document.getElementById('fortnight-select'); if (!sel) return;
+  var today = getCurrentFortnight(), shown = getSelectedFortnight();
+  var iso = getISO();
+  var todayId = today && today.dates.some(function (d) { return d.iso === iso; }) ? today.id : null;
+  Array.prototype.forEach.call(sel.options, function (o) {
+    if (!o.dataset.base) o.dataset.base = o.textContent;
+    o.textContent = o.dataset.base + (o.value === todayId ? '  ★ CURRENT' : '');
+  });
+  var el = document.getElementById('rc-current');
+  if (!el) { el = document.createElement('span'); el.id = 'rc-current'; sel.insertAdjacentElement('afterend', el); }
+  if (shown && todayId && shown.id === todayId) {
+    el.className = 'rc-current on'; el.textContent = '★ CURRENT ROSTER'; el.onclick = null;
+  } else if (todayId) {
+    var past = shown && shown.dates.length && shown.dates[shown.dates.length - 1].iso < iso;
+    el.className = 'rc-current off'; el.textContent = (past ? 'PAST ROSTER' : 'FUTURE ROSTER') + ' • GO TO CURRENT';
+    el.onclick = function () { safeSet('retail_roster_currentFortnightId', todayId); sel.value = todayId; renderRosterSafe(); };
+  } else { el.className = 'rc-current off'; el.textContent = 'NO ROSTER FOR TODAY'; el.onclick = null; }
+}
 function rcDecorateRoster() {
   if (!RC.session || RC.pdfMode) return;
   if (!rcIsMgr()) return;
@@ -1212,7 +1276,9 @@ function rcRenderBell() {
 }
 openPage = (function (orig) {
   return function (id) {
+    if (id === 'hidden-staff-page' && !rcIsMgr()) { toast('Admin only'); return; }
     orig.apply(this, arguments);
+    if (id === 'hidden-staff-page') renderHiddenStaffPage();
     if (id === 'notif-page') rcRenderNotifPage(true);
     if (id === 'notif-page' || id === 'requests-page') { rcInboxTabs(id); document.querySelectorAll('#btn-notif').forEach(function (b) { b.classList.add('active'); }); }
     else document.querySelectorAll('#btn-notif').forEach(function (b) { b.classList.remove('active'); });
@@ -1551,6 +1617,9 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.rc-offer-box{margin-top:12px;padding:10px;border:3px dashed #E30613;border-radius:12px;background:#fff5f5;display:flex;flex-direction:column;gap:6px}'
     + '.r-table td.rc-cell-offer{background:repeating-linear-gradient(135deg,#fff,#fff 6px,#ffe3e5 6px,#ffe3e5 12px) !important;color:#111 !important;font-weight:900 !important;outline:2px dashed #E30613;outline-offset:-3px;cursor:pointer}'
     + '.rc-offer-tag{display:block;font-size:8px;color:#E30613;letter-spacing:.5px}'
+    + '.rc-current{display:inline-block;border-radius:9999px;padding:7px 12px;font-weight:900;font-size:11px;white-space:nowrap;border:2px solid #111}'
+    + '.rc-current.on{background:#1a7f37;border-color:#1a7f37;color:#fff}.rc-current.off{background:#FFEB3B;color:#111;cursor:pointer}'
+    + '.roster-section.hidden-sec{border-color:#555;box-shadow:4px 4px 0 #555}'
     + '.rc-setup{width:100%;margin-top:18px;padding:14px;border:3px solid #111;border-radius:14px;background:#fff;box-shadow:4px 4px 0 #E30613;display:flex;flex-direction:column;gap:8px;text-align:left}'
     + '.rc-setup input{background:#C4C4C4;border:none;border-radius:9999px;padding:10px 16px;font-size:14px;font-weight:600}'
     + '.rc-setup button{background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900}';
