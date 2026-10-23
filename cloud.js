@@ -391,7 +391,7 @@ function rcRenderLive() {
 function rcRenderLiveInner() {
   try {
     var v65 = document.getElementById('repco-v65');
-    if (v65 && v65.classList.contains('show')) {
+    if (v65 && v65.classList.contains('show') && !RC.cellEditing) {
       var wraps = Array.prototype.map.call(document.querySelectorAll('#roster-mount .r-table-wrap'), function (w) { return [w.scrollLeft, w.scrollTop]; });
       var sel = document.getElementById('fortnight-select');
       var ids = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).map(function (f) { return f.id; }).join('|');
@@ -1034,56 +1034,105 @@ function rcCleanShift(v) {
 }
 function rcOfferExpired(o) { return o.dateIso && o.dateIso < getISO(); }
 
-editCell = (function (orig) {
-  return function (el, rowIdx, colIdx) {
-    orig.apply(this, arguments);
-    setTimeout(function () { try { rcInjectOfferUI(rowIdx, colIdx); } catch (e) { console.error(e); } }, 130);
-  };
-})(editCell);
-function rcInjectOfferUI(rowIdx, colIdx) {
-  var inp = document.getElementById('edit-shift-input'); if (!inp || !rcIsMgr()) return;
-  var body = document.getElementById('custom-modal-body'); if (!body || document.getElementById('rc-offer-box')) return;
+/* ---------- in-cell shift editing (managers) ---------- */
+// Same rules as the old pop-up: blank = back to the uploaded shift, OFF = off, G = manager (green), AB = absent
+function rcSaveCell(fnId, rowIdx, colIdx, raw) {
+  var newVal = String(raw || '').trim();
+  if (!newVal) { revertCellToOriginal(fnId, rowIdx, colIdx); return; }
+  var fns = safeGetJSON('retail_roster_byFortnight_v1', []);
+  var fn = fns.find(function (f) { return f.id === fnId; }); if (!fn) return;
+  var st = fn.staff[rowIdx]; if (!st) return;
+  var current = st.shifts[colIdx] || 'OFF', upper = newVal.toUpperCase(), isG = false, clean = newVal;
+  if (upper === 'G') { isG = true; clean = rcIsEmptyVal(current) ? 'OFF' : current; }
+  else if (upper.indexOf('G') !== -1) {
+    isG = true;
+    clean = newVal.replace(/G/gi, '').trim().replace(/\s{2,}/g, ' ');
+    if (!clean) clean = current || 'OFF';
+    if (clean.toUpperCase() === 'OFF' && !rcIsEmptyVal(current)) clean = current;
+  }
+  if (/^(ABSENT)$/i.test(clean)) clean = 'AB';
+  if (/^OFF$/i.test(clean)) clean = 'OFF';
+  st.originalShifts = st.originalShifts || {}; st.cellGreen = st.cellGreen || {}; st.cellG = st.cellG || {}; st.absentApproved = st.absentApproved || {};
+  var green = upper === 'G' ? true : (isG && clean.toUpperCase() !== 'OFF');
+  var ab = /^AB$/i.test(clean);
+  if (clean === current && !!st.cellGreen[colIdx] === green && !!st.absentApproved[colIdx] === ab) return;
+  if (st.originalShifts[colIdx] == null) st.originalShifts[colIdx] = st.shifts[colIdx];
+  st.shifts[colIdx] = clean;
+  st.cellGreen[colIdx] = green; st.cellG[colIdx] = green; st.absentApproved[colIdx] = ab;
+  if (st.originalShifts[colIdx] === clean && !green && !ab) delete st.originalShifts[colIdx];
+  safeSetJSON('retail_roster_byFortnight_v1', fns);
+}
+
+editCell = function (el, rowIdx, colIdx) {
+  if (!rcIsMgr()) { toast('Manager only'); return; }
+  if (!el || el.classList.contains('rc-cell-edit')) return;
+  var open = document.querySelector('#roster-mount .rc-cell-edit');
+  if (open && open._rcFinish) open._rcFinish(true);
+  try { updateActivity(); } catch (e) {}
   var fn = getSelectedFortnight() || getCurrentFortnight(); if (!fn) return;
   var st = fn.staff[rowIdx]; if (!st) return;
+  // the table may have been redrawn by the save above; find this cell again
+  el = document.querySelector('#roster-mount td[data-r="' + rowIdx + '"][data-i="' + colIdx + '"]') || el;
   var oid = rcOfferId(fn, rowIdx, colIdx), offer = RC.offers[oid];
-  var box = document.createElement('div'); box.id = 'rc-offer-box'; box.className = 'rc-offer-box';
-  if (offer && offer.status === 'pending') {
-    // The offered shift sits in the cell editor; clearing it (backspace + SAVE) withdraws the offer
-    inp.value = offer.shift;
-    box.innerHTML = '<b>OFFER PENDING</b><div class="rc-small">' + rcEsc(offer.shift) + ' offered to ' + rcEsc(offer.toUsername) + ' by ' + rcEsc(offer.byName) + ' • ' + new Date(offer.ts || 0).toLocaleString() + '<br>Clear the time and SAVE to withdraw it. Type a new time and press UPDATE OFFER to change it, or SAVE to put it straight on the roster.</div>'
-      + '<button type="button" class="rc-b rc-wide" id="rc-update-offer">UPDATE OFFER</button><button type="button" class="rc-b rc-red rc-wide" id="rc-cancel-offer">CANCEL OFFER</button>';
-    body.appendChild(box);
-    document.getElementById('rc-cancel-offer').onclick = function () { document.getElementById('custom-modal-cancel').click(); rcCancelOffer(oid); };
-    document.getElementById('rc-update-offer').onclick = function () {
-      var shift = rcCleanShift(inp.value);
-      if (!shift) { toast('Type a time like 09:00-17:30'); inp.focus(); return; }
-      document.getElementById('custom-modal-cancel').click();
-      if (shift === offer.shift) return;
-      var user = RC.users[offer.toUid] ? Object.assign({ uid: offer.toUid }, RC.users[offer.toUid]) : null;
-      if (!user) { toast('That employee no longer has a login'); return; }
-      rcWithdrawOffer(oid, true).then(function () { rcCreateOffer(fn, rowIdx, colIdx, shift, user); });
-    };
-    var okBtn = document.getElementById('custom-modal-ok');
-    var onSave = function () {
-      okBtn.removeEventListener('click', onSave);
-      if (inp.isConnected && !inp.value.trim() && RC.offers[oid] && RC.offers[oid].status === 'pending') rcCancelOffer(oid);
-    };
-    okBtn.addEventListener('click', onSave);
-    return;
-  }
-  if (!rcIsEmptyCell(st, colIdx)) return;
-  var user = rcUserForStaff(st);
-  box.innerHTML = '<b>OR OFFER THIS SHIFT</b><div class="rc-small">' + (user ? 'Type the time above, then send it to ' + rcEsc(user.username) + ' to accept or decline. It goes on the roster when they accept.' : rcEsc(st.firstName + ' ' + st.lastName) + ' has no login yet, so a shift can\'t be offered. Add them in Account Management with this first and last name.') + '</div>'
-    + (user ? '<button type="button" class="rc-b rc-wide" id="rc-send-offer" style="background:#E30613;color:#fff">OFFER SHIFT TO ' + rcEsc(String(st.firstName).toUpperCase()) + '</button>' : '');
-  body.appendChild(box);
-  var btn = document.getElementById('rc-send-offer');
-  if (btn) btn.onclick = function () {
-    var shift = rcCleanShift(inp.value);
-    if (!shift) { toast('Type a time like 09:00-17:30 first'); inp.focus(); return; }
-    document.getElementById('custom-modal-cancel').click();
-    rcCreateOffer(fn, rowIdx, colIdx, shift, user);
+  var pending = offer && offer.status === 'pending' ? offer : null;
+  var cur = st.shifts[colIdx] || 'OFF', green = (st.cellGreen && st.cellGreen[colIdx]) || (st.cellG && st.cellG[colIdx]);
+  var start = pending ? pending.shift : (rcIsEmptyVal(cur) ? (green ? 'G' : '') : cur + (green ? ' G' : ''));
+  var user = !pending && rcIsEmptyCell(st, colIdx) ? rcUserForStaff(st) : null;
+  RC.cellEditing = true;
+  el.classList.add('rc-cell-edit');
+  el.innerHTML = '<input id="rc-cell-input" class="rc-cell-input" autocomplete="off" spellcheck="false" placeholder="' + (pending ? '' : '09:00-17:00') + '">'
+    + (pending ? '<div class="rc-cell-acts"><button type="button" data-a="update">UPDATE</button><button type="button" data-a="cancel" class="rc-red">CANCEL</button></div><div class="rc-cell-note">offered to ' + rcEsc(pending.toUsername) + '</div>'
+      : user ? '<div class="rc-cell-acts"><button type="button" data-a="offer">OFFER</button></div>' : '');
+  var inp = el.querySelector('input');
+  inp.value = start;
+  var done = false;
+  var finish = function (save, move) {
+    if (done) return; done = true;
+    RC.cellEditing = false;
+    var val = inp.value.trim();
+    if (save) {
+      if (pending) {
+        if (!val) { rcCancelOffer(oid); renderRosterSafe(); }
+        else if (val === pending.shift) renderRosterSafe();
+        else { rcSaveCell(fn.id, rowIdx, colIdx, val); renderRosterSafe(); }
+      } else { rcSaveCell(fn.id, rowIdx, colIdx, val); renderRosterSafe(); }
+    } else renderRosterSafe();
+    rcScheduleRender();
+    if (move) {
+      var nextI = colIdx + move;
+      if (nextI >= 0 && nextI < fn.dates.length) {
+        var td = document.querySelector('#roster-mount td[data-r="' + rowIdx + '"][data-i="' + nextI + '"]');
+        if (td) editCell(td, rowIdx, nextI);
+      }
+    }
   };
-}
+  el._rcFinish = finish;
+  inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    else if (e.key === 'Tab') { e.preventDefault(); finish(true, e.shiftKey ? -1 : 1); }
+  });
+  inp.addEventListener('blur', function () { setTimeout(function () { if (!done && document.activeElement !== inp) finish(true); }, 120); });
+  inp.addEventListener('click', function (e) { e.stopPropagation(); });
+  Array.prototype.forEach.call(el.querySelectorAll('.rc-cell-acts button'), function (btn) {
+    btn.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep the text box focused
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var act = btn.getAttribute('data-a'), shift = rcCleanShift(inp.value);
+      if (act === 'cancel') { done = true; RC.cellEditing = false; rcCancelOffer(oid).then(function () { renderRosterSafe(); }); return; }
+      if (!shift) { toast('Type a time like 09:00-17:30 first'); inp.focus(); return; }
+      done = true; RC.cellEditing = false;
+      if (act === 'offer') { rcCreateOffer(fn, rowIdx, colIdx, shift, user); renderRosterSafe(); }
+      if (act === 'update') {
+        if (shift === pending.shift) { renderRosterSafe(); return; }
+        var to = RC.users[pending.toUid] ? Object.assign({ uid: pending.toUid }, RC.users[pending.toUid]) : null;
+        if (!to) { toast('That employee no longer has a login'); renderRosterSafe(); return; }
+        rcWithdrawOffer(oid, true).then(function () { rcCreateOffer(fn, rowIdx, colIdx, shift, to); });
+      }
+    });
+  });
+  inp.focus(); inp.select();
+};
 function rcCreateOffer(fn, rowIdx, colIdx, shift, user) {
   var st = fn.staff[rowIdx], keys = rcStaffKeys(fn), d = fn.dates[colIdx];
   var oid = rcOfferId(fn, rowIdx, colIdx);
@@ -1491,6 +1540,117 @@ async function rcRunMigration() {
   toast('Import finished');
 }
 
+/* ---------- My Schedule ---------- */
+function rcShiftTimes(iso, sh) {
+  var p = parseShiftRange(sh); if (!p || !iso) return null;
+  var pad = function (n) { return String(n).padStart(2, '0'); };
+  // Brisbane has no daylight saving, so +10:00 is always right
+  var start = new Date(iso + 'T' + pad(Math.floor(p.start / 60) % 24) + ':' + pad(p.start % 60) + ':00+10:00');
+  var end = new Date(start.getTime() + (p.end - p.start) * 60000);
+  return { start: start, end: end };
+}
+function rcDur(ms) {
+  var m = Math.max(0, Math.ceil(ms / 60000)), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + mm + 'm';
+  return mm + 'm';
+}
+function rcMyRows() {
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), out = [];
+  fns.forEach(function (fn) {
+    var me = findMyStaff(fn); if (!me) return;
+    fn.dates.forEach(function (d, i) {
+      var sh = (me.shifts && me.shifts[i] != null) ? String(me.shifts[i]) : 'OFF';
+      var ab = !!(me.absentApproved && me.absentApproved[i]) || /^(AB|ABSENT)$/i.test(sh.trim());
+      var na = !!(me.unavailable && me.unavailable[i]) || /^NA$/i.test(sh.trim());
+      var t = (!ab && !na) ? rcShiftTimes(d.iso, sh) : null;
+      out.push({ fn: fn, i: i, d: d, sh: sh, ab: ab, na: na, t: t, mgr: !!((me.cellGreen && me.cellGreen[i]) || (me.cellG && me.cellG[i])) });
+    });
+  });
+  return out;
+}
+function rcSchedDismissed(key) { try { return localStorage.getItem('repco_sched_dismiss') === key; } catch (e) { return false; } }
+function rcSchedDismiss(key) { try { localStorage.setItem('repco_sched_dismiss', key); } catch (e) {} renderMySchedule(); }
+function rcRequestChange(fnId, i) {
+  safeSet('retail_roster_currentFortnightId', fnId);
+  openPage('requests-page');
+  setTimeout(function () {
+    var t = document.getElementById('req-type'); if (!t) return;
+    t.value = 'shift-correction'; onReqTypeChange();
+    var c = document.getElementById('corr-shift-idx'); if (c) c.value = String(i);
+  }, 120);
+}
+renderMySchedule = function () {
+  var el = document.getElementById('mysched-list'); if (!el) return;
+  try {
+    var rows = rcMyRows(), now = Date.now(), today = getISO();
+    if (!rows.length) { el.innerHTML = '<div class="card">Your login isn\'t linked to a roster row yet. Ask a manager to check your first and last name in Account Management.</div>'; return; }
+    var current = rows.find(function (r) { return r.t && r.t.start.getTime() <= now && now < r.t.end.getTime(); });
+    var next = rows.filter(function (r) { return r.t && r.t.start.getTime() > now; }).sort(function (a, b) { return a.t.start - b.t.start; })[0];
+    var h = '';
+    if (current) {
+      var pct = Math.min(100, Math.max(0, (now - current.t.start) / (current.t.end - current.t.start) * 100));
+      h += '<div class="ms-panel ms-on" data-end="' + current.t.end.getTime() + '" data-start="' + current.t.start.getTime() + '"><div class="ms-kicker">ON SHIFT NOW</div>'
+        + '<div class="ms-big"><span class="ms-count">' + rcDur(current.t.end - now) + '</span> to go</div>'
+        + '<div class="ms-sub">' + rcEsc(current.d.day + ' ' + current.d.date) + ' • ' + rcEsc(fmt(current.sh)) + ' • finishes ' + rcEsc(fmt(current.sh).split('-')[1] || '') + '</div>'
+        + '<div class="ms-bar"><div style="width:' + pct.toFixed(1) + '%"></div></div></div>';
+    } else if (next) {
+      var key = next.fn.id + '|' + next.i + '|' + next.sh;
+      if (!rcSchedDismissed(key)) {
+        h += '<div class="ms-panel ms-next" data-start="' + next.t.start.getTime() + '"><button class="ms-x" title="Hide" onclick="rcSchedDismiss(\'' + rcEsc(key).replace(/'/g, '') + '\')">✕</button><div class="ms-kicker">NEXT SHIFT</div>'
+          + '<div class="ms-big">starts in <span class="ms-count">' + rcDur(next.t.start - now) + '</span></div>'
+          + '<div class="ms-sub">' + rcEsc(next.d.day + ' ' + next.d.date) + ' • ' + rcEsc(fmt(next.sh)) + (next.d.iso === today ? ' • TODAY' : '') + '</div></div>';
+      }
+    } else {
+      h += '<div class="ms-panel ms-none"><div class="ms-kicker">NO UPCOMING SHIFTS</div><div class="ms-sub">Nothing on the roster for you yet.</div></div>';
+    }
+    h += '<div class="ms-hint">Need a change? Tap an upcoming shift to request a correction.</div>';
+    var byFn = {}, order = [];
+    rows.forEach(function (r) { if (!byFn[r.fn.id]) { byFn[r.fn.id] = []; order.push(r.fn); } byFn[r.fn.id].push(r); });
+    order.filter(function (fn) { var last = fn.dates[fn.dates.length - 1]; return last && last.iso >= today; }).slice(0, 2).forEach(function (fn) {
+      var list = byFn[fn.id], hrs = 0, n = 0;
+      list.forEach(function (r) { if (r.t) { hrs += netH(r.sh); n++; } });
+      var isCur = fn.dates.some(function (d) { return d.iso === today; });
+      h += '<div class="ms-fn"><div class="ms-fn-head"><span>' + (isCur ? 'THIS FORTNIGHT' : 'NEXT FORTNIGHT') + ' • ' + rcEsc(rcFnRange(fn)) + '</span><span>' + n + ' shifts • ' + hrs.toFixed(1) + 'h</span></div>';
+      list.forEach(function (r) {
+        var past = r.d.iso < today, isToday = r.d.iso === today, work = !!r.t;
+        var cls = 'ms-day' + (isToday ? ' ms-today' : '') + (past ? ' ms-past' : '') + (work ? '' : ' ms-off');
+        var right = r.ab ? '<span class="ms-tag ms-ab">UNAVAILABLE</span>' : r.na ? '<span class="ms-tag ms-ab">NA</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
+        var tap = work && !past && (!r.t || r.t.start.getTime() > now);
+        h += '<div class="' + cls + (tap ? ' ms-tap" onclick="rcRequestChange(\'' + rcEsc(r.fn.id) + '\',' + r.i + ')"' : '"') + '><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">›</span>' : '') + '</span></div>';
+      });
+      h += '</div>';
+    });
+    h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">BACK TO ROSTER</button></div>';
+    el.innerHTML = h;
+    rcStartSchedTicker();
+  } catch (e) {
+    console.error('my schedule', e);
+    el.innerHTML = '<div class="card">Could not show your schedule: ' + rcEsc(e.message) + '</div>';
+  }
+};
+/* Countdowns tick every 15 seconds without redrawing the page */
+var _rcSchedTimer = null;
+function rcStartSchedTicker() {
+  if (_rcSchedTimer) return;
+  _rcSchedTimer = setInterval(function () {
+    var page = document.getElementById('mysched-page');
+    if (!page || !page.classList.contains('show')) { clearInterval(_rcSchedTimer); _rcSchedTimer = null; return; }
+    var p = page.querySelector('.ms-panel'); if (!p) return;
+    var now = Date.now(), c = p.querySelector('.ms-count');
+    if (p.classList.contains('ms-on')) {
+      var end = +p.dataset.end, start = +p.dataset.start;
+      if (now >= end) { renderMySchedule(); return; }
+      if (c) c.textContent = rcDur(end - now);
+      var bar = p.querySelector('.ms-bar div'); if (bar) bar.style.width = Math.min(100, (now - start) / (end - start) * 100).toFixed(1) + '%';
+    } else if (p.classList.contains('ms-next')) {
+      var st = +p.dataset.start;
+      if (now >= st) { renderMySchedule(); return; }
+      if (c) c.textContent = rcDur(st - now);
+    }
+  }, 15000);
+}
+
 /* ---------- PDF export: a picture of the roster tables exactly as they look on screen ---------- */
 exportPDF = async function () {
   var fn = getSelectedFortnight() || getCurrentFortnight();
@@ -1620,6 +1780,25 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.rc-current{display:inline-block;border-radius:9999px;padding:7px 12px;font-weight:900;font-size:11px;white-space:nowrap;border:2px solid #111}'
     + '.rc-current.on{background:#1a7f37;border-color:#1a7f37;color:#fff}.rc-current.off{background:#FFEB3B;color:#111;cursor:pointer}'
     + '.roster-section.hidden-sec{border-color:#555;box-shadow:4px 4px 0 #555}'
+    + '.ms-panel{position:relative;border-radius:16px;padding:16px 18px;margin:0 0 12px;border:3px solid #111;box-shadow:5px 5px 0 #111;overflow:hidden}'
+    + '.ms-on{background:#0a0a0a;color:#fff;border-left:12px solid #E30613}.ms-next{background:#fff;border-left:12px solid #E30613}.ms-none{background:#fff}'
+    + '.ms-kicker{font-family:"Arial Black",Impact,sans-serif;font-size:11px;letter-spacing:1px;color:#E30613}'
+    + '.ms-big{font-family:"Arial Black",Impact,sans-serif;font-size:26px;font-weight:900;margin:4px 0;font-style:italic}.ms-count{font-size:34px}'
+    + '.ms-sub{font-size:13px;font-weight:700;opacity:.85}'
+    + '.ms-bar{height:10px;background:#333;border-radius:9999px;margin-top:12px;overflow:hidden}.ms-bar div{height:100%;background:#E30613;border-radius:9999px}'
+    + '.ms-x{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:50%;border:2px solid #111;background:#fff;font-weight:900;cursor:pointer}'
+    + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
+    + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
+    + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
+    + '.ms-day{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 14px;border-top:1px solid #e6e6e6;font-size:13px}'
+    + '.ms-today{background:#FFF6CC;border-left:6px solid #E30613}.ms-past{opacity:.45}.ms-off .ms-date{color:#777}.ms-tap{cursor:pointer}.ms-tap:active{background:#f3f3f3}'
+    + '.ms-right{display:flex;align-items:center;gap:8px}.ms-time{font-weight:900;font-size:14px}.ms-hrs{font-size:11px;color:#666;min-width:34px;text-align:right}.ms-offtxt{font-size:11px;font-weight:900;color:#999}'
+    + '.ms-tag{background:#111;color:#fff;border-radius:9999px;padding:2px 7px;font-size:9px;font-weight:900}.ms-ab{background:#E30613}.ms-tt{background:#E30613}.ms-chev{font-size:20px;font-weight:900;color:#E30613;line-height:1}'
+    + '.r-table td.rc-cell-edit{background:#fff !important;outline:3px solid #E30613;outline-offset:-3px;padding:2px !important;vertical-align:middle}'
+    + '.r-table td.rc-cell-edit{overflow:hidden}'
+    + '.rc-cell-input{width:154%;box-sizing:border-box;border:none;background:#FFF6CC;font-size:16px !important;font-weight:700;text-align:center;padding:5px 2px !important;border-radius:4px;outline:none;transform:scale(.65);transform-origin:left center;margin-right:-54%;display:block}'
+    + '.rc-cell-acts{display:flex;gap:2px;margin-top:2px}.rc-cell-acts button{flex:1;border:none;border-radius:9999px;background:#111;color:#fff;font-size:8px;font-weight:900;padding:3px 0;cursor:pointer}.rc-cell-acts button.rc-red{background:#E30613}'
+    + '.rc-cell-note{font-size:7px;color:#E30613;font-weight:900;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
     + '.rc-setup{width:100%;margin-top:18px;padding:14px;border:3px solid #111;border-radius:14px;background:#fff;box-shadow:4px 4px 0 #E30613;display:flex;flex-direction:column;gap:8px;text-align:left}'
     + '.rc-setup input{background:#C4C4C4;border:none;border-radius:9999px;padding:10px 16px;font-size:14px;font-weight:600}'
     + '.rc-setup button{background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900}';
