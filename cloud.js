@@ -1347,7 +1347,9 @@ function rcNotify(uids, note, fixedKey) {
     if (!uid) return;
     var key = fixedKey || RC.db.ref('notifications/' + uid).push().key;
     ids[uid] = key;
-    upd['notifications/' + uid + '/' + key] = Object.assign({ ts: firebase.database.ServerValue.TIMESTAMP, read: false, from: RC.session.profile.username }, note);
+    // Employees never see which manager/admin login sent something
+    var toMgr = RC.users[uid] && rcIsMgrRole(RC.users[uid].role);
+    upd['notifications/' + uid + '/' + key] = Object.assign({ ts: firebase.database.ServerValue.TIMESTAMP, read: false }, toMgr ? { from: RC.session.profile.username } : {}, note);
   });
   return RC.db.ref().update(upd).then(function () { return rcSendPush(ids, note); }).catch(function (e) { console.error('notify', e); return { error: rcErrMsg(e) }; });
 }
@@ -1437,7 +1439,7 @@ function rcRenderNotifPage(markRead) {
   if (!rcIsMgr()) {
     var offers = rcMyPendingOffers();
     h += '<div class="card"><div class="rc-h">SHIFT OFFERS</div>' + (offers.length ? offers.map(function (o) {
-      return '<div class="rc-row"><div><b>' + rcEsc(o.dateLabel) + '</b> ' + rcEsc(fmt(o.shift)) + '<br><span class="rc-small">from ' + rcEsc(o.byName) + '</span></div><div class="rc-btns"><button class="rc-b rc-green" onclick="rcRespondOffer(\'' + o.id + '\',true)">ACCEPT</button><button class="rc-b rc-white" onclick="rcRespondOffer(\'' + o.id + '\',false)">DECLINE</button></div></div>';
+      return '<div class="rc-row"><div><b>' + rcEsc(o.dateLabel) + '</b> ' + rcEsc(fmt(o.shift)) + '<br><span class="rc-small">' + rcEsc(o.fnLabel || '') + '</span></div><div class="rc-btns"><button class="rc-b rc-green" onclick="rcRespondOffer(\'' + o.id + '\',true)">ACCEPT</button><button class="rc-b rc-white" onclick="rcRespondOffer(\'' + o.id + '\',false)">DECLINE</button></div></div>';
     }).join('') : '<div class="rc-small">No open offers right now.</div>') + '</div>';
   } else {
     var all = Object.keys(RC.offers).map(function (k) { return Object.assign({ id: k }, RC.offers[k]); }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).slice(0, 40);
@@ -1448,7 +1450,7 @@ function rcRenderNotifPage(markRead) {
   }
   h += rcPushCardHtml();
   h += '<div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NOTIFICATIONS</div>' + (RC.notifs.length ? '<button class="rc-b rc-white" onclick="rcClearNotifs()">CLEAR ALL</button>' : '') + '</div>' + (RC.notifs.length ? RC.notifs.map(function (n) {
-    return '<div class="rc-notif' + (n.read ? '' : ' rc-unread') + '"><div style="font-weight:900">' + rcEsc(n.title) + '</div><div class="rc-small" style="white-space:pre-line">' + rcEsc(n.body || '') + '</div><div class="rc-small" style="opacity:.6">' + new Date(n.ts || 0).toLocaleString() + (n.from ? ' • ' + rcEsc(n.from) : '') + '</div></div>';
+    return '<div class="rc-notif' + (n.read ? '' : ' rc-unread') + '"><div style="font-weight:900">' + rcEsc(n.title) + '</div><div class="rc-small" style="white-space:pre-line">' + rcEsc(n.body || '') + '</div><div class="rc-small" style="opacity:.6">' + new Date(n.ts || 0).toLocaleString() + (n.from && rcIsMgr() ? ' • ' + rcEsc(n.from) : '') + '</div></div>';
   }).join('') : '<div class="rc-small">Nothing yet.</div>') + '</div>';
   h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
   el.innerHTML = h;

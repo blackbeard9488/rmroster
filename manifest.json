@@ -1,6 +1,6 @@
 {
   "name": "Repco Roster",
-  "short_name": "Roster",
+  "short_name": "Repco Roster",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
