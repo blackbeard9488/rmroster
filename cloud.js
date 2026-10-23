@@ -482,6 +482,8 @@ function rcShowLogin(msg) {
   rcLoginBusy(false);
   rcCheckSetup();
   rcSyncCogs();
+  rcAddKeepSignedIn();
+  rcApplyMobile();
 }
 function rcLoginBusy(b) { var btn = document.getElementById('login-signin-btn'); if (btn) { btn.disabled = b; btn.textContent = b ? 'SIGNING IN...' : 'SIGN IN'; } }
 
@@ -500,6 +502,8 @@ doLogin = function () {
   var u = (document.getElementById('login-user').value || '').trim();
   var p = (document.getElementById('login-pass').value || '').trim();
   if (!u || !p) { rcLoginMsg('Enter username & password'); return; }
+  var keep = document.getElementById('rc-keep');
+  try { localStorage.setItem('repco_keep_signed_in', keep && keep.checked ? '1' : '0'); } catch (e) {}
   RC.loggingIn = true; rcLoginBusy(true); rcLoginMsg('');
   rcSignIn(u, p).catch(function (e) {
     RC.freshLogin = false;
@@ -541,6 +545,7 @@ async function rcStartSession(user) {
   var badge = document.getElementById('user-badge'); if (badge) badge.textContent = String(profile.username).toUpperCase() + ' • ' + String(profile.role || 'staff').toUpperCase();
   rcSetStatus(RC.online === false ? 'offline' : 'live');
   rcRenderBell(); rcRenderOfferBanner();
+  rcApplyMobile();
   toast('Welcome ' + (profile.firstName || profile.username));
   rcMaybeRegisterSW();
   setTimeout(function () { rcDeviceSetup(false); }, 1500);
@@ -552,7 +557,7 @@ if (RC.auth) RC.auth.onAuthStateChanged(function (user) {
   if (RC.session && RC.session.uid === user.uid) return;
   if (!RC.freshLogin) {
     var last = parseInt(safeGet('repco_last_activity', '') || '0', 10);
-    if (!last || Date.now() - last > INACTIVITY_LIMIT_MS) {
+    if (!staysSignedIn() && (!last || Date.now() - last > INACTIVITY_LIMIT_MS)) {
       rcClearLocal();
       RC.auth.signOut();
       rcShowLogin(last ? 'Session timed out after 30 minutes of inactivity. Please log in again.' : '');
@@ -1515,6 +1520,7 @@ function rcRenderBell() {
   var b = document.getElementById('btn-notif'); if (!b) return;
   var n = rcUnreadCount();
   b.innerHTML = '📥 INBOX' + (n ? ' <span class="rc-badge">' + n + '</span>' : '');
+  rcNavState();
   var open = document.querySelector('.full-page.show');
   if (open && (open.id === 'notif-page' || open.id === 'requests-page')) rcInboxTabs(open.id);
   try { if (navigator.setAppBadge) { if (n) navigator.setAppBadge(n); else navigator.clearAppBadge(); } } catch (e) {}
@@ -1673,6 +1679,92 @@ function rcDeviceSetup(refreshOnly) {
     };
   });
 }
+
+/* ---------- "Keep me signed in" on the login page ---------- */
+function rcAddKeepSignedIn() {
+  if (document.getElementById('rc-keep')) return;
+  var btn = document.getElementById('login-signin-btn'); if (!btn) return;
+  var pref = null; try { pref = localStorage.getItem('repco_keep_signed_in'); } catch (e) {}
+  var on = pref === null ? (rcIsPhone() || rcIsStandalone()) : pref === '1';
+  var l = document.createElement('label'); l.className = 'rc-keep';
+  l.innerHTML = '<input type="checkbox" id="rc-keep"' + (on ? ' checked' : '') + '> Keep me signed in on this device';
+  btn.parentNode.insertBefore(l, btn);
+}
+
+/* ---------- phone layout: slim top bar + bottom tab bar ---------- */
+var RC_MOBILE = window.matchMedia('(max-width: 760px)');
+var RC_ICONS = {
+  roster: '<path d="M3 5h18v15H3z M3 10h18 M8 5v15 M3 15h18"/>',
+  sched: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  buddies: '<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6 M14 20c0-2.6 1.4-4.5 3.5-4.5S21 17.4 21 20"/>',
+  inbox: '<path d="M3 13l3-8h12l3 8v6H3z M3 13h5l1 3h6l1-3h5"/>',
+  unavail: '<circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/>',
+  options: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M4.9 19.1L7 17 M17 7l2.1-2.1"/>',
+  more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'
+};
+function rcNavTabs() {
+  return rcIsMgr()
+    ? [['roster', 'Roster', 'roster'], ['notif-page', 'Inbox', 'inbox'], ['unavail-page', 'Unavailable', 'unavail'], ['options-page', 'Options', 'options'], ['more', 'More', 'more']]
+    : [['roster', 'Roster', 'roster'], ['mysched-page', 'My Schedule', 'sched'], ['buddies-today-page-v141', 'Buddies', 'buddies'], ['notif-page', 'Inbox', 'inbox'], ['more', 'More', 'more']];
+}
+function rcBuildNav() {
+  var nav = document.getElementById('rc-bottom-nav');
+  if (!nav) { nav = document.createElement('nav'); nav.id = 'rc-bottom-nav'; document.body.appendChild(nav); }
+  nav.innerHTML = rcNavTabs().map(function (t) {
+    return '<button data-go="' + t[0] + '"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + RC_ICONS[t[2]] + '</svg><span>' + t[1] + '</span>' + (t[0] === 'notif-page' ? '<b class="rc-nav-badge" id="rc-nav-badge"></b>' : '') + '</button>';
+  }).join('');
+  Array.prototype.forEach.call(nav.querySelectorAll('button'), function (b) {
+    b.onclick = function () {
+      var go = b.getAttribute('data-go');
+      if (go === 'more') { rcMoreSheet(); return; }
+      if (go === 'roster') showMain(); else openPage(go);
+    };
+  });
+  rcNavState();
+}
+function rcNavState() {
+  var nav = document.getElementById('rc-bottom-nav'); if (!nav) return;
+  var open = document.querySelector('.full-page.show'), id = open ? open.id : 'roster';
+  if (id === 'requests-page') id = 'notif-page';
+  if (id === 'buddies-tomorrow-page-v141') id = 'buddies-today-page-v141';
+  Array.prototype.forEach.call(nav.querySelectorAll('button'), function (b) { b.classList.toggle('on', b.getAttribute('data-go') === id); });
+  var badge = document.getElementById('rc-nav-badge'), n = RC.session ? rcUnreadCount() : 0;
+  if (badge) { badge.textContent = n > 99 ? '99+' : n; badge.style.display = n ? 'flex' : 'none'; }
+}
+function rcMoreSheet() {
+  var old = document.getElementById('rc-more'); if (old) { old.remove(); return; }
+  var p = RC.session ? RC.session.profile : {};
+  var sh = document.createElement('div'); sh.id = 'rc-more';
+  sh.innerHTML = '<div class="rc-more-card"><div class="rc-small" style="margin-bottom:8px">Signed in as <b>' + rcEsc(p.username || '') + '</b></div>'
+    + '<button data-a="account">My account &amp; password</button>'
+    + (rcIsMgr() ? '' : '<button data-a="tomorrow">Tomorrow\'s buddies</button>')
+    + '<button data-a="logout" class="rc-more-out">Log out</button><button data-a="close" class="rc-more-close">Close</button></div>';
+  sh.onclick = function (e) {
+    var a = e.target.getAttribute && e.target.getAttribute('data-a');
+    if (e.target === sh || a === 'close') { sh.remove(); return; }
+    if (!a) return;
+    sh.remove();
+    if (a === 'account') openPage('account-page');
+    if (a === 'tomorrow') openPage('buddies-tomorrow-page-v141');
+    if (a === 'logout') doLogout();
+  };
+  document.body.appendChild(sh);
+}
+function rcApplyMobile() {
+  var m = RC_MOBILE.matches;
+  document.body.classList.toggle('rc-mobile', m);
+  document.body.classList.toggle('rc-in', !!RC.session);
+  if (m && RC.session) rcBuildNav();
+  var prev = document.querySelector('.r-controls button[onclick="prevFortnight()"]'), next = document.querySelector('.r-controls button[onclick="nextFortnight()"]');
+  if (prev) { prev.textContent = m ? '‹' : 'PREV'; prev.title = 'Previous fortnight'; }
+  if (next) { next.textContent = m ? '›' : 'NEXT'; next.title = 'Next fortnight'; }
+  var tf = document.querySelector('.r-controls button[onclick="toggleTimeFormat()"]'); if (tf) tf.textContent = m ? '12/24H' : '12H/24H';
+  var del = document.getElementById('delete-roster-btn'); if (del) del.textContent = m ? 'DELETE' : 'DELETE ROSTER';
+  setTimeout(rcFitHeader, 0);
+}
+if (RC_MOBILE.addEventListener) RC_MOBILE.addEventListener('change', rcApplyMobile);
+openPage = (function (orig) { return function () { var r = orig.apply(this, arguments); var m = document.getElementById('rc-more'); if (m) m.remove(); rcNavState(); return r; }; })(openPage);
+showMain = (function (orig) { return function () { var r = orig.apply(this, arguments); var m = document.getElementById('rc-more'); if (m) m.remove(); rcNavState(); return r; }; })(showMain);
 
 /* ---------- maintenance mode (live, managers only) ---------- */
 if (RC.db) RC.db.ref('maintenance').on('value', function (s) {
@@ -2384,6 +2476,39 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.pc-who{flex:1;min-width:150px}.pc-vals{display:flex;align-items:center;gap:6px;font-weight:900}.pc-cur{color:#999;text-decoration:line-through}.pc-vals input{width:120px;padding:7px 10px;border:2px solid #111;border-radius:9999px;font-size:16px;font-weight:700}'
     + '.am-ok{color:#1a7f37;font-weight:700}.am-no{color:#E30613;font-weight:700}'
     + '.ms-show{display:block;width:100%;margin:0 0 12px;padding:10px;border:2px dashed #E30613;border-radius:14px;background:#fff;color:#E30613;font-weight:900;font-size:12px;cursor:pointer}'
+    + '.rc-keep{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin:4px 0 0;cursor:pointer;color:#111}.rc-keep input{width:20px;height:20px;accent-color:#E30613}'
+    + '#rc-bottom-nav{display:none}'
+    + 'body.rc-mobile.rc-in #rc-bottom-nav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:10000001;background:#0a0a0a;border-top:4px solid #E30613;padding:4px 2px calc(4px + env(safe-area-inset-bottom))}'
+    + '#rc-bottom-nav button{flex:1;position:relative;background:none;border:none;color:#9a9a9a;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;font-size:10px;font-weight:900;letter-spacing:.2px;cursor:pointer;min-height:52px}'
+    + '#rc-bottom-nav button.on{color:#fff}#rc-bottom-nav button.on svg{color:#E30613}'
+    + '.rc-nav-badge{position:absolute;top:2px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9999px;background:#E30613;color:#fff;font-size:10px;display:none;align-items:center;justify-content:center;border:2px solid #0a0a0a}'
+    + '#rc-more{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000002;display:flex;align-items:flex-end}'
+    + '.rc-more-card{background:#fff;width:100%;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));border-top:6px solid #E30613}'
+    + '.rc-more-card button{display:block;width:100%;text-align:left;padding:14px 12px;border:none;border-bottom:1px solid #eee;background:#fff;font-size:15px;font-weight:900;cursor:pointer}'
+    + '.rc-more-card .rc-more-out{color:#E30613}.rc-more-card .rc-more-close{text-align:center;color:#666;border:none}'
+    + 'body.rc-mobile.rc-in #global-header{padding:8px 14px;gap:0}'
+    + 'body.rc-mobile.rc-in #global-header .r-btns-consistent{display:none !important}'
+    + 'body.rc-mobile.rc-in #global-header .r-title-consistent{font-size:20px}'
+    + 'body.rc-mobile.rc-in #repco-v65,body.rc-mobile.rc-in .full-page{padding-bottom:calc(78px + env(safe-area-inset-bottom)) !important}'
+    + 'body.rc-mobile.rc-in #toast-v141{bottom:calc(84px + env(safe-area-inset-bottom))}'
+    + 'body.rc-mobile .r-controls{margin:8px;padding:8px;gap:6px}'
+    + 'body.rc-mobile .r-controls select#fortnight-select{min-width:0;flex:1 1 0;order:1;padding:8px 10px;font-size:12px}'
+    + 'body.rc-mobile .r-controls button[onclick="prevFortnight()"]{order:0;min-width:40px;padding:6px 0;font-size:20px;line-height:1}'
+    + 'body.rc-mobile .r-controls button[onclick="nextFortnight()"]{order:2;min-width:40px;padding:6px 0;font-size:20px;line-height:1}'
+    + 'body.rc-mobile .r-controls #rc-current{order:3;padding:5px 10px;font-size:10px}'
+    + 'body.rc-mobile .r-controls button[onclick="toggleTimeFormat()"],body.rc-mobile .r-controls #delete-roster-btn{order:4;min-width:0;padding:5px 10px;font-size:10px}'
+    + 'body.rc-mobile .r-controls #admin-total-badge{order:5;margin:0 !important;padding:5px 10px !important;font-size:10px !important}'
+    + 'body.rc-mobile .r-controls #rc-sync-status{order:6;margin-left:auto}'
+    + 'body.rc-mobile .r-controls #user-badge,body.rc-mobile .r-controls #brisbane-time-v141{display:none !important}'
+    + 'body.rc-mobile .r-controls::after{content:"";order:2;flex-basis:100%;height:0}'
+    + 'body.rc-mobile .roster-section{margin:10px 6px;box-shadow:3px 3px 0 #111}'
+    + 'body.rc-mobile .sec-head{padding:8px 10px;font-size:12px}'
+    + 'body.rc-mobile .r-table th,body.rc-mobile .r-table td{min-width:68px !important;width:68px !important;max-width:68px !important;font-size:10px;padding:6px 1px}'
+    + 'body.rc-mobile .r-table th.staff-col,body.rc-mobile .r-table td.staff-cell{min-width:104px !important;width:104px !important;max-width:104px !important;padding-left:6px;font-size:10px}'
+    + 'body.rc-mobile .page-title{font-size:18px !important;padding:6px 12px !important;margin:4px 0 10px !important}'
+    + 'body.rc-mobile .full-page .page-inner{padding:10px !important}'
+    + 'body.rc-mobile .full-page .card:has(> button[onclick^="showMain"]:only-child){display:none}'
+    + 'body.rc-mobile #options-inner button[onclick="showMain()"]{display:none}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
