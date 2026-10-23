@@ -537,28 +537,7 @@ body:not(.is-admin) .daily-total-casual {
   margin-top: 10px !important;
 }
 </style>
-
-window.renderMySchedule = window.renderMySchedule || function(){
-  try{
-    var el=document.getElementById('my-schedule-inner')||document.getElementById('my-schedule-page');
-    if(!el) return;
-    var cur=getSelectedFortnight()||getCurrentFortnight();
-    if(!cur){ el.innerHTML='<div>No roster</div>'; return; }
-    var username=safeGet('repco_username','');
-    var staff = (cur.staff||[]).filter(function(s){ return s.firstName && s.firstName.toLowerCase()===username.toLowerCase(); });
-    if(staff.length===0){ el.innerHTML='<div>My Schedule - No shifts for '+username+'</div>'; return; }
-    el.innerHTML='<div>My Schedule for '+username+' - '+(cur.id||'')+'</div>';
-  }catch(e){ console.error('my schedule', e); }
-};
-window.renderAccountPage = window.renderAccountPage || function(){
-  try{
-    var el=document.getElementById('account-page')||document.getElementById('account-inner');
-    if(!el) return;
-    var user=window.currentUser||{username:safeGet('repco_username','')};
-    el.innerHTML='<div style="padding:20px"><h2>EDIT USERNAME / PASSWORD</h2><p>User: '+(user.username||'')+'</p><p>Role: '+(user.role||'')+'</p></div>';
-  }catch(e){}
-};
-<!-- V187 NUKE --><script>(function(){try{var b=JSON.parse(localStorage.getItem("retail_roster_byFortnight_v1")||"null");if(b&&typeof b==="object"&&!Array.isArray(b)){Object.keys(b).forEach(function(k){if(/^\d+$/.test(k)) delete b[k];});localStorage.setItem("retail_roster_byFortnight_v1",JSON.stringify(b));}}catch(e){}})();</script></head>
+<script>(function(){try{var b=JSON.parse(localStorage.getItem("retail_roster_byFortnight_v1")||"null");if(b&&typeof b==="object"&&!Array.isArray(b)){Object.keys(b).forEach(function(k){if(/^\d+$/.test(k)) delete b[k];});localStorage.setItem("retail_roster_byFortnight_v1",JSON.stringify(b));}}catch(e){}})();</script></head>
 <body>
 <div class="global-bg"><div class="red-corner-global"></div><div class="black-corner-global"></div></div>
 
@@ -566,8 +545,7 @@ window.renderAccountPage = window.renderAccountPage || function(){
 <div id="login-page" style="position:fixed;inset:0;width:100vw;height:100vh;background:#fff;z-index:999999;display:flex;align-items:center;justify-content:center;overflow:hidden">
   <div class="red-corner" style="position:absolute;top:0;left:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#E30613;clip-path:polygon(0 0,100% 0,0 100%);z-index:1"></div>
   <div class="black-corner" style="position:absolute;bottom:0;right:0;width:22vw;max-width:280px;height:62vh;max-height:720px;background:#0a0a0a;clip-path:polygon(100% 0,100% 100%,0 100%);z-index:1"></div>
-  <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;width:100%;max-width:500px"><img src="data:image/png;base64,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" alt="Repco Roster Management" style="width:320px;max-width:85vw;height:auto;margin-bottom:24px;border-radius:16px;border:3px solid #111;box-shadow:8px 8px 0 #111;background:#fff;padding:8px">
-    <div class="repco-logo" style="display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:32px;transform:skewX(-12deg)">
+  <div class="center" style="position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;width:100%;max-width:500px"><div class="repco-logo" style="display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:32px;transform:skewX(-12deg)">
       <div style="display:flex;gap:6px;align-items:center">
         <div style="width:48px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
         <div style="width:14px;height:42px;background:#E30613;transform:skewX(-15deg)"></div>
@@ -713,7 +691,6 @@ window.renderAccountPage = window.renderAccountPage || function(){
 <script>
 function toArraySafe(v){ if(Array.isArray(v)) return v; if(v && typeof v==='object'){ try{ return Object.values(v).filter(function(x){return x!=null;}); }catch(e){ return []; } } return []; }
 function isNumericId(s){ if(!s) return false; let str=String(s.id||s); return /^\d+$/.test(str) || str==='0' || str==='1' || str==='10004'; }
-function getISODate(d){ return d.toISOString().slice(0,10); }
 
 
 
@@ -805,10 +782,9 @@ function toast(msg){var c=document.getElementById('toast-v141'); if(!c){alert(ms
 
 function generateFortnightId(d){
   try{
-    // Monday-based: find Monday of week containing d
     var date = new Date(d);
-    var day = date.getDay(); // 0=Sun, 1=Mon
-    var diffToMon = day===0 ? -6 : 1-day; // how many days to Monday
+    var day = date.getDay();
+    var diffToMon = day===0 ? -6 : 1-day;
     var monday = new Date(date.getTime()+diffToMon*86400000);
     monday.setHours(0,0,0,0);
     var sunday2 = new Date(monday.getTime()+13*86400000);
@@ -818,37 +794,6 @@ function generateFortnightId(d){
   }
 }
 
-function getDatesForFortnight(fnId){if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId]; var parts=fnId.split('-FN'); if(parts.length<2) return []; var y=parseInt(parts[0]); var fn=parseInt(parts[1]); var first=new Date(y,0,1); var st=new Date(first.getTime()+(fn-1)*14*86400000); var dates=[]; for(var i=0;i<14;i++){var dd=new Date(st.getTime()+i*86400000); dates.push(getISO(dd));} fortnightDatesCache[fnId]=dates; return dates;}
-async function doLogin(){
-  try{
-    var uEl=document.getElementById('login-user'); var pEl=document.getElementById('login-pass'); var errEl=document.getElementById('login-err');
-    if(!uEl||!pEl||!errEl){alert('Login elements missing'); return;}
-    var u=(uEl.value||'').trim(); var p=(pEl.value||'').trim();
-    if(!u||!p){errEl.textContent='Enter username and password'; return;}
-    try{seedIfEmpty();}catch(e){}
-    var users=safeGetJSON('retail_roster_users_v1',[]); if(!Array.isArray(users)) users=[];
-    var found=null; for(var i=0;i<users.length;i++){if(users[i].username===u && users[i].password===p){found=users[i]; break;}}
-    if(!found){
-      var lu=u.toLowerCase();
-      if((lu==='admin'&&(p==='admin123'||p==='admin'))||(lu==='repco')||(lu==='chris'&&(p==='Chris'||p==='chris'))||(lu==='manager'&&p==='manager')||(lu==='michaele'&&(p==='Michaele'||p==='michaele'))){
-        var rm={admin:'admin',repco:'admin',chris:'manager',manager:'manager',michaele:'manager'}; var r=rm[lu]||'staff'; found={username:u,password:p,role:r,displayName:u,employmentType:'fulltime',firstName:u,lastName:''};
-      }
-    }
-    if(!found){errEl.textContent='Invalid login - try admin / admin123'; return;}
-    errEl.textContent='';
-    safeSet('repco_username',found.username); safeSet('repco_currentRole',found.role||'staff'); safeSet('repco_session',String(Date.now()));
-    safeSetJSON('retail_roster_session_v1',{username:found.username,role:found.role,ts:Date.now()}); safeSetJSON('repco_currentUser',found); window.currentUser=found;
-    var lp=document.getElementById('login-page'); if(lp) lp.style.display='none';
-    var gh=document.getElementById('global-header'); if(gh){gh.classList.add('show'); gh.style.display='flex';}
-    var main=document.getElementById('repco-v65'); if(main){main.classList.add('show'); main.style.display='block';}
-    var hu=document.getElementById('header-user'); if(hu) hu.textContent=found.username;
-    var hr=document.getElementById('header-role'); if(hr) hr.textContent=found.role||'staff';
-    toast('Welcome '+(found.displayName||found.username)+'!'); try{applyRoleVisibility(found.role);}catch(e){}
-    try{await populateFortnightSelect();}catch(e){}
-    if(!currentFortnightId){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var keys=Object.keys(byF); if(keys.length>0) currentFortnightId=keys.sort().pop(); else currentFortnightId=generateFortnightId(new Date());}
-    try{renderRosterSafe();}catch(e){} try{cloudSave();}catch(e){}
-  }catch(e){console.error('doLogin error',e); var errEl=document.getElementById('login-err'); if(errEl) errEl.textContent='Login error: '+e.message;}
-}
 window.doLogin = doLogin;
 function doLoginSync(){return doLogin();}
 
@@ -3199,33 +3144,23 @@ function showCustomConfirm(title, body, cb){
     var okBtn=document.getElementById('custom-modal-ok');
     var cancelBtn=document.getElementById('custom-modal-cancel');
     if(!modal || !okBtn){
-      // fallback to native confirm
       var res = confirm((title||'')+'\n'+(body||''));
-      if(cb) cb(res);
-      return;
+      if(cb) cb(res); return;
     }
     if(t) t.textContent=title||'Confirm';
     if(b) b.textContent=body||'Are you sure?';
     modal.style.display='flex';
-    var cleanup=function(res){
-      modal.style.display='none';
-      okBtn.onclick=null;
-      if(cancelBtn) cancelBtn.onclick=null;
-      if(cb) cb(res);
-    };
+    var cleanup=function(res){ modal.style.display='none'; okBtn.onclick=null; if(cancelBtn) cancelBtn.onclick=null; if(cb) cb(res); };
     okBtn.onclick=function(){ cleanup(true); };
     if(cancelBtn) cancelBtn.onclick=function(){ cleanup(false); };
-  }catch(e){
-    var res = confirm(title+'\n'+body);
-    if(cb) cb(res);
-  }
+  }catch(e){ var res = confirm(title+'\n'+body); if(cb) cb(res); }
 }
 
 function deleteCurrentRoster(){
   try{
     var selected = getSelectedFortnight();
     var curLabel = selected ? selected.label : (getCurrentFortnight() ? getCurrentFortnight().label : 'this roster');
-    (window.showCustomConfirm||showCustomConfirm)('Delete roster?','This will delete '+curLabel+' permanently. This cannot be undone.',(ok)=>{
+    showCustomConfirm('Delete roster?','This will delete '+curLabel+' permanently. This cannot be undone.',(ok)=>{
       if(!ok) return;
       try{
         let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
@@ -3364,8 +3299,7 @@ function renderRosterSafe(){
   try{ applyPublicHolidaysToAllRosters(); }catch(e){}
   try{ applyAutoGStatus(); }catch(e){}
 
-  var cur=getSelectedFortnight();if(!cur) cur=getCurrentFortnight(); if(!cur){ console.warn('V187 no current fortnight'); return; }
-  // V187: Ensure cur.dates is array of objects
+  var cur=getSelectedFortnight();if(!cur) cur=getCurrentFortnight(); if(!cur){ console.warn('V187 no current'); return; }
   if(cur.dates && cur.dates.length && typeof cur.dates[0]==='string'){
     cur.dates = cur.dates.map(function(d){ try{ var dt=new Date(d); return {iso:d, date: String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0'), day:['SUN','MON','TUE','WED','THU','FRI','SAT'][dt.getDay()]}; }catch(e){ return {iso:d, date:d, day:''}; } });
   }
@@ -7389,13 +7323,26 @@ function toggleMaintenanceFromOptions(){
 }
 
 function renderArchivePage(){
-  const el=document.getElementById('archive-inner'); if(!el) return; const cur=getCurrentFortnight();
-  let html='<div class="card"><div style="font-weight:900;margin-bottom:8px">ARCHIVE CURRENT ROSTER</div><div style="font-size:11px;opacity:.7">Current: '+(cur?cur.label:'')+' • '+ (cur?cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date:'')+'</div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="archiveCurrent()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ARCHIVE CURRENT</button><button id="delete-roster-btn" id="delete-roster-btn" onclick="deleteCurrentRoster()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">DELETE CURRENT ROSTER</button></div></div>';
-  html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ARCHIVED ROSTERS</div><div id="archive-list"></div><div style="margin-top:10px"><button onclick="clearArchive()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px 12px;font-weight:900">CLEAR ARCHIVE</button></div></div>';
-  html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">UPLOADED EXCELS (download on any device)</div><div id="uploaded-excels-list"></div></div>';
-  html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; el.innerHTML=html; viewArchive(); viewUploadedExcels();
+  try{
+    var el=document.getElementById('archive-inner'); if(!el) return;
+    var archive=toArraySafe(safeGetJSON('retail_roster_archives_v1',[]));
+    var cur=null; try{ cur=getCurrentFortnight(); }catch(e){}
+    if(!cur || !cur.dates || !cur.dates[0]){ el.innerHTML='<div style="padding:20px">No fortnight</div>'; return; }
+    var valid=archive.filter(function(a){ return a && a.id && !isNumericId(a.id); });
+    if(valid.length===0){ el.innerHTML='<div>No archived rosters</div>'; return; }
+    el.innerHTML=valid.map(function(a){ return '<div>'+(a.id||'')+'</div>'; }).join('');
+  }catch(e){ console.error(e); }
 }
-function viewArchive(){ let el=document.getElementById('archive-list'); if(!el) return; let archive=safeGetJSON('retail_roster_archive_v1',[]); if(archive.length===0){ el.innerHTML='<div style="font-size:11px;opacity:.6">No archived rosters</div>'; return; } el.innerHTML=toArraySafe(archive).map((a,i)=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #eee;flex-wrap:wrap;gap:6px"><span><b>'+a.label+'</b> - '+(a.dates[0]?.date||'')+' to '+(a.dates[a.dates.length-1]?.date||'')+' <small style="opacity:.6">('+new Date(a.archivedAt).toLocaleDateString()+')</small></span><span style="display:flex;gap:4px"><button onclick="restoreArchive('+i+')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:4px 8px;font-size:10px">RESTORE</button><button onclick="deleteArchive('+i+')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:4px 8px;font-size:10px">DELETE</button></span></div>').join(''); }
+
+function viewArchive(){
+  try{
+    var el=document.getElementById('archive-list'); if(!el) return;
+    var archive=toArraySafe(safeGetJSON('retail_roster_archives_v1',[]));
+    if(archive.length===0){ el.innerHTML='<div>No archived</div>'; return; }
+    el.innerHTML=archive.map(function(a){ return '<div>'+(a.id||'Archived')+'</div>'; }).join('');
+  }catch(e){}
+}
+
 function archiveCurrent(){ let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let curId=safeGet('retail_roster_currentFortnightId'); let cur=fns.find(f=>f.id===curId); if(!cur){ toast('No current roster'); return; } let archive=safeGetJSON('retail_roster_archive_v1',[]); archive.push({...JSON.parse(JSON.stringify(cur)),archivedAt:new Date().toISOString()}); safeSetJSON('retail_roster_archive_v1',archive); toast('Archived '+cur.label+' - synced'); viewArchive(); }
 function restoreArchive(idx){ let archive=safeGetJSON('retail_roster_archive_v1',[]); let item=archive[idx]; if(!item) return; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let exists=fns.find(f=>f.label===item.label); if(!exists){ fns.push({id:item.id,label:item.label,dates:item.dates,staff:item.staff}); safeSetJSON('retail_roster_byFortnight_v1',fns); } safeSet('retail_roster_currentFortnightId',item.id); toast('Restored '+item.label);  populateFortnightSelect(); renderRosterSafe(); try{ if(typeof applyRoleVisibility==="function") try{ if(typeof applyRoleVisibility==="function") applyRoleVisibility(); }catch(e){} }catch(e){} updateMyScheduleCard(); viewArchive(); }
 function deleteArchive(idx){ showCustomConfirm('Delete archived roster?','', (ok)=>{ if(!ok) return; let archive=safeGetJSON('retail_roster_archive_v1',[]); archive.splice(idx,1); safeSetJSON('retail_roster_archive_v1',archive); toast('Deleted from archive - synced'); viewArchive(); }); }
