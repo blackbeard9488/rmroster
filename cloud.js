@@ -2071,7 +2071,7 @@ async function rcScanPhoto() {
   var file = (document.getElementById('pc-file').files || [])[0]; if (!file) return;
   var fn = getSelectedFortnight() || getCurrentFortnight(); if (!fn) { toast('No roster to check against'); return; }
   var out = document.getElementById('pc-results'), go = document.getElementById('pc-go');
-  go.disabled = true; go.textContent = 'READING PHOTO... (about 20 seconds)';
+  go.disabled = true; go.textContent = 'READING PHOTO... (can take up to a minute)';
   out.innerHTML = '';
   try {
     var image = await rcPhotoToJpeg(file);

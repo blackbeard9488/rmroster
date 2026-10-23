@@ -10,7 +10,7 @@
      VAPID_SUBJECT      mailto:you@example.com
      ALLOWED_ORIGIN     https://blackbeard9488.github.io  (optional, defaults to *)
      GEMINI_API_KEY     Google AI Studio key, as a *Secret* (for the roster photo check)
-     GEMINI_MODEL       optional, defaults to gemini-2.5-flash
+     GEMINI_MODEL       optional, defaults to gemini-flash-latest (Google's always-current Flash model)
 */
 
 export default {
@@ -83,7 +83,7 @@ async function scanRoster(body, env, cors) {
     'Reply with JSON only: {"changes":[{"name":"","date":"","photo":"","mark":"","confidence":0}]}. If nothing is changed, reply {"changes":[]}.'
   ].join('\n');
 
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = env.GEMINI_MODEL || 'gemini-flash-latest';
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
