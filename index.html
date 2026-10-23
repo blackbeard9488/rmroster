@@ -99,7 +99,7 @@ body.maintenance-active{overflow:hidden!important;height:100vh!important;positio
 var MEMORY_STORE = {};
 var FIREBASE_DB_URL = "https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
 var FIREBASE_CONFIG = {apiKey:"AIzaSyDummy",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
-var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive","repco_username","repco_currentRole"];
+var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive"];
 var db = null;
 var cloudLoadRunning = false;
 var cloudSaveTimeout = null;
@@ -127,11 +127,47 @@ try {
 
 function getAllState(){ var state={}; CLOUD_KEYS.forEach(function(k){ try{ var v=localStorage.getItem(k); state[k]=v?JSON.parse(v):null; }catch(e){} }); state._ts=Date.now(); return state; }
 function debouncedCloudSave(){ if(cloudSaveTimeout) clearTimeout(cloudSaveTimeout); cloudSaveTimeout = setTimeout(function(){ try{ cloudSave(); }catch(e){} }, 2000); }
-async function cloudLoadAll(){ if(cloudLoadRunning) return; if(!db) return; cloudLoadRunning=true; try{ var r=await fetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){ var data=await r.json(); if(data&&data._ts){ var lt=parseInt(localStorage.getItem("repco_cloud_ts")||"0"); if(data._ts>lt){ Object.keys(data).forEach(function(k){ if(k==="_ts") return; try{ localStorage.setItem(k, JSON.stringify(data[k])); }catch(e){} }); localStorage.setItem("repco_cloud_ts", String(data._ts)); try{ if(typeof renderAllSafe==='function') renderAllSafe(); }catch(e){} } } } }catch(e){} finally{ cloudLoadRunning=false; } }
+async function cloudLoadAll(){ if(cloudLoadRunning) return; if(!db) return; cloudLoadRunning=true; try{ var r=await fetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){ var data=await r.json(); if(data&&data._ts){ var lt=parseInt(localStorage.getItem("repco_cloud_ts")||"0"); if(data._ts>lt){ Object.keys(data).forEach(function(k){ if(k==="_ts"||CLOUD_KEYS.indexOf(k)===-1) return; if(data[k]===null||data[k]===undefined) return; try{ localStorage.setItem(k, JSON.stringify(data[k])); }catch(e){} }); localStorage.setItem("repco_cloud_ts", String(data._ts)); sanitizeState(); try{ if(typeof renderAllSafe==='function') renderAllSafe(); }catch(e){} } } } }catch(e){} finally{ cloudLoadRunning=false; } }
 function cloudSave(){ try{ var state=getAllState(); if(db && db.ref){ db.ref("repco_state").set(state).then(function(){ localStorage.setItem("repco_cloud_ts", String(state._ts)); }).catch(function(){}); } }catch(e){} }
 function renderAllSafe(){ try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){} try{ if(typeof renderRosterSafe==='function') renderRosterSafe(); }catch(e){} }
 function cloudLoad(){ return cloudLoadAll(); }
 function checkForIndexUpdate(){}
+
+/* Repairs bad / partial saved data (old versions, Firebase dropping empty arrays, nulls) so the roster can always render */
+function sanitizeState(){
+  try{
+    var days=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    var users=safeGetJSON('retail_roster_users_v1',null);
+    if(users && !Array.isArray(users)) users=Object.keys(users).map(function(k){return users[k];});
+    if(Array.isArray(users)){
+      users=users.filter(function(u){return u && typeof u.username==='string';});
+      safeSetJSON('retail_roster_users_v1',users);
+    } else if(users!==null){ try{localStorage.removeItem('retail_roster_users_v1');}catch(e){} }
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',null);
+    if(fns===null) return;
+    if(!Array.isArray(fns)) fns=(fns&&typeof fns==='object')?Object.keys(fns).map(function(k){return fns[k];}):[];
+    fns=fns.filter(function(f){return f && typeof f==='object';});
+    fns.forEach(function(f){
+      if(!Array.isArray(f.staff)) f.staff=(f.staff&&typeof f.staff==='object')?Object.keys(f.staff).map(function(k){return f.staff[k];}):[];
+      if(!Array.isArray(f.dates)) f.dates=(f.dates&&typeof f.dates==='object')?Object.keys(f.dates).map(function(k){return f.dates[k];}):[];
+      f.dates=f.dates.filter(function(d){return d;});
+      if(f.dates.length===0 && f.id){ try{ f.dates=getDatesForFortnight(f.id); }catch(e){} }
+      if(f.dates.length===0 && f.id){ var m=String(f.id).match(/^fn_(\d{2})_(\d{2})$/); if(m){ var y=new Date().getFullYear(); var st=new Date(y,parseInt(m[2],10)-1,parseInt(m[1],10)); for(var i=0;i<14;i++){ var d=new Date(st.getTime()+i*86400000); f.dates.push({iso:getISO(d),date:String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0'),day:days[d.getDay()]}); } } }
+      f.dates.forEach(function(d){ if(d && !d.day && d.iso){ var dt=new Date(d.iso+'T00:00:00'); if(!isNaN(dt)) d.day=days[dt.getDay()]; } });
+      if(!f.label) f.label=f.id||'Roster';
+      f.staff=f.staff.filter(function(st){return st && typeof st==='object';});
+      f.staff.forEach(function(st){
+        st.firstName=String(st.firstName||''); st.lastName=String(st.lastName||'');
+        var n=f.dates.length||14;
+        var sh=Array.isArray(st.shifts)?st.shifts:(st.shifts&&typeof st.shifts==='object'?Object.keys(st.shifts).sort(function(a,b){return a-b;}).map(function(k){return st.shifts[k];}):[]);
+        var fixed=[]; for(var i=0;i<n;i++){ fixed.push((sh[i]===undefined||sh[i]===null)?'OFF':String(sh[i])); }
+        st.shifts=fixed;
+      });
+    });
+    fns=fns.filter(function(f){return f.dates.length>0;});
+    safeSetJSON('retail_roster_byFortnight_v1',fns);
+  }catch(e){ console.error('sanitizeState',e); }
+}
 
 function generateFortnightId(d){
   try{
@@ -421,7 +457,7 @@ function restoreEditDraftIfNeeded(){ try{ var draft=getEditDraft(); if(!draft) r
 function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
 
 function doLogin(){
-  seedIfEmpty();
+  try{ seedIfEmpty(); }catch(e){ console.error('seed',e); try{ repairRosterData(); }catch(e2){} }
   var uEl=document.getElementById('login-user');
   var pEl=document.getElementById('login-pass');
   var u=(uEl.value||'').trim();
@@ -481,6 +517,7 @@ function doLogout(){
 }
 
 function seedIfEmpty(){
+  sanitizeState();
   let users=safeGetJSON('retail_roster_users_v1',null);
   if(!users) users=[];
   const core=[
@@ -683,6 +720,18 @@ function deleteCurrentRoster(){
 }
 
 function renderRosterSafe(){
+  try{ return renderRosterCore(); }
+  catch(e){
+    console.error('renderRoster',e);
+    var m=document.getElementById('roster-mount');
+    if(m) m.innerHTML='<div class="card" style="margin:14px"><b>Roster failed to load:</b> '+String(e&&e.message||e)+'<br><br><button onclick="repairRosterData()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 16px;font-weight:900">REPAIR DATA</button></div>';
+  }
+}
+function repairRosterData(){
+  try{ localStorage.setItem('repco_roster_broken_backup',localStorage.getItem('retail_roster_byFortnight_v1')||''); localStorage.removeItem('retail_roster_byFortnight_v1'); localStorage.removeItem('repco_cloud_ts'); seedIfEmpty(); populateFortnightSelect(); renderRosterSafe(); toast('Roster data repaired (old copy backed up)'); }catch(e){ toast('Repair failed: '+e.message); }
+}
+function renderRosterCore(){
+  sanitizeState();
   var cur=getSelectedFortnight();if(!cur) cur=getCurrentFortnight(); if(!cur) return; 
   var mount=document.getElementById('roster-mount'); var curU=safeGet('repco_username')||''; var isMgr=isManagerRole(getActualRole());
   var todayISO=getISO(); var todayDateObj=new Date(todayISO); var todayStr=String(todayDateObj.getDate()).padStart(2,'0')+'/'+String(todayDateObj.getMonth()+1).padStart(2,'0'); var todayIdx=cur.dates.findIndex(function(d){ return d.iso===todayISO; }); if(todayIdx===-1) todayIdx=cur.dates.findIndex(function(d){ return d.date===todayStr; });
