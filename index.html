@@ -2,30 +2,16 @@
 <html lang="en">
 <head>
 <script>
-// V181 ULTRA CLEANUP - runs before everything, fixes '1' bug
+// V182 NUKE - destroys corrupted numeric fortnights
 try{
-  var raw=localStorage.getItem('retail_roster_byFortnight_v1');
-  if(raw){
-    var data=JSON.parse(raw);
-    var fns=Array.isArray(data)?data:Object.values(data).filter(function(v){return v&&v.id;});
-    var filtered=fns.filter(function(fn){return fn&&fn.id&&fn.id!=='0'&&fn.id!=='1'&&fn.id!==0&&fn.id!=='fallback'&&fn.id!=='null'&&fn.id!=='undefined'&&fn.dates&&fn.dates.length>0;});
-    if(filtered.length!==fns.length){
-      console.log('V181 cleanup removed', fns.length-filtered.length, 'corrupted rosters');
-      localStorage.setItem('retail_roster_byFortnight_v1', JSON.stringify(filtered));
-    }
-  }
-  var curId=localStorage.getItem('retail_roster_currentFortnightId');
-  if(curId){
-    curId=curId.replace(/"/g,'').replace(/'/g,'');
-    if(curId==='0'||curId==='1'||curId==='fallback'||curId==='null'||curId==='undefined'||curId===''){
-      localStorage.removeItem('retail_roster_currentFortnightId');
-    }
-  }
-  // Clean corrupted requests
+  localStorage.removeItem('retail_roster_byFortnight_v1');
+  localStorage.removeItem('retail_roster_currentFortnightId');
   localStorage.removeItem('retail_roster_requests_v2');
   localStorage.removeItem('retail_roster_shift_offers_v1');
   localStorage.removeItem('retail_roster_public_holidays_v1');
-}catch(e){ console.error('V181 cleanup',e); }
+  localStorage.removeItem('fortnightDatesCache');
+  console.log('V182 NUKE: Cleared all corrupted data');
+}catch(e){}
 </script>
 
 
@@ -806,7 +792,15 @@ window.isGStatus = window.isGStatus || window.isGShift;
 window.buildSection = window.buildSection || function(type){};
 var currentFortnightId=null; var is24H=false; var time24=false; var undoStack=[]; var selectedUnavailDates=new Set(); var phAllocations=[]; var fortnightDatesCache={}; var selectedFortnightKey=null;
 function toast(msg){var c=document.getElementById('toast-v141'); if(!c){alert(msg); return;} var el=document.createElement('div'); el.className='toast-item'; el.textContent=msg; c.appendChild(el); setTimeout(function(){try{el.remove();}catch(e){}},3500);}
-function generateFortnightId(d){var y=d.getFullYear(); var s=new Date(y,0,1); var diff=Math.floor((d-s)/86400000); var fn=Math.floor(diff/14)+1; return y+'-FN'+String(fn).padStart(2,'0');}
+function generateFortnightId(d){
+  try{
+    if(!d) d=new Date();
+    var start=new Date(d); start.setDate(start.getDate()-start.getDay());
+    var end=new Date(start); end.setDate(start.getDate()+13);
+    var sISO=getISO(start); var eISO=getISO(end);
+    return sISO+'_to_'+eISO;
+  }catch(e){ return '2026-10-21_to_2026-11-03'; }
+}
 function getDatesForFortnight(fnId){if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId]; var parts=fnId.split('-FN'); if(parts.length<2) return []; var y=parseInt(parts[0]); var fn=parseInt(parts[1]); var first=new Date(y,0,1); var st=new Date(first.getTime()+(fn-1)*14*86400000); var dates=[]; for(var i=0;i<14;i++){var dd=new Date(st.getTime()+i*86400000); dates.push(getISO(dd));} fortnightDatesCache[fnId]=dates; return dates;}
 async function doLogin(){
   try{
@@ -3187,22 +3181,6 @@ function getCurrentFortnight(){
 
 
 function getSelectedFortnight(){
-  try{
-    var sel=document.getElementById('fortnight-select');
-    if(sel && sel.value && sel.value!=='0' && sel.value!=='1' && sel.value!=='fallback' && sel.value!=='null') return sel.value;
-    var curId=localStorage.getItem('retail_roster_currentFortnightId');
-    if(curId){ curId=curId.replace(/"/g,''); if(curId!=='0'&&curId!=='1'&&curId!=='fallback'&&curId!=='null'&&curId!=='undefined'&&curId!=='') return curId; }
-    var raw=localStorage.getItem('retail_roster_byFortnight_v1');
-    if(!raw) return null;
-    var data=JSON.parse(raw);
-    var fns=Array.isArray(data)?data:Object.values(data).filter(function(v){return v&&v.id;});
-    fns=fns.filter(function(fn){return fn&&fn.id&&fn.id!=='0'&&fn.id!=='1'&&fn.id!==0&&fn.id!=='fallback'&&fn.dates&&fn.dates.length>0;});
-    if(fns.length>0) return fns[0].id;
-    return null;
-  }catch(e){ return null; }
-}
-function getSelectedFortnight_OLD(){
-
   try{
     var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && !Array.isArray(fns) && typeof fns==='object'){ fns = Object.values(fns).filter(function(v){ return v && (v.dates || v.id); }); }
     if(fns && !Array.isArray(fns) && typeof fns==='object'){
@@ -12747,7 +12725,7 @@ function handleExcel(event){var file=event.target.files[0]; if(!file) return; if
 function importExcel(event){handleExcel(event);}
 function exportCSV(){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur||!cur.staff||cur.staff.length===0){toast('No roster'); return;} var dates=getDatesForFortnight(getSelectedFortnight()); var csv='Staff,'+dates.map(getDDMM).join(',')+',Total\n'; cur.staff.forEach(function(s){var shifts=s.shifts||[]; var row=s.name; var tot=0; dates.forEach(function(iso,idx){var sh=Array.isArray(shifts)?(shifts[idx]||'OFF'):(shifts[iso]||'OFF'); row+=','+sh; if(sh!=='OFF'&&sh!=='NA'&&sh!=='UA'&&sh!=='AB'&&sh!=='') tot+=calcHours(sh);}); row+=','+tot.toFixed(1); csv+=row+'\n';}); var blob=new Blob([csv],{type:'text/csv'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=getSelectedFortnight()+'.csv'; a.click(); URL.revokeObjectURL(url); toast('CSV exported');}
 function deleteRoster(){var fid=getSelectedFortnight(); if(!fid){toast('No fortnight'); return;} if(!confirm('Delete Roster '+fid+'?')) return; pushUndo(); var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var arch=safeGetJSON('repco_archive',{}); if(byF[fid]){arch[fid]=byF[fid]; delete byF[fid]; safeSetJSON('retail_roster_byFortnight_v1',byF); safeSetJSON('repco_archive',arch); toast('Deleted '+fid); var keys=Object.keys(byF).sort(); if(keys.length>0){setSelectedFortnight(keys[keys.length-1]); populateFortnightSelect(); renderRosterSafe();} cloudSave();}}
-function getSelectedFortnight_ORIG(){return currentFortnightId||selectedFortnightKey;}
+function getSelectedFortnight(){return currentFortnightId||selectedFortnightKey;}
 function setSelectedFortnight(k){currentFortnightId=k; selectedFortnightKey=k; var sel=document.getElementById('fortnight-select'); if(sel) sel.value=k; var mySel=document.getElementById('mysched-fortnight'); if(mySel) mySel.value=k;}
 function getCurrentRoster(){var byF=safeGetJSON('retail_roster_byFortnight_v1',{}); var cur=byF[getSelectedFortnight()]; if(!cur){cur={id:getSelectedFortnight(),dates:getDatesForFortnight(getSelectedFortnight()),staff:[]}; byF[getSelectedFortnight()]=cur; safeSetJSON('retail_roster_byFortnight_v1',byF);} return cur;}
 function updateBrisbaneTime(){var now=new Date(); var txt=formatBrisbane(now); try{var opts={timeZone:'Australia/Brisbane',hour12:!is24H&&!time24,hour:'2-digit',minute:'2-digit'}; var t=now.toLocaleTimeString('en-AU',opts); var dPart=now.toLocaleDateString('en-AU',{timeZone:'Australia/Brisbane',weekday:'short',day:'2-digit',month:'short'}); txt=dPart+' '+t;}catch(e){} var el=document.getElementById('brisbane-time'); var elV=document.getElementById('brisbane-time-v141'); if(el) el.textContent=txt; if(elV) elV.textContent=txt;}
