@@ -1,79 +1,50 @@
-// sw.js - Main Service Worker for REPCO Roster - FIXED V168
-const CACHE_NAME = 'repco-roster-v168-base-fix';
-
-const urlsToCache = [
-  '/rmroster/',
-  '/rmroster/index.html',
-  '/rmroster/icon-192.png',
-  '/rmroster/icon-512.png',
-  '/rmroster/manifest.json'
-];
-
-self.addEventListener('install', event => {
-  console.log('[SW] Install V168 - base /rmroster/ fix');
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache).catch(e=>console.log(e)))
-  );
-  self.skipWaiting();
+// sw.js - Repco Roster service worker: shows phone notifications. It caches nothing,
+// so every visit loads the latest roster code.
+self.addEventListener('install', function () { self.skipWaiting(); });
+self.addEventListener('activate', function (event) {
+  event.waitUntil(caches.keys().then(function (names) {
+    return Promise.all(names.map(function (n) { return caches.delete(n); }));
+  }).then(function () { return self.clients.claim(); }));
 });
 
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(names => Promise.all(
-      names.map(n => { if(n!==CACHE_NAME) return caches.delete(n); })
-    ))
-  );
-  event.waitUntil(clients.claim());
-});
-
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-  // Always network for Firebase RTDB
-  if (url.hostname.includes('firebasedatabase.app') || url.hostname.includes('firestore')) {
-    return event.respondWith(fetch(event.request));
-  }
-  // Network-first for documents, cache-first for assets
-  if (event.request.destination === 'document') {
-    event.respondWith(
-      fetch(event.request).then(r => {
-        const clone = r.clone();
-        caches.open(CACHE_NAME).then(c=>c.put(event.request, clone));
-        return r;
-      }).catch(()=>caches.match(event.request).then(r=>r||caches.match('/rmroster/index.html')))
-    );
-  } else {
-    event.respondWith(
-      caches.match(event.request).then(cached => cached || fetch(event.request))
-    );
-  }
-});
-
-self.addEventListener('push', function(event) {
-  let data = {};
+self.addEventListener('push', function (event) {
+  var data = {};
   if (event.data) {
-    try { data = event.data.json(); } catch(e){ data = { body: event.data.text() }; }
+    try { data = event.data.json(); } catch (e) { data = { body: event.data.text() }; }
   }
-  let title = (data.title || 'REPCO').replace(/blackbeard.*$/gi,'').trim();
-  if(title.length>30) title = title.substring(0,30);
-  let body = (data.body || 'Your roster updated').replace(/https?:\/\/[^\s]+/g,'').trim().substring(0,120);
-  const options = {
-    body,
-    icon: '/rmroster/icon-192.png',
-    badge: '/rmroster/icon-192.png',
-    tag: data.tag || 'repco-push',
-    vibrate: [200,100,200],
-    renotify: true,
-    data: { url: '/rmroster/' }
+  var scope = self.registration.scope;
+  var tag = data.tag || 'repco-roster';
+  var show = function () {
+    return self.registration.showNotification(data.title || 'Repco Roster', {
+      body: data.body || 'Your roster was updated',
+      icon: scope + 'icon-192.png',
+      badge: scope + 'icon-192.png',
+      tag: tag,
+      renotify: !data.close,
+      silent: !!data.close,
+      vibrate: data.close ? undefined : [200, 100, 200],
+      data: { url: scope }
+    });
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  // A withdrawn shift offer: remove its alert. Phones require something to be shown for every push,
+  // so a quiet "withdrawn" note takes its place under the same tag.
+  if (data.close) {
+    event.waitUntil(self.registration.getNotifications({ tag: tag }).then(function (list) {
+      list.forEach(function (n) { n.close(); });
+      return show();
+    }));
+    return;
+  }
+  event.waitUntil(show());
 });
 
-self.addEventListener('notificationclick', function(event) {
+self.addEventListener('notificationclick', function (event) {
   event.notification.close();
-  event.waitUntil(
-    clients.matchAll({type:'window', includeUncontrolled:true}).then(list=>{
-      for(let c of list){ if(c.url.includes('/rmroster/') && 'focus' in c) return c.focus(); }
-      return clients.openWindow('/rmroster/');
-    })
-  );
+  var url = (event.notification.data && event.notification.data.url) || self.registration.scope;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].url.indexOf(url) === 0 && 'focus' in list[i]) return list[i].focus();
+    }
+    return self.clients.openWindow(url);
+  }));
 });

@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>REPCO ROSTER V198 FIXED isCasual</title>
+<title>Repco Roster</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#E30613">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Repco Roster">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
 <style>
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -93,16 +100,14 @@ body.maintenance-active{overflow:hidden!important;height:100vh!important;positio
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 <script>
 var MEMORY_STORE = {};
-var FIREBASE_DB_URL = "https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
-var FIREBASE_CONFIG = {apiKey:"AIzaSyDummy",authDomain:"repco-roster.firebaseapp.com",databaseURL:FIREBASE_DB_URL,projectId:"repco-roster"};
-var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retail_roster_requests_v2","retail_roster_shift_offers_v1","retail_roster_public_holidays_v1","retail_roster_hidden_staff_v1","retail_roster_hidden_v1","retail_roster_notifications","repco_archive"];
+var CLOUD_KEYS = [];
 var db = null;
-var cloudLoadRunning = false;
-var cloudSaveTimeout = null;
 var fortnightDatesCache = {};
 
 function safeGet(k,d){try{var v=localStorage.getItem(k); if(v===null) return d!==undefined?d:v; return v;}catch(e){return d;}}
@@ -116,19 +121,11 @@ function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA',
 function netH(sh){let r=rawH(sh);if(r===0)return 0;return r>=5?r-0.5:r;}
 function isCasual(st){return st.employmentType==='casual';}
 
-try {
-  if(typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length===0){
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.database();
-  } else if(typeof firebase !== 'undefined' && firebase.apps.length>0){
-    db = firebase.database();
-  }
-} catch(e){}
-
-function getAllState(){ var state={}; CLOUD_KEYS.forEach(function(k){ try{ var v=localStorage.getItem(k); state[k]=v?JSON.parse(v):null; }catch(e){} }); state._ts=Date.now(); return state; }
-function debouncedCloudSave(){ if(cloudSaveTimeout) clearTimeout(cloudSaveTimeout); cloudSaveTimeout = setTimeout(function(){ try{ cloudSave(); }catch(e){} }, 2000); }
-async function cloudLoadAll(){ if(cloudLoadRunning) return; if(!db) return; cloudLoadRunning=true; try{ var r=await fetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){ var data=await r.json(); if(data&&data._ts){ var lt=parseInt(localStorage.getItem("repco_cloud_ts")||"0"); if(data._ts>lt){ Object.keys(data).forEach(function(k){ if(k==="_ts"||CLOUD_KEYS.indexOf(k)===-1) return; if(data[k]===null||data[k]===undefined) return; try{ localStorage.setItem(k, JSON.stringify(data[k])); }catch(e){} }); localStorage.setItem("repco_cloud_ts", String(data._ts)); sanitizeState(); try{ if(typeof renderAllSafe==='function') renderAllSafe(); }catch(e){} } } } }catch(e){} finally{ cloudLoadRunning=false; } }
-function cloudSave(){ try{ var state=getAllState(); if(db && db.ref){ db.ref("repco_state").set(state).then(function(){ localStorage.setItem("repco_cloud_ts", String(state._ts)); }).catch(function(){}); } }catch(e){} }
+/* Cloud sync, login and live updates live in cloud.js */
+function getAllState(){ return {}; }
+function debouncedCloudSave(){}
+function cloudLoadAll(){}
+function cloudSave(){}
 function renderAllSafe(){ try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){} try{ if(typeof renderRosterSafe==='function') renderRosterSafe(); }catch(e){} }
 function cloudLoad(){ return cloudLoadAll(); }
 function checkForIndexUpdate(){}
@@ -261,7 +258,7 @@ function getDatesForFortnight(fnId){
 <div id="buddies-tomorrow-page-v141" class="full-page"><div class="page-inner"><div class="page-title">TOMORROW'S BUDDIES</div><div id="buddies-tomorrow-list"></div></div></div>
 <div id="mysched-page" class="full-page"><div class="page-inner"><div class="page-title">MY SCHEDULE</div><div id="mysched-list"></div></div></div>
 <div id="today-workers-page" class="full-page"><div class="page-inner"><div class="page-title">TODAY'S WORKERS</div><div id="today-workers-list"></div></div></div>
-<div id="account-page" class="full-page"><div class="r-header-consistent"><div class="r-title-consistent"><span>REPCO</span> ROSTER</div><div class="r-btns-consistent"><button class="r-btn-consistent" onclick="showMain()">ROSTER</button><button class="r-btn-consistent" onclick="openPage('requests-page')">REQUESTS</button><button class="r-btn-consistent active">ACCOUNT</button><button class="r-btn-consistent" onclick="doLogout()">LOG OUT</button></div></div><div class="page-inner"><div class="page-title">EDIT USERNAME / PASSWORD</div><div id="account-inner"></div><div id="account-list"></div></div></div>
+<div id="account-page" class="full-page"><div class="page-inner"><div class="page-title">MY ACCOUNT</div><div id="account-inner"></div><div id="account-list"></div></div></div>
 <div id="account-mgmt-page" class="full-page"><div class="page-inner"><div class="page-title">ACCOUNT MANAGEMENT - ALL USERS</div><div id="account-mgmt-inner"></div></div></div>
 <div id="archive-page" class="full-page"><div class="page-inner"><div class="page-title">ARCHIVE - ROSTERS</div><div id="archive-inner"></div></div></div>
 <div id="import-export-page" class="full-page"><div class="page-inner"><div class="page-title">IMPORT / EXPORT - EXCEL</div><div id="import-export-inner"></div></div></div>
@@ -307,7 +304,7 @@ function getDatesForFortnight(fnId){
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(-10deg)"><circle cx="14" cy="10" r="3" stroke-width="1.2"/><path d="M14 7.5V6M14 14V12.5M11.2 8.2L10.2 7.2M16.8 12.8L17.8 13.8M10.5 10H9M17 10H18.5M11.2 11.8L10.2 12.8M16.8 7.2L17.8 6.2"/><path d="M7 16L3 20M6 19L8 17C8 17 9.5 18.5 11 18.5C12.5 18.5 13 17 13 17L11 15C11 15 9.5 15.5 8 14C6.5 12.5 7 11 7 11L5 13C5 13 3.5 13.5 3.5 15C3.5 16.5 5 18 5 18L7 16Z" fill="#222" stroke="#fff"/></svg>
   </button>
 </div>
-<div id="admin-modal" onclick="if(event.target===this) closeAdmin()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000000;display:none;align-items:center;justify-content:center"><div id="admin-box" style="background:#fff;border:4px solid #111;border-radius:16px;padding:18px;max-width:420px;width:92%;box-shadow:6px 6px 0 #111;position:relative"><button onclick="closeAdmin()" title="Close" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:#111;color:#fff;border:2px solid #111;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</button><h3 style="font-family:'Arial Black',sans-serif;font-weight:900;margin-right:30px">ADMIN - MAINTENANCE</h3><div id="admin-login-section"><input id="admin-user" placeholder="Username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><input id="admin-pass" type="password" placeholder="Password same as username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><button onclick="doAdminLogin()" style="width:100%;margin-top:8px;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">LOGIN</button><button onclick="closeAdmin()" style="width:100%;margin-top:8px;background:#D9D9D9;color:#111;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button><div id="admin-err" style="color:#E30613;font-weight:900;font-size:12px;margin-top:6px"></div></div><div id="admin-toggle-section" style="display:none"><div style="margin-top:12px"><div id="maint-status" style="font-weight:900;font-size:13px;margin-bottom:8px">Maintenance: OFF</div><label style="display:flex;align-items:center;gap:10px;font-weight:900;font-size:13px"><input type="checkbox" id="maint-toggle" onchange="toggleMaintenance()" style="width:20px;height:20px"> TOGGLE MAINTENANCE MODE</label><div style="margin-top:16px;display:flex;gap:8px"><button onclick="closeAdmin()" style="flex:1;background:#D9D9D9;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button></div></div></div></div></div>
+<div id="admin-modal" onclick="if(event.target===this) closeAdmin()" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000000;display:none;align-items:center;justify-content:center"><div id="admin-box" style="background:#fff;border:4px solid #111;border-radius:16px;padding:18px;max-width:420px;width:92%;box-shadow:6px 6px 0 #111;position:relative"><button onclick="closeAdmin()" title="Close" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:#111;color:#fff;border:2px solid #111;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</button><h3 style="font-family:'Arial Black',sans-serif;font-weight:900;margin-right:30px">ADMIN - MAINTENANCE</h3><div id="admin-login-section"><input id="admin-user" placeholder="Username" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><input id="admin-pass" type="password" placeholder="Password" style="width:100%;padding:10px;border:2px solid #111;border-radius:9999px;margin-top:8px"><button onclick="doAdminLogin()" style="width:100%;margin-top:8px;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">LOGIN</button><button onclick="closeAdmin()" style="width:100%;margin-top:8px;background:#D9D9D9;color:#111;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button><div id="admin-err" style="color:#E30613;font-weight:900;font-size:12px;margin-top:6px"></div></div><div id="admin-toggle-section" style="display:none"><div style="margin-top:12px"><div id="maint-status" style="font-weight:900;font-size:13px;margin-bottom:8px">Maintenance: OFF</div><label style="display:flex;align-items:center;gap:10px;font-weight:900;font-size:13px"><input type="checkbox" id="maint-toggle" onchange="toggleMaintenance()" style="width:20px;height:20px"> TOGGLE MAINTENANCE MODE</label><div style="margin-top:16px;display:flex;gap:8px"><button onclick="closeAdmin()" style="flex:1;background:#D9D9D9;border:2px solid #111;border-radius:9999px;padding:10px;font-weight:900">CLOSE</button></div></div></div></div></div>
 <input type="file" id="hidden-import-input" accept=".xlsx,.xls,.csv" style="display:none">
 <div id="custom-modal"><div id="custom-modal-box"><div id="custom-modal-title" style="font-weight:900;font-size:16px;margin-bottom:10px"></div><div id="custom-modal-body"></div><div style="display:flex;gap:8px;margin-top:14px"><button id="custom-modal-cancel" style="flex:1;background:#D9D9D9;border-radius:9999px;padding:10px;font-weight:900;display:none">CANCEL</button><button id="custom-modal-ok" style="flex:1;background:#111;color:#fff;border-radius:9999px;padding:10px;font-weight:900">OK</button></div></div></div>
 <div id="toast-v141"></div>
@@ -337,7 +334,7 @@ function getDatesForFortnight(fnId){
 
 <script>
 
-const BUILD_ID="20261022700070_V148_G_EDIT_FIX";
+const BUILD_ID="20261023_V200_LIVE_SYNC";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -453,34 +450,10 @@ function updateActivity(){ try{ lastActivityTs = Date.now(); safeSet('repco_last
 function saveEditDraft(rowIdx, colIdx, value, staffName, dateLabel){ try{ var draft={ rowIdx: rowIdx, colIdx: colIdx, value: value, staffName: staffName||'', dateLabel: dateLabel||'', username: safeGet('repco_username')||'', ts: Date.now(), fortnightId: safeGet('retail_roster_currentFortnightId')||'' }; safeSetJSON('retail_roster_edit_draft_v1', draft); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:draft.username}); } }catch(e){ console.error('saveEditDraft', e); } }
 function clearEditDraft(){ try{ localStorage.removeItem('retail_roster_edit_draft_v1'); if(typeof MEMORY_STORE !== 'undefined') delete MEMORY_STORE['retail_roster_edit_draft_v1']; }catch(e){} }
 function getEditDraft(){ try{ var d=safeGetJSON('retail_roster_edit_draft_v1',null); return d; }catch(e){ return null; } }
-function restoreEditDraftIfNeeded(){ try{ var draft=getEditDraft(); if(!draft) return; var username=safeGet('repco_username')||''; if(!username) return; if(draft.username && draft.username.toLowerCase() !== username.toLowerCase()) return; if(Date.now() - draft.ts > 24*60*60*1000) { clearEditDraft(); return; } var curId=safeGet('retail_roster_currentFortnightId')||''; if(draft.fortnightId && draft.fortnightId !== curId){ var sel=document.getElementById('fortnight-select'); if(sel){ sel.value=draft.fortnightId; safeSet('retail_roster_currentFortnightId', draft.fortnightId); } } toast('Restored unsaved edit: '+(draft.staffName||'')+' '+(draft.dateLabel||'')+' = '+draft.value+' - reopening...'); setTimeout(function(){ try{ var cur=getSelectedFortnight()||getCurrentFortnight(); if(!cur) return; if(draft.rowIdx>=cur.staff.length || draft.colIdx>=cur.dates.length) { clearEditDraft(); return; } var staff=cur.staff[draft.rowIdx]; if(!staff) return; showCustomPrompt('Restore Unsaved Edit', '<div style="font-size:11px">Found unsaved edit from '+new Date(draft.ts).toLocaleString()+'<br>For '+staff.firstName+' '+staff.lastName+' on '+cur.dates[draft.colIdx].day+' '+cur.dates[draft.colIdx].date+'<br>Saved value: <b>'+draft.value+'</b><br>Current value: '+ (staff.shifts[draft.colIdx]||'OFF') +'</div><input id="edit-shift-input" value="'+draft.value.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin-top:8px">', function(val){ var rawV = (typeof val === 'string') ? val : (document.getElementById('edit-shift-input')?.value || val); if(rawV===null){ clearEditDraft(); return; } var newVal=String(rawV).trim(); if(!newVal) newVal='OFF'; if(!staff.originalShifts) staff.originalShifts=[]; if(!staff.originalShifts[draft.colIdx]) staff.originalShifts[draft.colIdx]=staff.shifts[draft.colIdx]; staff.shifts[draft.colIdx]=newVal; if(newVal.toUpperCase()==='AB' || newVal.toUpperCase()==='ABSENT'){ if(!staff.absentApproved) staff.absentApproved=[]; staff.absentApproved[draft.colIdx]=true; } else { if(staff.absentApproved) staff.absentApproved[draft.colIdx]=false; } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); safeSetJSON('retail_roster_byFortnight_v1',fns); renderRosterSafe(); clearEditDraft(); toast('Restored edit saved: '+newVal); }); }catch(e){ console.error('restore draft', e); } }, 800); }catch(e){ console.error('restoreEditDraftIfNeeded', e); } }
+function restoreEditDraftIfNeeded(){ try{ var draft=getEditDraft(); if(!draft) return; var username=safeGet('repco_username')||''; if(!username) return; if(draft.username && draft.username.toLowerCase() !== username.toLowerCase()) return; if(Date.now() - draft.ts > 24*60*60*1000) { clearEditDraft(); return; } var curId=safeGet('retail_roster_currentFortnightId')||''; if(draft.fortnightId && draft.fortnightId !== curId){ var sel=document.getElementById('fortnight-select'); if(sel){ sel.value=draft.fortnightId; safeSet('retail_roster_currentFortnightId', draft.fortnightId); } } toast('Restored unsaved edit: '+(draft.staffName||'')+' '+(draft.dateLabel||'')+' = '+draft.value+' - reopening...'); setTimeout(function(){ try{ var cur=getSelectedFortnight()||getCurrentFortnight(); if(!cur) return; if(draft.rowIdx>=cur.staff.length || draft.colIdx>=cur.dates.length) { clearEditDraft(); return; } var staff=cur.staff[draft.rowIdx]; if(!staff) return; showCustomPrompt('Restore Unsaved Edit', '<div style="font-size:11px">Found unsaved edit from '+new Date(draft.ts).toLocaleString()+'<br>For '+staff.firstName+' '+staff.lastName+' on '+cur.dates[draft.colIdx].day+' '+cur.dates[draft.colIdx].date+'<br>Saved value: <b>'+draft.value+'</b><br>Current value: '+ (staff.shifts[draft.colIdx]||'OFF') +'</div><input id="edit-shift-input" value="'+draft.value.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin-top:8px">', function(val){ var rawV = (typeof val === 'string') ? val : (document.getElementById('edit-shift-input')?.value || val); if(rawV===null){ clearEditDraft(); return; } var newVal=String(rawV).trim(); if(!newVal){ revertCellToOriginal(draft.fortnightId||safeGet('retail_roster_currentFortnightId'),draft.rowIdx,draft.colIdx); clearEditDraft(); renderRosterSafe(); toast('Cleared - back to uploaded roster'); return; } if(!staff.originalShifts) staff.originalShifts=[]; if(!staff.originalShifts[draft.colIdx]) staff.originalShifts[draft.colIdx]=staff.shifts[draft.colIdx]; staff.shifts[draft.colIdx]=newVal; if(newVal.toUpperCase()==='AB' || newVal.toUpperCase()==='ABSENT'){ if(!staff.absentApproved) staff.absentApproved=[]; staff.absentApproved[draft.colIdx]=true; } else { if(staff.absentApproved) staff.absentApproved[draft.colIdx]=false; } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); safeSetJSON('retail_roster_byFortnight_v1',fns); renderRosterSafe(); clearEditDraft(); toast('Restored edit saved: '+newVal); }); }catch(e){ console.error('restore draft', e); } }, 800); }catch(e){ console.error('restoreEditDraftIfNeeded', e); } }
 function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
 
-function doLogin(){
-  try{ seedIfEmpty(); }catch(e){ console.error('seed',e); try{ repairRosterData(); }catch(e2){} }
-  var uEl=document.getElementById('login-user');
-  var pEl=document.getElementById('login-pass');
-  var u=(uEl.value||'').trim();
-  var p=(pEl.value||'').trim();
-  var err=document.getElementById('login-err');
-  if(!u||!p){ if(err) err.textContent='Enter username & password'; return; }
-  var users=safeGetJSON('retail_roster_users_v1',[]);
-  var found=users.find(function(x){ return x.username.toLowerCase()===u.toLowerCase() && x.password===p; });
-  if(!found){
-    found=users.find(function(x){ return x.username.toLowerCase()===u.toLowerCase(); });
-    if(!found || found.password!==p){
-      if(err) err.textContent='Incorrect password or username';
-      return;
-    }
-  }
-  safeSet('repco_username', found.username);
-  safeSetJSON('retail_roster_session_v1', found);
-  safeSet('repco_last_activity', String(Date.now()));
-  lastActivityTs=Date.now();
-  if(err) err.textContent='';
-  enterApp(found);
-  toast('Welcome '+found.firstName);
-}
+function doLogin(){ /* replaced by cloud.js */ }
 
 function enterApp(found){
   document.getElementById('login-page').style.display='none';
@@ -560,81 +533,11 @@ function doLogout(){
 
 function seedIfEmpty(){
   sanitizeState();
-  let users=safeGetJSON('retail_roster_users_v1',null);
-  if(!users) users=[];
-  const core=[
-    {username:'Chris',password:'Chris',firstName:'Chris',lastName:'Culling',role:'manager',employmentType:'fulltime'},
-    {username:'admin',password:'admin',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
-    {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'},
-    {username:'master',password:'master',firstName:'Master',lastName:'User',role:'master',employmentType:'fulltime'},
-    {username:'Michaele',password:'Michaele',firstName:'Michael',lastName:'EVANS',role:'staff',employmentType:'casual'},
-    {username:'Michaelb',password:'Michaelb',firstName:'Michael',lastName:'BLAIK',role:'fulltime',employmentType:'fulltime'}
-  ];
-  core.forEach(c=>{
-    let idx=users.findIndex(u=>u.username.toLowerCase()===c.username.toLowerCase());
-    if(idx===-1) users.push(c);
-    else { users[idx].password=c.password; users[idx].isHidden=false; }
-  });
-  safeSetJSON('retail_roster_users_v1',users);
-  let fns=safeGetJSON('retail_roster_byFortnight_v1',null);
-  if(!fns||fns.length===0){
-    const fullStaff=[
-      {firstName:'Michael',lastName:'BLAIK',role:'staff',employmentType:'fulltime'},
-      {firstName:'Trejann',lastName:'CLIST',role:'staff',employmentType:'fulltime'},
-      {firstName:'Chris',lastName:'CULLING',role:'manager',employmentType:'fulltime'},
-      {firstName:'Luke',lastName:'DIXON',role:'staff',employmentType:'fulltime'},
-      {firstName:'Daniel',lastName:'DUFFIELD',role:'staff',employmentType:'fulltime'},
-      {firstName:'Shane',lastName:'DUNN',role:'staff',employmentType:'fulltime'},
-      {firstName:'Darcy',lastName:'PIPER',role:'staff',employmentType:'fulltime'},
-      {firstName:'Jody',lastName:'SANDER',role:'staff',employmentType:'fulltime'},
-      {firstName:'Heath',lastName:'BALLENTINE',role:'staff',employmentType:'casual'},
-      {firstName:'Jamie',lastName:'BATCHELOR',role:'staff',employmentType:'casual'},
-      {firstName:'Michael',lastName:'EVANS',role:'staff',employmentType:'casual'},
-      {firstName:'Lauren',lastName:'GRAY',role:'staff',employmentType:'casual'},
-      {firstName:'Zane',lastName:'HAMPTON',role:'staff',employmentType:'casual'},
-      {firstName:'Savannah',lastName:'KOPPEN',role:'staff',employmentType:'casual'},
-      {firstName:'Kayne',lastName:'MUMFORD',role:'staff',employmentType:'casual'},
-      {firstName:'Ashleigh',lastName:'NEALE',role:'staff',employmentType:'casual'},
-      {firstName:'Alexandra',lastName:'TENIKOFF',role:'staff',employmentType:'casual'},
-      {firstName:'Lis',lastName:'MORRIS',role:'staff',employmentType:'casual'},
-      {firstName:'Peter',lastName:'GIBSON',role:'staff',employmentType:'casual'},
-      {firstName:'Shaun',lastName:'PALMER',role:'staff',employmentType:'casual'},
-      {firstName:'Noah',lastName:'RAFTER',role:'staff',employmentType:'casual'},
-      {firstName:'Miekayla',lastName:'HANDO',role:'staff',employmentType:'casual'}
-    ].map(s=>({...s,shifts:Array(14).fill('OFF'),originalShifts:{},absentApproved:{},cellGreen:{},unavailable:Array(14).fill(false)}));
-    
-
-function datesFrom(startStr){
-  var parts=startStr.split('-').map(Number);
-  var start=new Date(parts[0], parts[1]-1, parts[2]);
-  var arr=[];
-  for(var i=0;i<14;i++){
-    var d=new Date(start);
-    d.setDate(start.getDate()+i);
-    var dd=String(d.getDate()).padStart(2,'0');
-    var mm=String(d.getMonth()+1).padStart(2,'0');
-    var yyyy=d.getFullYear();
-    var iso=yyyy+'-'+mm+'-'+dd;
-    var days=['SUN','MON','TUE','WED','THU','FRI','SAT'];
-    arr.push({day:days[d.getDay()],date:dd+'/'+mm,iso:iso});
+  let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+  if(fns && fns.length){
+    const iso=getISO(); let currentId=safeGet('retail_roster_currentFortnightId'); if(!fns.some(fn=>fn.id===currentId)) currentId=fns[0].id; fns.forEach(fn=>{ if(fn.dates.some(d=>d.iso===iso)) currentId=fn.id; }); safeSet('retail_roster_currentFortnightId',currentId);
   }
-  return arr;
-}
-
-
-    fns=[];
-    fns.push({id:'fn_07_10',label:'14 Days - 07/10 - 20/10',dates:datesFrom('2026-10-07'),staff:JSON.parse(JSON.stringify(fullStaff))});
-    fns.push({id:'fn_21_10',label:'14 Days - 21/10 - 03/11',dates:datesFrom('2026-10-21'),staff:JSON.parse(JSON.stringify(fullStaff))});
-    safeSetJSON('retail_roster_byFortnight_v1',fns);
-  }
-  fns.forEach(fn=>{ fn.staff.sort((a,b)=>{ let ln=a.lastName.localeCompare(b.lastName); if(ln!==0) return ln; return a.firstName.localeCompare(b.firstName); }); });
-  safeSetJSON('retail_roster_byFortnight_v1',fns);
-  const iso=getISO(); let currentId=fns[0].id; fns.forEach(fn=>{ if(fn.dates.some(d=>d.iso===iso)) currentId=fn.id; }); safeSet('retail_roster_currentFortnightId',currentId);
   if(!safeGet('repco_logout_minutes')) safeSet('repco_logout_minutes','30');
-  if(!safeGet('retail_roster_hidden_v1')) safeSetJSON('retail_roster_hidden_v1',[]);
-  if(!safeGet('retail_roster_uploaded_excels_v1')) safeSetJSON('retail_roster_uploaded_excels_v1',[]);
-  if(!safeGetJSON('retail_roster_archive_v1',null)) safeSetJSON('retail_roster_archive_v1',[]);
-  if(!safeGetJSON('retail_roster_requests_v2',null)) safeSetJSON('retail_roster_requests_v2',[]);
 }
 
 function initApp(){populateFortnightSelect();renderRosterSafe(); applyRoleVisibility();}
@@ -756,8 +659,8 @@ function getSelectedFortnight(){
 function to12h(range){if(!range) return range; return range.split('-').map(t=>{let tt=t.trim().replace('A',''); const m=tt.match(/(\d{1,2}):(\d{2})/); if(!m) return t; let hh=parseInt(m[1]); let mm=m[2]; const am=hh<12?'AM':'PM'; let h=hh%12; if(h===0) h=12; return h+':'+mm+am;}).join('-');}
 function fmt(s){if(!s) return ''; if(s==='NA') return 'NA'; let up=s.toUpperCase().trim(); if(up==='OFF' || up==='' ) return ''; if(up==='AB'||up==='ABSENT') return 'AB'; let tf=safeGet('timeFormat')||'24h'; if(tf==='12h'){ let hasA=s.includes('A'); let base=s.replace(/A/g,'').trim(); return to12h(base)+(hasA?' A':''); } return s;}
 function deleteCurrentRoster(){
-  showCustomConfirm('Delete current roster?','This will delete '+getCurrentFortnight().label+' permanently.',(ok)=>{
-    if(!ok) return; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let curId=safeGet('retail_roster_currentFortnightId'); let idx=fns.findIndex(f=>f.id===curId); if(idx===-1){ toast('No roster'); return; } if(fns.length===1){ toast('Cannot delete last roster'); return; } let deleted=fns.splice(idx,1)[0]; safeSetJSON('retail_roster_byFortnight_v1',fns); safeSet('retail_roster_currentFortnightId',fns[0].id); toast('Deleted '+deleted.label+' - synced'); enforceOnly8Fulltime(); populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard();
+  var _dc=getSelectedFortnight(); if(!_dc){ toast('No roster'); return; } showCustomConfirm('Delete current roster?','This will delete '+_dc.label+' permanently for everyone.',(ok)=>{
+    if(!ok) return; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(!getCurrentFortnight()) return; let curId=safeGet('retail_roster_currentFortnightId'); let idx=fns.findIndex(f=>f.id===curId); if(idx===-1){ toast('No roster'); return; } if(fns.length===1){ toast('Cannot delete last roster'); return; } let deleted=fns.splice(idx,1)[0]; safeSetJSON('retail_roster_byFortnight_v1',fns); safeSet('retail_roster_currentFortnightId',fns[0].id); toast('Deleted '+deleted.label+' - synced'); enforceOnly8Fulltime(); populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard();
   });
 }
 
@@ -777,7 +680,7 @@ function renderRosterCore(){
   var cur=getSelectedFortnight();if(!cur) cur=getCurrentFortnight(); if(!cur) return; 
   var mount=document.getElementById('roster-mount'); var curU=safeGet('repco_username')||''; var isMgr=isManagerRole(getActualRole());
   var todayISO=getISO(); var todayDateObj=new Date(todayISO); var todayStr=String(todayDateObj.getDate()).padStart(2,'0')+'/'+String(todayDateObj.getMonth()+1).padStart(2,'0'); var todayIdx=cur.dates.findIndex(function(d){ return d.iso===todayISO; }); if(todayIdx===-1) todayIdx=cur.dates.findIndex(function(d){ return d.date===todayStr; });
-  function isWeekend(day){return day==='SAT'||day==='SUN'} function isOwn(st){return st.firstName && (st.firstName.toLowerCase()===curU.toLowerCase()||(st.firstName+st.lastName).toLowerCase()===curU.toLowerCase()|| (st.lastName && st.lastName.toLowerCase()===curU.toLowerCase()))}
+  function isWeekend(day){return day==='SAT'||day==='SUN'} var _meRec=(safeGetJSON('retail_roster_users_v1',[])||[]).find(function(u){ return u && u.username && u.username.toLowerCase()===curU.toLowerCase(); }); function isOwn(st){ if(_meRec && _meRec.firstName && _meRec.lastName) return String(st.firstName||'').toLowerCase()===String(_meRec.firstName).toLowerCase() && String(st.lastName||'').toLowerCase()===String(_meRec.lastName).toLowerCase(); return st.firstName && (st.firstName.toLowerCase()===curU.toLowerCase()||(st.firstName+st.lastName).toLowerCase()===curU.toLowerCase()|| (st.lastName && st.lastName.toLowerCase()===curU.toLowerCase()))}
   cur.staff.sort(function(a,b){ var c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
   var full=cur.staff.filter(function(s){ return s.employmentType!=='casual'; }); var cas=cur.staff.filter(function(s){ return s.employmentType==='casual'; }); var hidden=safeGetJSON('retail_roster_hidden_v1',[]);
   function build(title,list,cssClass){
@@ -794,7 +697,7 @@ function renderRosterCore(){
         var cls=''; if(na) cls='cell-na'; else if(absent) cls='cell-absent'; else if(off) cls='cell-off'; else if(isGreen) cls='cell-green'; else cls='cell-work';
         var isWeekendCol=isWeekend(cur.dates[idx].day); var weekendClass=''; if(isWeekendCol){ var prevWeekend=idx>0?isWeekend(cur.dates[idx-1].day):false; var nextWeekend=idx<cur.dates.length-1?isWeekend(cur.dates[idx+1].day):false; /*weekend same*/ /*weekend same*/ cls+=' col-weekend'+weekendClass; }
         var isFull=!isCasual(st); var net; if(isAbsentApproved){ net = isFull ? netH(orig||sh) : 0; } else if(isFull){ if(na){ net=netH(orig||sh); } else { net=netH(sh); } } else { if(na||off||absent){ net=0; } else { net=netH(sh); } } hrs+=net;dayTotals[idx]+=net;
-        var clickAttr=''; if(isMgr){ clickAttr=' onclick="editCell(this,'+globalStaffIdx+','+idx+',\''+title+'\')" '; }
+        var clickAttr=' data-r="'+globalStaffIdx+'" data-i="'+idx+'"'; if(isMgr){ clickAttr+=' onclick="editCell(this,'+globalStaffIdx+','+idx+',\''+title+'\')" '; }
         rows+='<td class="'+cls+'"'+clickAttr+'>'+txt+'</td>';
       }); rows+='<td class="hrs">'+hrs.toFixed(1)+'h</td></tr>';grand+=hrs;
     }); var totalsRow=''; if(isMgr){ totalsRow='<tr class="totals"><td class="staff-cell">DAY TOTALS</td>'; dayTotals.forEach(function(t,i){ totalsRow+='<td>'+(t>0?t.toFixed(1)+'h':'0')+'</td>';}); totalsRow+='<td class="hrs">'+grand.toFixed(1)+'h</td></tr>'; } var head='<tr><th class="staff-col">STAFF</th>';cur.dates.forEach(function(d,i){ var cl=isWeekend(d.day)?'day-blue col-weekend':'day-yellow'; if(isWeekend(d.day)){ var prevWeekend=i>0?isWeekend(cur.dates[i-1].day):false; var nextWeekend=i<cur.dates.length-1?isWeekend(cur.dates[i+1].day):false; /*weekend same*/ /*weekend same*/ } head+='<th class="'+cl+'">'+d.day+'<br>'+d.date+'</th>'; });head+='<th class="staff-col">HRS</th></tr>';
@@ -811,6 +714,20 @@ function renderRosterCore(){
 }
 
 function editStaffType(globalIdx){ if(!isManagerRole()) return; showCustomSelect('Set employment type for '+getCurrentFortnight().staff[globalIdx].firstName+' '+getCurrentFortnight().staff[globalIdx].lastName, ['Full time','Casual'], (choice)=>{ if(!choice) return; let norm=choice.toLowerCase().includes('casual')?'casual':'fulltime'; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let fn=fns.find(f=>f.id===safeGet('retail_roster_currentFortnightId')); if(fn){ fn.staff[globalIdx].employmentType=norm; safeSetJSON('retail_roster_byFortnight_v1',fns); } toast(fn.staff[globalIdx].firstName+' set to '+norm+' - synced'); renderRosterSafe(); applyRoleVisibility(); }); }
+
+/* A cleared cell goes back to what the uploaded Excel roster had (its "original"), and loses edit flags */
+function revertCellToOriginal(fnId, rowIdx, colIdx){
+  var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+  var fn=fns.find(function(f){ return f.id===fnId; }); if(!fn) return null;
+  var st=fn.staff[rowIdx]; if(!st) return null;
+  var orig=(st.originalShifts && st.originalShifts[colIdx]!=null && st.originalShifts[colIdx]!=='') ? st.originalShifts[colIdx] : null;
+  if(orig!==null){ st.shifts[colIdx]=orig; delete st.originalShifts[colIdx]; }
+  if(st.absentApproved) st.absentApproved[colIdx]=false;
+  if(st.cellGreen) st.cellGreen[colIdx]=false;
+  if(st.cellG) st.cellG[colIdx]=false;
+  safeSetJSON('retail_roster_byFortnight_v1',fns);
+  return st.shifts[colIdx];
+}
 
 function editCell(el,rowIdx,colIdx,sectionTitle){
   try{
@@ -889,7 +806,7 @@ function editCell(el,rowIdx,colIdx,sectionTitle){
       if(val===null){ clearEditDraft(); return; }
       var rawVal = (typeof val === 'string') ? val : (document.getElementById('edit-shift-input')?.value || '');
       var newVal=String(rawVal).trim();
-      if(!newVal) newVal='OFF';
+      if(!newVal){ var back=revertCellToOriginal(cur.id,rowIdx,colIdx); renderRosterSafe(); clearEditDraft(); toast('Cleared - back to uploaded roster: '+((back&&String(back).toUpperCase()!=='OFF')?back:'OFF')); return; }
       var upper=newVal.toUpperCase();
       var isG=false;
       var cleanVal=newVal;
@@ -995,7 +912,6 @@ function showMain(){
   try{
     if(typeof updateActivity==='function') updateActivity();
     var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-    if(fns.length===0){ toast('No roster'); return; }
     document.querySelectorAll('.full-page').forEach(function(e){ e.classList.remove('show'); });
     document.getElementById('repco-v65').classList.add('show');
     document.getElementById('global-header').classList.add('show');
@@ -1124,14 +1040,11 @@ function renderOptions(){
   if(isMgr){
     inner.innerHTML='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'today-workers-page\')">VIEW TODAY\'S WORKERS</button>'
-      +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'account-page\')">EDIT USERNAME / PASSWORD</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'account-mgmt-page\')">ACCOUNT MANAGEMENT - ALL USERS</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'archive-page\')">ARCHIVE - ROSTERS</button>'
-      +'<button class="card" style="font-weight:900;text-align:left;background:#8FC6F5" id="btn-import" onclick="triggerImport()">IMPORT ROSTER</button>'
-      +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'import-export-page\')">EXPORT / IMPORT - EXCEL</button>'
-      +'<button class="card" style="font-weight:900;text-align:left" onclick="openPage(\'requests-page\')">ALL REQUESTS / APPROVALS</button>'
+      +'<button class="card" style="font-weight:900;text-align:left;background:#8FC6F5" onclick="openPage(\'import-export-page\')">IMPORT ROSTER / EXPORT</button>'
       +'<button class="card" style="font-weight:900;text-align:left" onclick="showMain()">BACK TO ROSTER</button>'
-      +'</div>'+timerHtml+maintenanceHtml;
+      +'</div>'+maintenanceHtml;
   } else {
     inner.innerHTML='<div style="display:grid;grid-template-columns:1fr;gap:12px">'
       +'<button class="card" style="font-weight:900;background:#E30613;color:#fff" onclick="openPage(\'account-page\')">CHANGE USERNAME / PASSWORD</button>'
@@ -1167,7 +1080,7 @@ function toggleMaintenanceFromOptions(){
 
 function renderArchivePage(){
   const el=document.getElementById('archive-inner'); if(!el) return; const cur=getCurrentFortnight();
-  let html='<div class="card"><div style="font-weight:900;margin-bottom:8px">ARCHIVE CURRENT ROSTER</div><div style="font-size:11px;opacity:.7">Current: '+(cur?cur.label:'')+' • '+ (cur?cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date:'')+'</div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="archiveCurrent()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ARCHIVE CURRENT</button><button id="delete-roster-btn" id="delete-roster-btn" onclick="deleteCurrentRoster()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">DELETE CURRENT ROSTER</button></div></div>';
+  let html='<div class="card"><div style="font-weight:900;margin-bottom:8px">ARCHIVE CURRENT ROSTER</div><div style="font-size:11px;opacity:.7">Current: '+(cur?cur.label:'')+' • '+ (cur?cur.dates[0].date+' to '+cur.dates[cur.dates.length-1].date:'')+'</div><div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="archiveCurrent()" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:10px 14px;font-weight:900">ARCHIVE CURRENT</button></div></div>';
   html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">ARCHIVED ROSTERS</div><div id="archive-list"></div><div style="margin-top:10px"><button onclick="clearArchive()" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px 12px;font-weight:900">CLEAR ARCHIVE</button></div></div>';
   html+='<div class="card"><div style="font-weight:900;margin-bottom:8px">UPLOADED EXCELS (download on any device)</div><div id="uploaded-excels-list"></div></div>';
   html+='<div class="card"><button onclick="showMain()" style="background:#111;color:#fff;border-radius:9999px;padding:10px 14px;font-weight:900;width:100%">← BACK TO ROSTER</button></div>'; el.innerHTML=html; viewArchive(); viewUploadedExcels();
@@ -1240,83 +1153,7 @@ function importExcelFile(file){
       let dates=tempDates.slice(0,14);
       let label=dates[0].date+' - '+dates[dates.length-1].date;
       let fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
-      // SMART MERGE: If same fortnight exists, only update untouched cells, preserve admin edits / approved requests / G marks
-      let duplicate=null;
-      let newIsoSet=new Set(dates.map(d=>d.iso));
-      let newLabel=label;
-      for(let fn of fns){
-        if(fn.label===newLabel){ duplicate=fn; break; }
-        if(fn.dates.length===dates.length && fn.dates.every((d,i)=>d.iso===dates[i]?.iso)){ duplicate=fn; break; }
-      }
-      // If duplicate exists, merge instead of creating new - preserve edited cells
-      if(duplicate){
-        let updatedCount=0; let preservedCount=0; let newStaffCount=0;
-        // Build map of imported staff by full name
-        let importedMap={};
-        staff.forEach(s=>{ importedMap[(s.firstName+' '+s.lastName).toLowerCase()]=s; });
-        // For each existing staff in duplicate, update only if not edited
-        duplicate.staff.forEach(existingStaff=>{
-          let key=(existingStaff.firstName+' '+existingStaff.lastName).toLowerCase();
-          let imported=importedMap[key];
-          if(!imported) return;
-          // Ensure structures exist
-          if(!existingStaff.originalShifts) existingStaff.originalShifts={};
-          if(!existingStaff.absentApproved) existingStaff.absentApproved={};
-          if(!existingStaff.cellGreen) existingStaff.cellGreen={};
-          if(!existingStaff.unavailable) existingStaff.unavailable=Array(duplicate.dates.length).fill(false);
-          for(let di=0; di<dates.length && di<existingStaff.shifts.length; di++){
-            // Check if this cell was edited/actioned - if so, preserve it
-            let isEdited = false;
-            if(existingStaff.originalShifts && existingStaff.originalShifts[di] !== undefined) isEdited=true;
-            if(existingStaff.absentApproved && existingStaff.absentApproved[di]) isEdited=true;
-            if(existingStaff.cellGreen && existingStaff.cellGreen[di]) isEdited=true;
-            if(existingStaff.unavailable && existingStaff.unavailable[di]) isEdited=true;
-            // Also preserve if current shift is AB (approved unavailability) even without flag
-            // But allow OFF->work updates? No, if flagged as edited, preserve
-            if(isEdited){
-              preservedCount++;
-              continue;
-            }
-            // Not edited - safe to update from import
-            let newShift=imported.shifts[di];
-            if(newShift && existingStaff.shifts[di]!==newShift){
-              existingStaff.shifts[di]=newShift;
-              updatedCount++;
-            }
-          }
-          delete importedMap[key];
-        });
-        // Add any brand new staff from import that didn't exist in duplicate (if any)
-        for(let k in importedMap){
-          let s=importedMap[k];
-          // Only add if not already present (should be new hire)
-          if(!duplicate.staff.find(es=> (es.firstName+' '+es.lastName).toLowerCase()===k)){
-            duplicate.staff.push(s);
-            newStaffCount++;
-          }
-        }
-        duplicate.staff.sort((a,b)=>{ let c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
-        safeSetJSON('retail_roster_byFortnight_v1',fns);
-        try{
-          let b64=''; if(f.name.endsWith('.csv')){ b64=btoa(unescape(encodeURIComponent(e.target.result))); } else { let bytes=new Uint8Array(e.target.result); let binary=''; for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]); b64=btoa(binary); }
-          let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]); ups.push({name:f.name,label:label+' (merged)',fortnightId:duplicate.id,ts:Date.now(),data:b64}); safeSetJSON('retail_roster_uploaded_excels_v1',ups);
-        }catch(ex){}
-        safeSet('retail_roster_currentFortnightId',duplicate.id);
-        if(status) status.textContent='MERGED: '+duplicate.label+' - '+updatedCount+' cells updated, '+preservedCount+' admin-edited/AB/G/NA cells preserved, '+newStaffCount+' new staff added - synced';
-        toast('Merged '+updatedCount+' new, preserved '+preservedCount+' edits');
-        enforceOnly8Fulltime(); populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard();
-        return;
-      }
-      // No duplicate - also check for overlapping dates to prevent accidental overlap creation
-      for(let fn of fns){
-        for(let d of fn.dates){
-          if(newIsoSet.has(d.iso)){
-            if(status) status.textContent='BLOCKED: Date '+d.date+' already exists in '+fn.label+' - delete or merge instead to protect edits';
-            toast('BLOCKED: Overlapping date '+d.date+' in '+fn.label);
-            return;
-          }
-        }
-      }
+      // Read the spreadsheet's staff rows first - merging into an existing fortnight needs them
       // Build map of existing staff names to preserve types - FULL NAME ONLY, no first-name matching to avoid duplicates like Michael Evans vs Michael Blaik
       let existingStaffMap={};
       fns.forEach(fn=>{ fn.staff.forEach(s=>{ 
@@ -1330,6 +1167,10 @@ function importExcelFile(file){
       let staff=[]; let nameSet=new Set();
       // Iterate rows 2 onwards (0-indexed) where name in col 0
       for(let r=2;r<=range.e.r;r++){
+        // Any row mentioning Kate is a notes row, never a staff row - always ignore it
+        let hasKate=false;
+        for(let kc=0;kc<=range.e.c;kc++){ let kcell=ws[XLSX.utils.encode_cell({r:r,c:kc})]; if(kcell && kcell.v!=null && !(kcell.v instanceof Date) && /\bkate\b/i.test(String(kcell.v))){ hasKate=true; break; } }
+        if(hasKate) continue;
         let nameAddr=XLSX.utils.encode_cell({r:r,c:0});
         let nameCell=ws[nameAddr];
         if(!nameCell || !nameCell.v) continue;
@@ -1433,6 +1274,83 @@ function importExcelFile(file){
       }
       if(staff.length===0){ if(status) status.textContent='No matching staff names found in first column - check staff list (first column must contain LAST, First)'; toast('No staff matched - first column must be names'); return; }
       staff.sort((a,b)=>{ let c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
+      // SMART MERGE: If same fortnight exists, only update untouched cells, preserve admin edits / approved requests / G marks
+      let duplicate=null;
+      let newIsoSet=new Set(dates.map(d=>d.iso));
+      let newLabel=label;
+      for(let fn of fns){
+        if(fn.label===newLabel){ duplicate=fn; break; }
+        if(fn.dates.length===dates.length && fn.dates.every((d,i)=>d.iso===dates[i]?.iso)){ duplicate=fn; break; }
+      }
+      // If duplicate exists, merge instead of creating new - preserve edited cells
+      if(duplicate){
+        let updatedCount=0; let preservedCount=0; let newStaffCount=0;
+        // Build map of imported staff by full name
+        let importedMap={};
+        staff.forEach(s=>{ importedMap[(s.firstName+' '+s.lastName).toLowerCase()]=s; });
+        // For each existing staff in duplicate, update only if not edited
+        duplicate.staff.forEach(existingStaff=>{
+          let key=(existingStaff.firstName+' '+existingStaff.lastName).toLowerCase();
+          let imported=importedMap[key];
+          if(!imported) return;
+          // Ensure structures exist
+          if(!existingStaff.originalShifts) existingStaff.originalShifts={};
+          if(!existingStaff.absentApproved) existingStaff.absentApproved={};
+          if(!existingStaff.cellGreen) existingStaff.cellGreen={};
+          if(!existingStaff.unavailable) existingStaff.unavailable=Array(duplicate.dates.length).fill(false);
+          for(let di=0; di<dates.length && di<existingStaff.shifts.length; di++){
+            // Check if this cell was edited/actioned - if so, preserve it
+            let isEdited = false;
+            if(existingStaff.originalShifts && existingStaff.originalShifts[di] !== undefined) isEdited=true;
+            if(existingStaff.absentApproved && existingStaff.absentApproved[di]) isEdited=true;
+            if(existingStaff.cellGreen && existingStaff.cellGreen[di]) isEdited=true;
+            if(existingStaff.unavailable && existingStaff.unavailable[di]) isEdited=true;
+            // Also preserve if current shift is AB (approved unavailability) even without flag
+            // But allow OFF->work updates? No, if flagged as edited, preserve
+            if(isEdited){
+              preservedCount++;
+              continue;
+            }
+            // Not edited - safe to update from import
+            let newShift=imported.shifts[di];
+            if(newShift && existingStaff.shifts[di]!==newShift){
+              existingStaff.shifts[di]=newShift;
+              updatedCount++;
+            }
+          }
+          delete importedMap[key];
+        });
+        // Add any brand new staff from import that didn't exist in duplicate (if any)
+        for(let k in importedMap){
+          let s=importedMap[k];
+          // Only add if not already present (should be new hire)
+          if(!duplicate.staff.find(es=> (es.firstName+' '+es.lastName).toLowerCase()===k)){
+            duplicate.staff.push(s);
+            newStaffCount++;
+          }
+        }
+        duplicate.staff.sort((a,b)=>{ let c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
+        safeSetJSON('retail_roster_byFortnight_v1',fns);
+        try{
+          let b64=''; if(f.name.endsWith('.csv')){ b64=btoa(unescape(encodeURIComponent(e.target.result))); } else { let bytes=new Uint8Array(e.target.result); let binary=''; for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]); b64=btoa(binary); }
+          let ups=safeGetJSON('retail_roster_uploaded_excels_v1',[]); ups.push({name:f.name,label:label+' (merged)',fortnightId:duplicate.id,ts:Date.now(),data:b64}); safeSetJSON('retail_roster_uploaded_excels_v1',ups);
+        }catch(ex){}
+        safeSet('retail_roster_currentFortnightId',duplicate.id);
+        if(status) status.textContent='MERGED: '+duplicate.label+' - '+updatedCount+' cells updated, '+preservedCount+' admin-edited/AB/G/NA cells preserved, '+newStaffCount+' new staff added - synced';
+        toast('Merged '+updatedCount+' new, preserved '+preservedCount+' edits');
+        enforceOnly8Fulltime(); populateFortnightSelect(); renderRosterSafe(); applyRoleVisibility(); updateMyScheduleCard();
+        return;
+      }
+      // No duplicate - also check for overlapping dates to prevent accidental overlap creation
+      for(let fn of fns){
+        for(let d of fn.dates){
+          if(newIsoSet.has(d.iso)){
+            if(status) status.textContent='BLOCKED: Date '+d.date+' already exists in '+fn.label+' - delete or merge instead to protect edits';
+            toast('BLOCKED: Overlapping date '+d.date+' in '+fn.label);
+            return;
+          }
+        }
+      }
       let id='fn_'+Date.now();
       fns.push({id:id,label:label,dates:dates,staff:staff});
       safeSetJSON('retail_roster_byFortnight_v1',fns);
@@ -1698,7 +1616,7 @@ function renderHiddenStaffPage(){
   hidden.forEach(name=>{
     let shifts=shiftsStore[name]||Array(14).fill('OFF');
     let user=users.find(u=>(u.firstName+' '+u.lastName).toLowerCase()===name.toLowerCase());
-    htmlStr+='<div class="card" style="background:#fff;border:3px solid #111;border-radius:12px;padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><div><b>'+name+'</b><br><small>'+(user?user.username+' / '+user.password:'No login')+'</small><br><small>'+shifts.join(', ')+'</small></div><div style="display:flex;gap:6px"><button onclick="unhideEmployee(\''+name.replace(/'/g, "\\'")+'\')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 12px;font-weight:900;font-size:11px">UNHIDE</button><button onclick="deleteHiddenStaff(\''+name.replace(/'/g, "\\'")+'\')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px 12px;font-weight:900;font-size:11px">DELETE</button></div></div></div>';
+    htmlStr+='<div class="card" style="background:#fff;border:3px solid #111;border-radius:12px;padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><div><b>'+name+'</b><br><small>'+(user?'Login: '+user.username:'No login')+'</small><br><small>'+shifts.join(', ')+'</small></div><div style="display:flex;gap:6px"><button onclick="unhideEmployee(\''+name.replace(/'/g, "\\'")+'\')" style="background:#111;color:#fff;border:none;border-radius:9999px;padding:8px 12px;font-weight:900;font-size:11px">UNHIDE</button><button onclick="deleteHiddenStaff(\''+name.replace(/'/g, "\\'")+'\')" style="background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px 12px;font-weight:900;font-size:11px">DELETE</button></div></div></div>';
   });
   listEl.innerHTML=htmlStr;
 }
@@ -2379,15 +2297,8 @@ window.addEventListener('load', function(){
     }catch(e){ console.error(e); }
   }, 500);
 });
-window.createAdmin = function(){
-  localStorage.setItem('retail_roster_users_v1', JSON.stringify([
-    {username:'admin',password:'admin',firstName:'Admin',lastName:'User',role:'admin',employmentType:'fulltime'},
-    {username:'Chris',password:'Chris',firstName:'Chris',lastName:'Culling',role:'manager',employmentType:'fulltime'},
-    {username:'manager',password:'manager',firstName:'Manager',lastName:'User',role:'manager',employmentType:'fulltime'}
-  ]));
-  location.reload();
-};
 window.addEventListener("unhandledrejection", function(e){ if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")) e.preventDefault(); });
 </script>
+<script src="cloud.js?v=20261023_V200"></script>
 </body>
 </html>
