@@ -1991,6 +1991,123 @@ renderBuddies = function (which) {
   } catch (e) { console.error('buddies', e); el.innerHTML = '<div class="card">Could not show buddies: ' + rcEsc(e.message) + '</div>'; }
 };
 
+/* ---------- Roster photo check (managers): Gemini spots crossed-out / handwritten changes ---------- */
+renderOptions = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    if (!rcIsMgr()) return;
+    var grid = document.querySelector('#options-inner > div'); if (!grid || document.getElementById('btn-photo-check')) return;
+    var b = document.createElement('button');
+    b.className = 'card'; b.id = 'btn-photo-check'; b.style.cssText = 'font-weight:900;text-align:left;background:#FFF6CC';
+    b.textContent = 'CHECK ROSTER PHOTO'; b.onclick = function () { openPage('photo-check-page'); };
+    grid.insertBefore(b, grid.lastElementChild);
+  };
+})(renderOptions);
+function rcEnsurePhotoPage() {
+  if (document.getElementById('photo-check-page')) return;
+  var p = document.createElement('div'); p.id = 'photo-check-page'; p.className = 'full-page';
+  p.innerHTML = '<div class="page-inner"><div class="page-title">CHECK ROSTER PHOTO</div><div id="photo-check-inner"></div></div>';
+  document.body.appendChild(p);
+}
+openPage = (function (orig) {
+  return function (id) {
+    if (id === 'photo-check-page') { if (!rcIsMgr()) { toast('Admin only'); return; } rcEnsurePhotoPage(); }
+    orig.apply(this, arguments);
+    if (id === 'photo-check-page') { rcRenderPhotoPage(); setTimeout(rcFitHeader, 0); }
+  };
+})(openPage);
+function rcRenderPhotoPage() {
+  var el = document.getElementById('photo-check-inner'); if (!el) return;
+  var fn = getSelectedFortnight() || getCurrentFortnight();
+  el.innerHTML = '<div class="card"><div class="rc-h">PHOTO OF A PRINTED ROSTER</div>'
+    + '<div class="rc-small">Checking against <b>' + rcEsc(fn ? rcFnRange(fn) : 'no roster') + '</b> (the fortnight on the roster screen). Take the photo straight on, with the whole table in frame. Crossed-out, X\'d or handwritten shifts are listed below for you to approve. Nothing changes until you press APPLY.</div>'
+    + '<input type="file" id="pc-file" accept="image/*" style="margin-top:10px;width:100%">'
+    + '<img id="pc-preview" style="display:none;width:100%;max-height:320px;object-fit:contain;background:#f3f3f3;margin-top:10px;border:2px solid #111;border-radius:10px">'
+    + '<button class="rc-b rc-red rc-wide" id="pc-go" style="margin-top:10px" onclick="rcScanPhoto()" disabled>CHECK PHOTO</button>'
+    + '<div class="rc-small" style="margin-top:6px;color:#777">The photo is sent to Google Gemini to read it. On the free tier Google may use it to improve its products.</div></div>'
+    + '<div id="pc-results"></div><div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+  var f = document.getElementById('pc-file');
+  f.onchange = function () {
+    var file = f.files && f.files[0]; if (!file) return;
+    var img = document.getElementById('pc-preview'); img.src = URL.createObjectURL(file); img.style.display = 'block';
+    document.getElementById('pc-go').disabled = false; document.getElementById('pc-results').innerHTML = '';
+  };
+}
+/* Shrink big phone photos so they upload quickly (text stays readable at 2400px) */
+function rcPhotoToJpeg(file) {
+  return new Promise(function (res, rej) {
+    var img = new Image();
+    img.onload = function () {
+      var k = Math.min(1, 2400 / Math.max(img.width, img.height));
+      var c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      res(c.toDataURL('image/jpeg', 0.88).split(',')[1]);
+    };
+    img.onerror = function () { rej(new Error('That file is not a photo this browser can read')); };
+    img.src = URL.createObjectURL(file);
+  });
+}
+function rcNameKey(s) { return String(s || '').toUpperCase().replace(/[^A-Z]/g, ''); }
+async function rcScanPhoto() {
+  var file = (document.getElementById('pc-file').files || [])[0]; if (!file) return;
+  var fn = getSelectedFortnight() || getCurrentFortnight(); if (!fn) { toast('No roster to check against'); return; }
+  var out = document.getElementById('pc-results'), go = document.getElementById('pc-go');
+  go.disabled = true; go.textContent = 'READING PHOTO... (about 20 seconds)';
+  out.innerHTML = '';
+  try {
+    var image = await rcPhotoToJpeg(file);
+    var roster = {
+      dates: fn.dates.map(function (d) { return d.day + ' ' + d.date; }),
+      rows: fn.staff.map(function (st) { return { name: String(st.lastName || '').toUpperCase() + ', ' + st.firstName, shifts: st.shifts.map(function (v) { return rcIsEmptyVal(v) ? 'OFF' : String(v); }) }; })
+    };
+    var token = await RC.auth.currentUser.getIdToken();
+    var r = await fetch(RC_PUSH_WORKER_URL.replace(/\/$/, '') + '/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token, image: image, mime: 'image/jpeg', roster: roster }) });
+    var res = await r.json().catch(function () { return { error: 'the relay answered ' + r.status }; });
+    if (res.error) throw new Error(res.error);
+    rcShowPhotoResults(fn, res.changes || []);
+  } catch (e) {
+    out.innerHTML = '<div class="card"><b style="color:#E30613">Could not check the photo:</b> ' + rcEsc(e.message || e) + '</div>';
+  } finally { go.disabled = false; go.textContent = 'CHECK PHOTO'; }
+}
+function rcShowPhotoResults(fn, changes) {
+  var out = document.getElementById('pc-results');
+  var byName = {}; fn.staff.forEach(function (st, i) { byName[rcNameKey(st.lastName + st.firstName)] = i; byName[rcNameKey(st.firstName + st.lastName)] = i; });
+  var items = [], skipped = [];
+  changes.forEach(function (c) {
+    var row = byName[rcNameKey(c.name)];
+    var dm = String(c.date || '').match(/(\d{1,2})\/(\d{1,2})/);
+    var col = dm ? fn.dates.findIndex(function (d) { return d.date === dm[1].padStart(2, '0') + '/' + dm[2].padStart(2, '0'); }) : -1;
+    if (row === undefined || col === -1) { skipped.push(c); return; }
+    var st = fn.staff[row], cur = String(st.shifts[col] || 'OFF');
+    var photo = /^off$/i.test(String(c.photo || '').trim()) || !String(c.photo || '').trim() ? 'OFF' : (rcCleanShift(c.photo) || String(c.photo).trim().toUpperCase());
+    if ((rcIsEmptyVal(cur) && photo === 'OFF') || cur === photo) return;
+    items.push({ row: row, col: col, st: st, cur: cur, photo: photo, mark: c.mark || 'different', conf: typeof c.confidence === 'number' ? c.confidence : 0.5 });
+  });
+  RC.photoItems = items; RC.photoFn = fn.id;
+  var mk = { crossed: 'crossed out', written: 'written in', different: 'differs' };
+  var h = '<div class="card"><div class="rc-h">' + (items.length ? items.length + ' CHANGE' + (items.length > 1 ? 'S' : '') + ' FOUND' : 'NO CHANGES FOUND') + '</div>';
+  if (!items.length) h += '<div class="rc-small">The photo matches the roster, or no hand-made changes could be read. Check a few cells yourself if you expected changes.</div>';
+  h += items.map(function (it, k) {
+    return '<label class="pc-item"><input type="checkbox" id="pc-c-' + k + '"' + (it.conf >= 0.6 ? ' checked' : '') + '>'
+      + '<span class="pc-who"><b>' + rcEsc(String(it.st.lastName).toUpperCase() + ', ' + it.st.firstName) + '</b><br><span class="rc-small">' + rcEsc(fn.dates[it.col].day + ' ' + fn.dates[it.col].date) + ' • ' + rcEsc(mk[it.mark] || it.mark) + (it.conf < 0.6 ? ' • <span style="color:#E30613">not sure</span>' : '') + '</span></span>'
+      + '<span class="pc-vals"><span class="pc-cur">' + rcEsc(rcShiftText(it.cur)) + '</span> → <input id="pc-v-' + k + '" value="' + rcEsc(it.photo) + '"></span></label>';
+  }).join('');
+  if (items.length) h += '<button class="rc-b rc-red rc-wide" style="margin-top:10px" onclick="rcApplyPhoto()">APPLY TICKED CHANGES</button>';
+  if (skipped.length) h += '<div class="rc-small" style="margin-top:10px;color:#777">Couldn\'t match to the roster: ' + skipped.map(function (c) { return rcEsc((c.name || '?') + ' ' + (c.date || '?') + ' ' + (c.photo || '')); }).join('; ') + '</div>';
+  out.innerHTML = h + '</div>';
+}
+function rcApplyPhoto() {
+  var items = RC.photoItems || [], n = 0;
+  items.forEach(function (it, k) {
+    var box = document.getElementById('pc-c-' + k); if (!box || !box.checked) return;
+    var v = (document.getElementById('pc-v-' + k) || {}).value; v = String(v || '').trim();
+    if (/^off$/i.test(v)) v = 'OFF';
+    rcSaveCell(RC.photoFn, it.row, it.col, v === '' ? 'OFF' : v); n++;
+  });
+  toast(n ? n + ' change' + (n > 1 ? 's' : '') + ' applied' : 'Nothing ticked');
+  if (n) { safeSet('retail_roster_currentFortnightId', RC.photoFn); showMain(); }
+}
+
 /* ---------- PDF export: a picture of the roster tables exactly as they look on screen ---------- */
 exportPDF = async function () {
   var fn = getSelectedFortnight() || getCurrentFortnight();
@@ -2137,6 +2254,8 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.bd-track{position:relative;height:12px;background:#f1f1f1;border-radius:9999px;margin-top:6px;overflow:hidden}.bd-me-band{position:absolute;top:0;bottom:0;background:#ffd6d9}'
     + '.bd-bar{position:absolute;top:2px;bottom:2px;background:#111;border-radius:9999px}.bd-bar.mgr{background:#1a7f37}'
     + '.bd-legend{font-size:10px;color:#666;margin-top:8px;display:flex;align-items:center;gap:6px}.bd-key{display:inline-block;width:18px;height:8px;border-radius:9999px;background:#111}.bd-key.me{background:#ffd6d9}'
+    + '.pc-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #eee;cursor:pointer;flex-wrap:wrap}.pc-item input[type=checkbox]{width:22px;height:22px;accent-color:#E30613}'
+    + '.pc-who{flex:1;min-width:150px}.pc-vals{display:flex;align-items:center;gap:6px;font-weight:900}.pc-cur{color:#999;text-decoration:line-through}.pc-vals input{width:120px;padding:7px 10px;border:2px solid #111;border-radius:9999px;font-size:16px;font-weight:700}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'

@@ -9,6 +9,8 @@
      VAPID_PRIVATE_KEY  the private key (add it as a *Secret*)
      VAPID_SUBJECT      mailto:you@example.com
      ALLOWED_ORIGIN     https://blackbeard9488.github.io  (optional, defaults to *)
+     GEMINI_API_KEY     Google AI Studio key, as a *Secret* (for the roster photo check)
+     GEMINI_MODEL       optional, defaults to gemini-2.5-flash
 */
 
 export default {
@@ -20,10 +22,11 @@ export default {
     };
     if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
     const url = new URL(request.url);
-    if (request.method !== 'POST' || url.pathname !== '/notify') return new Response('Repco Roster push relay', { headers: cors });
+    if (request.method !== 'POST' || (url.pathname !== '/notify' && url.pathname !== '/scan')) return new Response('Repco Roster push relay', { headers: cors });
 
     let body;
     try { body = await request.json(); } catch (e) { return json({ error: 'bad json' }, 400, cors); }
+    if (url.pathname === '/scan') return scanRoster(body, env, cors);
     const { idToken, targets, title, body: text, close } = body || {};
     if (!idToken || !Array.isArray(targets) || !targets.length || targets.length > 100) return json({ error: 'bad request' }, 400, cors);
 
@@ -50,6 +53,54 @@ export default {
     return json({ sent, removed }, 200, cors);
   }
 };
+
+/* ---- Roster photo check: managers only; Gemini compares the photo with the roster ---- */
+async function scanRoster(body, env, cors) {
+  const { idToken, image, mime, roster } = body || {};
+  if (!idToken || !image || !roster || !Array.isArray(roster.rows) || !Array.isArray(roster.dates)) return json({ error: 'bad request' }, 400, cors);
+  if (!env.GEMINI_API_KEY) return json({ error: 'photo check is not set up (no Gemini key)' }, 501, cors);
+  if (image.length > 14000000) return json({ error: 'photo is too large' }, 413, cors);
+  // Only managers can read mgrdata, so the database rules decide who may use this
+  const db = env.DB_URL.replace(/\/$/, '');
+  const chk = await fetch(`${db}/mgrdata.json?shallow=true&auth=${encodeURIComponent(idToken)}`);
+  if (!chk.ok) return json({ error: 'managers only' }, 403, cors);
+
+  const table = roster.rows.map(r => `${r.name} | ` + r.shifts.map(v => v || 'OFF').join(' | ')).join('\n');
+  const prompt = [
+    'You are checking a PHOTO of a printed staff roster against the roster data below.',
+    'Columns are days in this order: ' + roster.dates.join(' | ') + '.',
+    'Each data row is: STAFF NAME | shift for each day (OFF means no shift, AB absent, UA unavailable).',
+    '',
+    table,
+    '',
+    'Look for cells in the photo that a person has changed by hand: a shift crossed out or marked with an X,',
+    'a time written over or next to the printed one, or a handwritten shift in an empty cell.',
+    'Also report any printed cell that clearly differs from the data.',
+    'Only report cells you can actually see in the photo. Ignore any row or note mentioning Kate.',
+    'For each change give: name (exactly as in the data), date (exactly as in the column list),',
+    'photo: what the cell should now be ("OFF" if the shift is crossed out with nothing new written, otherwise the new time as HH:MM-HH:MM in 24-hour time),',
+    'mark: "crossed", "written" or "different", and confidence from 0 to 1.',
+    'Reply with JSON only: {"changes":[{"name":"","date":"","photo":"","mark":"","confidence":0}]}. If nothing is changed, reply {"changes":[]}.'
+  ].join('\n');
+
+  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+    body: JSON.stringify({
+      contents: [{ parts: [{ inline_data: { mime_type: mime || 'image/jpeg', data: image } }, { text: prompt }] }],
+      generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+    })
+  });
+  const out = await r.json().catch(() => null);
+  if (!r.ok) return json({ error: 'Gemini: ' + ((out && out.error && out.error.message) || r.status) }, 502, cors);
+  const text = (((out || {}).candidates || [])[0] || {}).content;
+  const raw = text && text.parts ? text.parts.map(p => p.text || '').join('') : '';
+  let parsed;
+  try { parsed = JSON.parse(raw.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { return json({ error: 'could not read the result', raw: raw.slice(0, 500) }, 502, cors); }
+  const changes = Array.isArray(parsed.changes) ? parsed.changes.slice(0, 200) : [];
+  return json({ changes }, 200, cors);
+}
 
 function json(o, status, headers) { return new Response(JSON.stringify(o), { status, headers: { ...headers, 'Content-Type': 'application/json' } }); }
 
