@@ -510,6 +510,7 @@ async function rcStartSession(user) {
   rcRenderBell(); rcRenderOfferBanner();
   toast('Welcome ' + (profile.firstName || profile.username));
   rcMaybeRegisterSW();
+  setTimeout(function () { rcDeviceSetup(false); }, 1500);
 }
 
 if (RC.auth) RC.auth.onAuthStateChanged(function (user) {
@@ -1418,6 +1419,53 @@ function rcEnablePush() {
 }
 function rcTestPush() { rcNotify([RC.session.uid], { type: 'test', title: 'Test alert', body: 'Notifications are working on this device.' }); }
 
+/* ---------- new phone: set up the app and notifications ---------- */
+var _rcInstallEvt = null;
+window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); _rcInstallEvt = e; var b = document.getElementById('rc-ds-install'); if (b) rcDeviceSetup(true); });
+window.addEventListener('appinstalled', function () { _rcInstallEvt = null; try { localStorage.setItem('repco_app_installed', '1'); } catch (e) {} rcDeviceSetup(true); });
+function rcIsPhone() { return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function rcPushReady() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return Promise.resolve(false);
+  if (Notification.permission !== 'granted') return Promise.resolve(false);
+  return navigator.serviceWorker.getRegistration().then(function (reg) { return reg ? reg.pushManager.getSubscription() : null; }).then(function (s) { return !!s; }).catch(function () { return false; });
+}
+/* Shown after login on a phone until the app is installed and notifications are on */
+function rcDeviceSetup(refreshOnly) {
+  if (!RC.session || !rcIsPhone()) return;
+  var installed = rcIsStandalone() || (function () { try { return localStorage.getItem('repco_app_installed') === '1'; } catch (e) { return false; } })();
+  rcPushReady().then(function (pushOn) {
+    var sheet = document.getElementById('rc-device-setup');
+    if (installed && pushOn) { if (sheet) sheet.remove(); return; }
+    if (refreshOnly && !sheet) return;
+    if (!refreshOnly && RC.deviceSetupShown) return;
+    RC.deviceSetupShown = true;
+    var ios = rcIsIOS(), blocked = 'Notification' in window && Notification.permission === 'denied';
+    var step1 = installed ? '<div class="rc-ds-done">✓ App installed</div>'
+      : ios ? '<div class="rc-small">Tap the <b>Share</b> button <span class="rc-ds-ico">⬆︎</span> at the bottom of Safari, then <b>Add to Home Screen</b>. Open Repco Roster from the new icon.</div>'
+      : _rcInstallEvt ? '<button class="rc-b rc-red rc-wide" id="rc-ds-install">INSTALL APP</button>'
+      : '<div class="rc-small">Open your browser menu <b>⋮</b> and tap <b>Install app</b> or <b>Add to Home screen</b>.</div>';
+    var step2 = pushOn ? '<div class="rc-ds-done">✓ Notifications on</div>'
+      : blocked ? '<div class="rc-small">Notifications are blocked for this site. Allow them in your phone settings, then reopen the app.</div>'
+      : (ios && !rcIsStandalone()) ? '<div class="rc-small">Do step 1 first. Notifications can be turned on once the app is opened from your home screen.</div>'
+      : '<button class="rc-b rc-wide" id="rc-ds-push">TURN ON NOTIFICATIONS</button>';
+    if (!sheet) { sheet = document.createElement('div'); sheet.id = 'rc-device-setup'; document.body.appendChild(sheet); }
+    sheet.innerHTML = '<div class="rc-ds-card"><div class="rc-ds-title">SET UP THIS PHONE</div><div class="rc-small" style="margin-bottom:10px">So you get shift offers and roster changes straight away.</div>'
+      + '<div class="rc-ds-step"><div class="rc-ds-num">1</div><div class="rc-ds-body"><b>Add the app to your home screen</b>' + step1 + '</div></div>'
+      + '<div class="rc-ds-step"><div class="rc-ds-num">2</div><div class="rc-ds-body"><b>Turn on notifications</b>' + step2 + '</div></div>'
+      + '<button class="rc-b rc-white rc-wide" id="rc-ds-later" style="margin-top:6px">LATER</button></div>';
+    var later = document.getElementById('rc-ds-later'); if (later) later.onclick = function () { sheet.remove(); };
+    var ib = document.getElementById('rc-ds-install');
+    if (ib) ib.onclick = function () { var ev = _rcInstallEvt; if (!ev) return; ev.prompt(); ev.userChoice.then(function (c) { if (c && c.outcome === 'accepted') { try { localStorage.setItem('repco_app_installed', '1'); } catch (e) {} } _rcInstallEvt = null; rcDeviceSetup(true); }); };
+    var pb = document.getElementById('rc-ds-push');
+    if (pb) pb.onclick = function () {
+      Notification.requestPermission().then(function (perm) {
+        if (perm !== 'granted') { toast('Notifications were not allowed'); rcDeviceSetup(true); return; }
+        navigator.serviceWorker.register('sw.js').then(function () { return rcSubscribePush(false); }).then(function () { rcDeviceSetup(true); });
+      });
+    };
+  });
+}
+
 /* ---------- maintenance mode (live, managers only) ---------- */
 if (RC.db) RC.db.ref('maintenance').on('value', function (s) {
   var v = s.val() || { enabled: false };
@@ -1799,6 +1847,12 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.rc-cell-input{width:154%;box-sizing:border-box;border:none;background:#FFF6CC;font-size:16px !important;font-weight:700;text-align:center;padding:5px 2px !important;border-radius:4px;outline:none;transform:scale(.65);transform-origin:left center;margin-right:-54%;display:block}'
     + '.rc-cell-acts{display:flex;gap:2px;margin-top:2px}.rc-cell-acts button{flex:1;border:none;border-radius:9999px;background:#111;color:#fff;font-size:8px;font-weight:900;padding:3px 0;cursor:pointer}.rc-cell-acts button.rc-red{background:#E30613}'
     + '.rc-cell-note{font-size:7px;color:#E30613;font-weight:900;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
+    + '#rc-device-setup{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000001;display:flex;align-items:flex-end;justify-content:center}'
+    + '.rc-ds-card{background:#fff;width:100%;max-width:480px;border-radius:20px 20px 0 0;border-top:8px solid #E30613;padding:18px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -6px 0 #111}'
+    + '.rc-ds-title{font-family:"Arial Black",Impact,sans-serif;font-size:18px;font-style:italic;margin-bottom:4px}'
+    + '.rc-ds-step{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid #eee}.rc-ds-body{flex:1;display:flex;flex-direction:column;gap:6px;font-size:13px}'
+    + '.rc-ds-num{width:28px;height:28px;border-radius:50%;background:#111;color:#fff;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0}'
+    + '.rc-ds-done{color:#1a7f37;font-weight:900;font-size:13px}.rc-ds-ico{display:inline-block;border:1px solid #999;border-radius:4px;padding:0 4px}'
     + '.rc-setup{width:100%;margin-top:18px;padding:14px;border:3px solid #111;border-radius:14px;background:#fff;box-shadow:4px 4px 0 #E30613;display:flex;flex-direction:column;gap:8px;text-align:left}'
     + '.rc-setup input{background:#C4C4C4;border:none;border-radius:9999px;padding:10px 16px;font-size:14px;font-weight:600}'
     + '.rc-setup button{background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900}';
