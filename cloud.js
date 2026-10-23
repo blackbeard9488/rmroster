@@ -572,7 +572,14 @@ function rcCheckSetup() {
       + '<input id="rc-su-pass" type="password" placeholder="Password (min 6)"><input id="rc-su-pass2" type="password" placeholder="Confirm password">'
       + '<button type="button" onclick="rcBootstrap()">CREATE ADMIN ACCOUNT</button><div id="rc-su-err" class="rc-err"></div>';
     form.appendChild(box);
-  }).catch(function () {});
+  }).catch(function (e) {
+    // Say why instead of silently showing nothing
+    console.error('setup check', e);
+    var msg = /permission/i.test(String(e && (e.code || e.message)))
+      ? 'Database rules are not set up yet - paste database.rules.json into Firebase > Realtime Database > Rules and Publish (SETUP.md step 2).'
+      : 'Cannot reach the database: ' + ((e && e.message) || e);
+    rcLoginMsg(msg);
+  });
 }
 async function rcBootstrap() {
   var u = document.getElementById('rc-su-user').value.trim(), p = document.getElementById('rc-su-pass').value, p2 = document.getElementById('rc-su-pass2').value;
