@@ -1397,8 +1397,89 @@ function rcMyPendingOffers() {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcMobileRoster(); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
+/* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
+function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
+function rcSetRosterView(v) { try { localStorage.setItem('repco_roster_view', v); } catch (e) {} renderRosterSafe(); }
+function rcSetDay(i) { RC.dayIdx = i; RC.dayFn = (getSelectedFortnight() || {}).id; renderRosterSafe(); }
+function rcMobileRoster() {
+  var mount = document.getElementById('roster-mount'); if (!mount || !RC.session || RC.pdfMode) return;
+  var old = document.getElementById('rc-viewbar'); if (old) old.remove();
+  if (!document.body.classList.contains('rc-mobile')) return;
+  var fn = getSelectedFortnight() || getCurrentFortnight(); if (!fn) return;
+  var view = rcRosterView(), today = getISO();
+  var bar = document.createElement('div'); bar.id = 'rc-viewbar';
+  bar.innerHTML = '<button class="' + (view === 'day' ? 'on' : '') + '" onclick="rcSetRosterView(\'day\')">DAY</button><button class="' + (view !== 'day' ? 'on' : '') + '" onclick="rcSetRosterView(\'table\')">FORTNIGHT</button>';
+  mount.parentNode.insertBefore(bar, mount);
+  if (view !== 'day') { rcEasyTable(fn, today); return; }
+  // Day view
+  var ti = fn.dates.findIndex(function (d) { return d.iso === today; });
+  if (RC.dayFn !== fn.id || RC.dayIdx == null || RC.dayIdx >= fn.dates.length) { RC.dayIdx = ti >= 0 ? ti : 0; RC.dayFn = fn.id; }
+  var i = RC.dayIdx, day = fn.dates[i], mgr = rcIsMgr();
+  var me = findMyStaff(fn);
+  var people = fn.staff.map(function (st, r) { return { st: st, r: r }; }).filter(function (x) { return !isHiddenStaffRow(x.st) || mgr || x.st === me; });
+  var status = function (st) {
+    var sh = String(st.shifts[i] == null ? 'OFF' : st.shifts[i]);
+    if ((st.absentApproved && st.absentApproved[i]) || rcIsAbsentVal(sh)) return 'AB';
+    if ((st.unavailable && st.unavailable[i]) || rcIsUAVal(sh)) return 'UA';
+    return parseShiftRange(sh) ? 'work' : 'OFF';
+  };
+  var working = people.filter(function (x) { return status(x.st) === 'work'; }).sort(function (a, b) { return parseShiftRange(a.st.shifts[i]).start - parseShiftRange(b.st.shifts[i]).start || String(a.st.lastName).localeCompare(String(b.st.lastName)); });
+  var notWorking = people.filter(function (x) { return status(x.st) !== 'work'; });
+  var hrs = working.reduce(function (t, x) { return t + (isHiddenStaffRow(x.st) ? 0 : netH(x.st.shifts[i])); }, 0);
+  var chips = fn.dates.map(function (d, k) { return '<button class="dv-chip' + (k === i ? ' on' : '') + (d.iso === today ? ' today' : '') + (d.day === 'SAT' || d.day === 'SUN' ? ' wk' : '') + '" onclick="rcSetDay(' + k + ')"><span>' + d.day + '</span><b>' + d.date.slice(0, 2) + '</b></button>'; }).join('');
+  var nm = function (st) { return '<b>' + rcEsc(st.firstName) + '</b> ' + rcEsc(String(st.lastName || '').charAt(0).toUpperCase() + String(st.lastName || '').slice(1).toLowerCase()); };
+  var h = '<div class="dv-chips" id="dv-chips">' + chips + '</div>'
+    + '<div class="dv-head"><div><div class="dv-day">' + rcEsc(day.day + ' ' + day.date) + (day.iso === today ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</div><div class="rc-small">' + working.length + ' working' + (mgr ? ' • ' + hrs.toFixed(1) + 'h' : '') + '</div></div></div>'
+    + '<div class="dv-list">' + (working.length ? working.map(function (x) {
+      var st = x.st, sh = String(st.shifts[i]), green = (st.cellGreen && st.cellGreen[i]) || isAutoGreenShift(st, sh), own = st === me;
+      var oid = rcOfferId(fn, x.r, i), offer = RC.offers[oid];
+      return '<div class="dv-row' + (own ? ' own' : '') + (mgr ? ' dv-edit' : '') + '" data-r="' + x.r + '"' + (mgr ? ' onclick="rcDayEdit(this,' + x.r + ',' + i + ')"' : '') + '>'
+        + '<span class="dv-name">' + nm(st) + (own ? ' <span class="you-pill">YOU</span>' : '') + (green ? ' <span class="ms-tag" style="background:#1a7f37">MANAGER</span>' : '') + (isHiddenStaffRow(st) ? ' <span class="ms-tag" style="background:#555">HIDDEN</span>' : '') + '</span>'
+        + '<span class="dv-shift">' + rcEsc(fmt(sh)) + '<small>' + netH(sh).toFixed(1) + 'h</small></span></div>';
+    }).join('') : '<div class="dv-empty">Nobody is rostered.</div>') + '</div>';
+  if (notWorking.length) h += '<div class="dv-off"><div class="rc-h" style="font-size:11px;margin-bottom:6px">NOT WORKING</div>' + notWorking.map(function (x) {
+    var stt = status(x.st), own = x.st === me;
+    return '<span class="dv-offname' + (own ? ' own' : '') + '"' + (mgr ? ' onclick="rcDayEdit(this,' + x.r + ',' + i + ')"' : '') + '>' + rcEsc(x.st.firstName + ' ' + String(x.st.lastName || '').charAt(0)) + (stt !== 'OFF' ? ' <b class="' + (stt === 'AB' ? 'dv-ab' : 'dv-ua') + '">' + stt + '</b>' : '') + '</span>';
+  }).join('') + '</div>';
+  if (mgr) h += '<div class="rc-small" style="margin:8px 4px;color:#777">Tap a name to change their shift. Use FORTNIGHT to make offers.</div>';
+  mount.innerHTML = h;
+  var c = document.querySelector('#dv-chips .dv-chip.on'); if (c) c.scrollIntoView({ inline: 'center', block: 'nearest' });
+}
+/* Managers: edit a shift right in the day view (same rules as the table) */
+function rcDayEdit(el, r, i) {
+  if (!rcIsMgr() || el.querySelector('input')) return;
+  var fn = getSelectedFortnight() || getCurrentFortnight(); var st = fn.staff[r];
+  var cur = String(st.shifts[i] == null ? 'OFF' : st.shifts[i]);
+  RC.cellEditing = true;
+  var box = document.createElement('div'); box.className = 'dv-editbox';
+  box.innerHTML = '<input value="' + rcEsc(rcIsEmptyVal(cur) ? '' : cur) + '" placeholder="09:00-17:00, OFF, AB, UA or blank">';
+  el.appendChild(box);
+  var inp = box.querySelector('input'), done = false;
+  var fin = function (save) { if (done) return; done = true; RC.cellEditing = false; if (save) rcSaveCell(fn.id, r, i, inp.value); renderRosterSafe(); };
+  inp.addEventListener('click', function (e) { e.stopPropagation(); });
+  inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); fin(true); } else if (e.key === 'Escape') fin(false); });
+  inp.addEventListener('blur', function () { setTimeout(function () { fin(true); }, 100); });
+  inp.focus(); inp.select();
+}
+/* Fortnight table on phones: start/finish stacked, today's column marked */
+function rcEasyTable(fn, today) {
+  var ti = fn.dates.findIndex(function (d) { return d.iso === today; });
+  document.querySelectorAll('#roster-mount .r-table').forEach(function (t) {
+    t.classList.add('rc-easy');
+    if (ti >= 0) {
+      var th = t.querySelectorAll('thead th')[ti + 1]; if (th) th.classList.add('rc-today-col');
+      t.querySelectorAll('td[data-i="' + ti + '"]').forEach(function (td) { td.classList.add('rc-today-col'); });
+    }
+    t.querySelectorAll('td[data-i]').forEach(function (td) {
+      if (td.classList.contains('rc-cell-edit')) return;
+      var m = td.textContent.trim().match(/^(\d{1,2}:\d{2}\s*(?:[AP]M)?)\s*-\s*(\d{1,2}:\d{2}\s*(?:[AP]M)?)(.*)$/i);
+      if (m && !td.querySelector('.rc-offer-tag')) td.innerHTML = '<span class="rc-t">' + m[1] + '</span><span class="rc-t">' + m[2] + '</span>' + (m[3].trim() ? '<span class="rc-t2">' + rcEsc(m[3].trim()) + '</span>' : '');
+    });
+  });
+}
+
 /* Shows whether the roster on screen is the one containing today, with a quick way back to it */
 function rcCurrentIndicator() {
   var sel = document.getElementById('fortnight-select'); if (!sel) return;
@@ -1760,6 +1841,8 @@ function rcApplyMobile() {
   if (next) { next.textContent = m ? '›' : 'NEXT'; next.title = 'Next fortnight'; }
   var tf = document.querySelector('.r-controls button[onclick="toggleTimeFormat()"]'); if (tf) tf.textContent = m ? '12/24H' : '12H/24H';
   var del = document.getElementById('delete-roster-btn'); if (del) del.textContent = m ? 'DELETE' : 'DELETE ROSTER';
+  var v65 = document.getElementById('repco-v65');
+  if (RC.session && v65 && v65.classList.contains('show')) renderRosterSafe();   // day view / easy table
   setTimeout(rcFitHeader, 0);
 }
 if (RC_MOBILE.addEventListener) RC_MOBILE.addEventListener('change', rcApplyMobile);
@@ -2503,7 +2586,19 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-mobile .r-controls::after{content:"";order:2;flex-basis:100%;height:0}'
     + 'body.rc-mobile .roster-section{margin:10px 6px;box-shadow:3px 3px 0 #111}'
     + 'body.rc-mobile .sec-head{padding:8px 10px;font-size:12px}'
-    + 'body.rc-mobile .r-table th,body.rc-mobile .r-table td{min-width:68px !important;width:68px !important;max-width:68px !important;font-size:10px;padding:6px 1px}'
+    + 'body.rc-mobile .r-table th,body.rc-mobile .r-table td{min-width:58px !important;width:58px !important;max-width:58px !important;font-size:10px;padding:5px 1px}'
+    + 'body.rc-mobile .r-table.rc-easy td[data-i]{font-size:12px;font-weight:700 !important;line-height:1.15}.rc-t{display:block}.rc-t2{display:block;font-size:9px;color:#E30613;font-weight:900}'
+    + 'body.rc-mobile .r-table th.rc-today-col{background:#E30613 !important;color:#fff !important}body.rc-mobile .r-table td.rc-today-col{box-shadow:inset 3px 0 0 #E30613,inset -3px 0 0 #E30613}'
+    + '#rc-viewbar{display:flex;margin:8px 8px 0;border:2px solid #111;border-radius:9999px;overflow:hidden;background:#fff}#rc-viewbar button{flex:1;border:none;background:#fff;padding:9px 0;font-weight:900;font-size:12px;letter-spacing:.5px}#rc-viewbar button.on{background:#111;color:#fff}'
+    + '.dv-chips{display:flex;gap:6px;overflow-x:auto;padding:10px 8px 6px;scrollbar-width:none}.dv-chips::-webkit-scrollbar{display:none}'
+    + '.dv-chip{flex:0 0 auto;width:48px;border:2px solid #111;border-radius:12px;background:#fff;padding:5px 0;display:flex;flex-direction:column;align-items:center;font-size:10px;font-weight:900}.dv-chip b{font-size:17px}.dv-chip.wk{background:#e8f2fc}.dv-chip.today{border-color:#E30613;color:#E30613}.dv-chip.on{background:#111;color:#fff;border-color:#111}'
+    + '.dv-head{padding:4px 12px 8px}.dv-day{font-family:"Arial Black",Impact,sans-serif;font-size:22px;font-style:italic}'
+    + '.dv-list{background:#fff;border:3px solid #111;border-radius:14px;margin:0 8px;box-shadow:3px 3px 0 #111;overflow:hidden}'
+    + '.dv-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;padding:12px 14px;border-top:1px solid #eee;font-size:15px}.dv-row:first-child{border-top:none}.dv-row.own{background:#0a0a0a;color:#fff;border-left:6px solid #E30613}.dv-edit{cursor:pointer}'
+    + '.dv-shift{font-weight:900;font-size:16px;white-space:nowrap}.dv-shift small{font-size:10px;font-weight:700;color:#888;margin-left:6px}.dv-row.own .dv-shift small{color:#bbb}'
+    + '.dv-empty{padding:14px;color:#777}.dv-off{margin:12px 8px;padding:10px 12px;background:#fff;border:2px dashed #bbb;border-radius:12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.dv-off .rc-h{flex-basis:100%}'
+    + '.dv-offname{font-size:12px;font-weight:700;background:#f1f1f1;border-radius:9999px;padding:4px 10px}.dv-offname.own{background:#111;color:#fff}.dv-ab,.dv-ua{font-size:9px;color:#fff;border-radius:9999px;padding:1px 5px;margin-left:2px}.dv-ab{background:#E30613}.dv-ua{background:#555}'
+    + '.dv-editbox{flex-basis:100%}.dv-editbox input{width:100%;box-sizing:border-box;padding:9px 12px;border:2px solid #E30613;border-radius:9999px;font-size:16px;font-weight:700;color:#111}'
     + 'body.rc-mobile .r-table th.staff-col,body.rc-mobile .r-table td.staff-cell{min-width:104px !important;width:104px !important;max-width:104px !important;padding-left:6px;font-size:10px}'
     + 'body.rc-mobile .page-title{font-size:18px !important;padding:6px 12px !important;margin:4px 0 10px !important}'
     + 'body.rc-mobile .full-page .page-inner{padding:10px !important}'
