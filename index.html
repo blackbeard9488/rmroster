@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>REPCO ROSTER V196 FINAL</title>
+<title>REPCO ROSTER V197 FINAL</title>
 <style>
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -103,11 +103,13 @@ var CLOUD_KEYS = ["retail_roster_byFortnight_v1","retail_roster_users_v1","retai
 var db = null;
 var cloudLoadRunning = false;
 var cloudSaveTimeout = null;
+var fortnightDatesCache = {};
 function safeGet(k,d){try{var v=localStorage.getItem(k); if(v===null) return d!==undefined?d:v; return v;}catch(e){return d;}}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){MEMORY_STORE[k]=v;}}
 function safeGetJSON(k,d){try{var raw=safeGet(k,null); if(raw===null||raw===undefined) return d; if(typeof raw==="object") return raw; return JSON.parse(raw);}catch(e){return d;}}
 function safeSetJSON(k,o){try{var s=JSON.stringify(o); safeSet(k,s);}catch(e){MEMORY_STORE[k]=JSON.stringify(o);}}
 function getISO(d){try{var now=d||new Date(); var fmt=new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Brisbane',year:'numeric',month:'2-digit',day:'2-digit'}); var parts=fmt.formatToParts(now); var y=parts.find(function(p){return p.type==='year';}).value; var mo=parts.find(function(p){return p.type==='month';}).value; var dd=parts.find(function(p){return p.type==='day';}).value; return y+'-'+mo+'-'+dd;}catch(e){var now=d||new Date(); return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');}}
+
 try {
   if(typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length===0){
     firebase.initializeApp(FIREBASE_CONFIG);
@@ -116,11 +118,42 @@ try {
     db = firebase.database();
   }
 } catch(e){}
+
 function getAllState(){ var state={}; CLOUD_KEYS.forEach(function(k){ try{ var v=localStorage.getItem(k); state[k]=v?JSON.parse(v):null; }catch(e){} }); state._ts=Date.now(); return state; }
 function debouncedCloudSave(){ if(cloudSaveTimeout) clearTimeout(cloudSaveTimeout); cloudSaveTimeout = setTimeout(function(){ try{ cloudSave(); }catch(e){} }, 2000); }
 async function cloudLoadAll(){ if(cloudLoadRunning) return; if(!db) return; cloudLoadRunning=true; try{ var r=await fetch(FIREBASE_DB_URL+"/repco_state.json",{cache:"no-store"}); if(r.ok){ var data=await r.json(); if(data&&data._ts){ var lt=parseInt(localStorage.getItem("repco_cloud_ts")||"0"); if(data._ts>lt){ Object.keys(data).forEach(function(k){ if(k==="_ts") return; try{ localStorage.setItem(k, JSON.stringify(data[k])); }catch(e){} }); localStorage.setItem("repco_cloud_ts", String(data._ts)); try{ if(typeof renderAllSafe==='function') renderAllSafe(); }catch(e){} } } } }catch(e){} finally{ cloudLoadRunning=false; } }
 function cloudSave(){ try{ var state=getAllState(); if(db && db.ref){ db.ref("repco_state").set(state).then(function(){ localStorage.setItem("repco_cloud_ts", String(state._ts)); }).catch(function(){}); } }catch(e){} }
 function renderAllSafe(){ try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){} try{ if(typeof renderRosterSafe==='function') renderRosterSafe(); }catch(e){} }
+function cloudLoad(){ return cloudLoadAll(); }
+function checkForIndexUpdate(){ console.log('checkForIndexUpdate stub'); }
+function generateFortnightId(d){
+  try{
+    var date = new Date(d);
+    var day = date.getDay();
+    var diffToMon = day===0 ? -6 : 1-day;
+    var monday = new Date(date.getTime()+diffToMon*86400000);
+    monday.setHours(0,0,0,0);
+    var sunday2 = new Date(monday.getTime()+13*86400000);
+    return getISO(monday)+'_to_'+getISO(sunday2);
+  }catch(e){
+    var y=d.getFullYear(); var s=new Date(y,0,1); var diff=Math.floor((d-s)/86400000); var fn=Math.floor(diff/14)+1; return y+'-FN'+String(fn).padStart(2,'0');
+  }
+}
+function getDatesForFortnight(fnId){
+  if(!fnId) return [];
+  if(fortnightDatesCache[fnId]) return fortnightDatesCache[fnId];
+  if(fnId.indexOf('_to_')!==-1){
+    try{
+      var parts = fnId.split('_to_');
+      var start = new Date(parts[0]);
+      if(isNaN(start.getTime())){ var p=parts[0].split('-'); start=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2])); }
+      var dates=[];
+      for(var i=0;i<14;i++){ var dd=new Date(start.getTime()+i*86400000); dates.push({iso:getISO(dd), date: (String(dd.getDate()).padStart(2,'0')+'/'+String(dd.getMonth()+1).padStart(2,'0')), day:['SUN','MON','TUE','WED','THU','FRI','SAT'][dd.getDay()]}); }
+      fortnightDatesCache[fnId]=dates; return dates;
+    }catch(e){}
+  }
+  return [];
+}
 </script>
 </head>
 <body>
@@ -260,6 +293,215 @@ function renderAllSafe(){ try{ if(typeof populateFortnightSelect==='function') p
 </div>
 
 <script>
+
+const BUILD_ID="20261022700070_V148_G_EDIT_FIX";
+let currentHtmlHash=null;
+let currentBuildId=BUILD_ID;
+function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
+async function checkForIndexUpdate(isInitial){
+  try{
+    const url=window.location.href.split("?")[0].split("#")[0];
+    const res=await fetch(url+"?_v="+Date.now(),{cache:"no-store"});
+    if(!res.ok) return;
+    const txt=await res.text();
+    const bm=txt.match(/BUILD_ID\s*=\s*"([^"]+)"/);
+    const remoteBuild=bm?bm[1]:null;
+    const h=computeHashSync(txt);
+    if(isInitial){ currentHtmlHash=h; if(remoteBuild) currentBuildId=remoteBuild; return; }
+    if(remoteBuild && remoteBuild!==currentBuildId){ toast("New version - reloading"); setTimeout(()=>location.reload(true),1500); return; }
+    if(currentHtmlHash!==null && h!==currentHtmlHash){ toast("New version - reloading"); setTimeout(()=>location.reload(true),3000); }
+  }catch(e){}
+}
+
+
+
+
+
+function getISO(){
+  try{
+    var now=new Date();
+    var dateFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Brisbane',year:'numeric',month:'2-digit',day:'2-digit'});
+    var parts=dateFmt.formatToParts(now);
+    var y=parts.find(function(p){ return p.type==='year'; }).value;
+    var mo=parts.find(function(p){ return p.type==='month'; }).value;
+    var d=parts.find(function(p){ return p.type==='day'; }).value;
+    return y+'-'+mo+'-'+d;
+  }catch(e){
+    var now=new Date();
+    return now.toISOString().slice(0,10);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
+
+async function computeHash(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
+
+
+
+function isAdminTypeAccount(){
+  // FIXED: check actual role, not just username
+  let role=getActualRole();
+  if(role==='staff') return false;
+  if(['admin','master','manager'].includes(role)) return true;
+  // Legacy fallback: username admin/master/manager if role not set
+  let u=(safeGet('repco_username')||'').toLowerCase();
+  if(role==='' && ['admin','master','manager'].includes(u)) return true;
+  return false;
+}
+
+// Override showMain and openPage to apply role and block buddies for admin
+let _origShowMain = window.showMain;
+window.showMain = function(){
+  if(typeof _origShowMain === 'function') _origShowMain();
+  else {
+    document.querySelectorAll('.full-page').forEach(e=>e.classList.remove('show'));
+    let rv=document.getElementById('repco-v65'); if(rv) rv.classList.add('show');
+    let gh=document.getElementById('global-header'); if(gh) gh.classList.add('show');
+    renderRosterSafe(); applyRoleVisibility();
+  }
+  applyRoleVisibility();
+};
+
+let _origOpenPage = window.openPage;
+window.openPage = function(id){
+  let isMgr=isManagerRole(getActualRole());
+  // Block buddies for admin/master/manager
+  if((id==='buddies-today-page-v141' || id==='buddies-tomorrow-page-v141' || id==='mysched-page') && isMgr){
+    toast('Buddies/My Schedule only for employee accounts');
+    return;
+  }
+  // Block admin-only pages for employees
+  if((id==='unavail-page' || id==='options-page' || id==='archive-page' || id==='account-mgmt-page') && !isMgr){
+    toast('Admin only');
+    return;
+  }
+  if(typeof _origOpenPage === 'function') _origOpenPage(id);
+  else {
+    let rv=document.getElementById('repco-v65'); if(rv) rv.classList.remove('show');
+    document.querySelectorAll('.full-page').forEach(e=>{ if(e.id!==id) e.classList.remove('show'); });
+    let el=document.getElementById(id); if(el) el.classList.add('show');
+  }
+  applyRoleVisibility();
+  // Render specific pages
+  if(id==='buddies-today-page-v141') renderBuddies('today');
+  if(id==='buddies-tomorrow-page-v141') renderBuddies('tomorrow');
+  if(id==='mysched-page') renderMySchedule();
+  if(id==='account-page') renderAccountPage();
+};
+
+function isManagerRole(r,u){
+  r=(r||safeGet('repco_currentRole')||'').toLowerCase();
+  u=(u||safeGet('repco_username')||'').toLowerCase();
+  // FIXED: role is source of truth, not hardcoded username
+  // If role is explicitly staff, never manager regardless of username
+  if(r==='staff') return false;
+  // If role is admin/master/manager, is manager
+  if(['admin','master','manager'].includes(r)) return true;
+  // For backward compat, legacy admin usernames without role set still count as manager
+  // BUT only if their role isn't staff
+  if(['admin','master','manager'].includes(u) && r!=='staff') return true;
+  return false;
+}
+function getActualRole(){
+  // Get role from users array as source of truth
+  try{
+    let curU=(safeGet('repco_username')||'').toLowerCase();
+    let users=safeGetJSON('retail_roster_users_v1',[]);
+    let found=users.find(x=>x.username.toLowerCase()===curU);
+    if(found && found.role) return found.role.toLowerCase();
+  }catch(e){}
+  return (safeGet('repco_currentRole')||'').toLowerCase();
+}
+
+const VALID={chris:'Chris',admin:'admin',manager:'manager',master:'master'};
+
+
+
+let lastActivityTs = Date.now();
+const INACTIVITY_LIMIT_MS = 30 * 60 * 1000;
+let activityCheckInterval = null;
+let draftSaveTimeout = null;
+function updateActivity(){ try{ lastActivityTs = Date.now(); safeSet('repco_last_activity', String(lastActivityTs)); if(typeof MEMORY_STORE !== 'undefined') MEMORY_STORE['repco_last_activity'] = String(lastActivityTs); }catch(e){} }
+function saveEditDraft(rowIdx, colIdx, value, staffName, dateLabel){ try{ var draft={ rowIdx: rowIdx, colIdx: colIdx, value: value, staffName: staffName||'', dateLabel: dateLabel||'', username: safeGet('repco_username')||'', ts: Date.now(), fortnightId: safeGet('retail_roster_currentFortnightId')||'' }; safeSetJSON('retail_roster_edit_draft_v1', draft); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:draft.username}); } }catch(e){ console.error('saveEditDraft', e); } }
+function clearEditDraft(){ try{ localStorage.removeItem('retail_roster_edit_draft_v1'); if(typeof MEMORY_STORE !== 'undefined') delete MEMORY_STORE['retail_roster_edit_draft_v1']; }catch(e){} }
+function getEditDraft(){ try{ var d=safeGetJSON('retail_roster_edit_draft_v1',null); return d; }catch(e){ return null; } }
+function restoreEditDraftIfNeeded(){ try{ var draft=getEditDraft(); if(!draft) return; var username=safeGet('repco_username')||''; if(!username) return; if(draft.username && draft.username.toLowerCase() !== username.toLowerCase()) return; if(Date.now() - draft.ts > 24*60*60*1000) { clearEditDraft(); return; } var curId=safeGet('retail_roster_currentFortnightId')||''; if(draft.fortnightId && draft.fortnightId !== curId){ var sel=document.getElementById('fortnight-select'); if(sel){ sel.value=draft.fortnightId; safeSet('retail_roster_currentFortnightId', draft.fortnightId); } } toast('Restored unsaved edit: '+(draft.staffName||'')+' '+(draft.dateLabel||'')+' = '+draft.value+' - reopening...'); setTimeout(function(){ try{ var cur=getSelectedFortnight()||getCurrentFortnight(); if(!cur) return; if(draft.rowIdx>=cur.staff.length || draft.colIdx>=cur.dates.length) { clearEditDraft(); return; } var staff=cur.staff[draft.rowIdx]; if(!staff) return; showCustomPrompt('Restore Unsaved Edit', '<div style="font-size:11px">Found unsaved edit from '+new Date(draft.ts).toLocaleString()+'<br>For '+staff.firstName+' '+staff.lastName+' on '+cur.dates[draft.colIdx].day+' '+cur.dates[draft.colIdx].date+'<br>Saved value: <b>'+draft.value+'</b><br>Current value: '+ (staff.shifts[draft.colIdx]||'OFF') +'</div><input id="edit-shift-input" value="'+draft.value.replace(/"/g,'&quot;')+'" style="width:100%;padding:8px;border-radius:9999px;border:2px solid #111;margin-top:8px">', function(val){ var rawV = (typeof val === 'string') ? val : (document.getElementById('edit-shift-input')?.value || val); if(rawV===null){ clearEditDraft(); return; } var newVal=String(rawV).trim(); if(!newVal) newVal='OFF'; if(!staff.originalShifts) staff.originalShifts=[]; if(!staff.originalShifts[draft.colIdx]) staff.originalShifts[draft.colIdx]=staff.shifts[draft.colIdx]; staff.shifts[draft.colIdx]=newVal; if(newVal.toUpperCase()==='AB' || newVal.toUpperCase()==='ABSENT'){ if(!staff.absentApproved) staff.absentApproved=[]; staff.absentApproved[draft.colIdx]=true; } else { if(staff.absentApproved) staff.absentApproved[draft.colIdx]=false; } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); safeSetJSON('retail_roster_byFortnight_v1',fns); renderRosterSafe(); clearEditDraft(); toast('Restored edit saved: '+newVal); }); }catch(e){ console.error('restore draft', e); } }, 800); }catch(e){ console.error('restoreEditDraftIfNeeded', e); } }
+function setupActivityTracking(){ try{ var last=safeGet('repco_last_activity'); if(last) lastActivityTs=parseInt(last,10)||Date.now(); var throttledMove=null; function onActivity(){ updateActivity(); } function onMove(){ if(throttledMove) return; throttledMove=setTimeout(function(){ throttledMove=null; updateActivity(); }, 5000); } ['click','keydown','input','touchstart','change'].forEach(function(evt){ document.addEventListener(evt, onActivity, {passive:true}); }); document.addEventListener('mousemove', onMove, {passive:true}); if(activityCheckInterval) clearInterval(activityCheckInterval); activityCheckInterval=setInterval(function(){ try{ var now=Date.now(); var diff=now-lastActivityTs; if(diff > INACTIVITY_LIMIT_MS){ var username=safeGet('repco_username'); if(!username) return; var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } toast('Session timed out due to inactivity - draft saved. Please log in again.'); var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:username, reason:'inactivity_timeout'}); } setTimeout(function(){ doLogout(); var err=document.getElementById('login-err'); if(err) err.textContent='Session timed out - your edits were auto-saved. Please log in again.'; }, 1500); } }catch(e){ console.error('activity check', e); } }, 60*1000); window.addEventListener('beforeunload', function(e){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft){ saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } } var fns=safeGetJSON('retail_roster_byFortnight_v1',[]); if(fns && fns.length>0){ safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'beforeunload'}); } }catch(err){} }); window.addEventListener('pagehide', function(){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} }); document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden'){ try{ var input=document.getElementById('edit-shift-input'); if(input){ var draft=getEditDraft(); if(draft) saveEditDraft(draft.rowIdx, draft.colIdx, input.value, draft.staffName, draft.dateLabel); } }catch(e){} } else { updateActivity(); } }); updateActivity(); }catch(e){ console.error('setupActivityTracking', e); } }
+
+function doLogin(){
+  seedIfEmpty();
+  var uEl=document.getElementById('login-user');
+  var pEl=document.getElementById('login-pass');
+  var u=(uEl.value||'').trim();
+  var p=(pEl.value||'').trim();
+  var err=document.getElementById('login-err');
+  if(!u||!p){ if(err) err.textContent='Enter username & password'; return; }
+  var users=safeGetJSON('retail_roster_users_v1',[]);
+  var found=users.find(function(x){ return x.username.toLowerCase()===u.toLowerCase() && x.password===p; });
+  if(!found){
+    found=users.find(function(x){ return x.username.toLowerCase()===u.toLowerCase(); });
+    if(!found || found.password!==p){
+      if(err) err.textContent='Incorrect password or username';
+      return;
+    }
+  }
+  safeSet('repco_username', found.username);
+  safeSetJSON('retail_roster_session_v1', found);
+  if(err) err.textContent='';
+  document.getElementById('login-page').style.display='none';
+  document.getElementById('global-header').classList.add('show');
+  document.getElementById('repco-v65').classList.add('show');
+  try{ setupActivityTracking(); }catch(e){}
+  try{ applyRoleVisibility(); }catch(e){}
+  try{ populateFortnightSelect(); }catch(e){}
+  try{ renderRosterSafe(); }catch(e){}
+  try{ renderMySchedule(); }catch(e){}
+  try{ renderBuddies('today'); renderBuddies('tomorrow'); }catch(e){}
+  if(isManagerRole(getActualRole())){
+    setTimeout(function(){ restoreEditDraftIfNeeded(); }, 1200);
+  }
+  toast('Welcome '+found.firstName);
+}
+
+
+function doLogout(){
+  try{
+    var fns=safeGetJSON('retail_roster_byFortnight_v1',[]);
+    if(fns && fns.length>0){
+      safeSetJSON('retail_roster_backup_autosave_v1', {fns:fns, ts:Date.now(), by:safeGet('repco_username')||'', reason:'logout'});
+    }
+    if(activityCheckInterval){ clearInterval(activityCheckInterval); activityCheckInterval=null; }
+    safeSet('repco_username','');
+    safeSet('repco_last_activity','');
+  }catch(e){}
+  var v65=document.getElementById('repco-v65');
+  if(v65) v65.classList.remove('show');
+  document.querySelectorAll('.full-page').forEach(function(e){ e.classList.remove('show'); });
+  var gh2=document.getElementById('global-header');
+  if(gh2) gh2.classList.remove('show');
+  var lp2=document.getElementById('login-page');
+  if(lp2) lp2.style.display='flex';
+  var lu=document.getElementById('login-user');
+  var lp=document.getElementById('login-pass');
+  if(lu) lu.value='';
+  if(lp) lp.value='';
+  toast('Logged out - drafts preserved');
+}
+
 function seedIfEmpty(){
   let users=safeGetJSON('retail_roster_users_v1',null);
   if(!users) users=[];
@@ -1471,17 +1713,6 @@ function unhideEmployee(name){
   renderRosterSafe(); applyRoleVisibility();
 }
 
-function cloudSave(){}
-
-function onReqTypeChange(){
-  const type=document.getElementById('req-type')?.value; const area=document.getElementById('req-dynamic-area'); if(!area) return;
-  if(type==='unavailability'){
-    area.innerHTML='<div style="background:#F2F2F2;border:2px dashed #111;border-radius:12px;padding:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div><label style="font-weight:900;font-size:11px">START DATE</label><input id="unavail-start-date" type="date" min="2026-01-01" max="2040-01-01" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-weight:900;font-size:11px">END DATE</label><input id="unavail-end-date" type="date" min="2026-01-01" max="2040-01-01" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">OR MANUAL ENTRY (e.g. 19/10 - 25/10)</label><input id="unavail-manual" placeholder="19/10 - 25/10" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px"></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">REASON (optional)</label><textarea id="unavail-reason" placeholder="Reason (optional)" style="width:100%;padding:10px;border-radius:12px;border:2px solid #111;min-height:60px"></textarea></div><button onclick="submitUnavail()" style="margin-top:12px;background:#111;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;width:100%">SUBMIT</button></div>';
-  } else if(type==='shift-correction'){
-    const cur=getCurrentFortnight(); const myStaff=findMyStaff(cur); let options=''; if(myStaff){ cur.dates.forEach((d,i)=>{ const sh=myStaff.shifts[i]||'OFF'; if(sh.toUpperCase()!=='OFF' && sh!=='NA'){ options+='<option value="'+i+'">'+d.day+' '+d.date+' - '+fmt(sh)+'</option>'; } }); } if(!options) options='<option value="">No shifts</option>';
-    area.innerHTML='<div style="background:#FFF6CC;border:2px dashed #111;border-radius:12px;padding:12px"><label style="font-weight:900;font-size:11px">SELECT SHIFT</label><select id="corr-shift-idx" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px">'+options+'</select><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px"><div><label style="font-weight:900;font-size:11px">NEW START</label><input id="corr-start" type="time" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div><div><label style="font-weight:900;font-size:11px">NEW END</label><input id="corr-end" type="time" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111"></div></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">OR SET AS</label><select id="corr-special" style="width:100%;padding:10px;border-radius:9999px;border:2px solid #111;margin-top:4px"><option value="">Use times above</option><option value="OFF">OFF</option><option value="AB">AB - Absent</option></select></div><div style="margin-top:10px"><label style="font-weight:900;font-size:11px">REASON (optional)</label><textarea id="corr-reason" placeholder="Reason (optional)" style="width:100%;padding:10px;border-radius:12px;border:2px solid #111;min-height:60px"></textarea></div><button onclick="submitCorrection()" style="margin-top:12px;background:#E30613;color:#fff;border:none;border-radius:9999px;padding:12px;font-weight:900;width:100%">SUBMIT</button></div>';
-  } else { area.innerHTML=''; }
-}
 function submitUnavail(){
   const startDate=document.getElementById('unavail-start-date')?.value; const endDate=document.getElementById('unavail-end-date')?.value; const manual=(document.getElementById('unavail-manual')?.value||'').trim(); const reason=(document.getElementById('unavail-reason')?.value||'').trim(); let dates=[]; if(startDate && endDate){ dates=expandDateRange(startDate, endDate); } else if(manual){ if(manual.includes('-')){ let parts=manual.split('-'); if(parts.length===2){ let s=parts[0].trim(); let e=parts[1].trim(); if(s.includes('/') && e.includes('/')){ dates=expandDateRange(s,e); } } } else { dates=manual.split(',').map(x=>x.trim()).filter(Boolean); } } if(dates.length===0){toast('Select dates');return;} const username=safeGet('repco_username')||''; let all=safeGetJSON('retail_roster_requests_v2',[]); all.push({username, type:'unavailability', dates, reason, status:'pending', ts:Date.now()}); safeSetJSON('retail_roster_requests_v2',all); toast('Submitted - admin notified live'); renderRequests();
 }
