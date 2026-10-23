@@ -262,13 +262,24 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
             notes.push({ withdraw: offer });
           }
           if (!of || ov === undefined || ov === nv || !user || user.uid === me) return;
+          if (RC.quietUids && RC.quietUids[user.uid]) return;          // a request decision sends its own alert
           if (rcIsEmptyVal(ov) && rcIsEmptyVal(nv)) return;
-          (changesByUser[user.uid] = changesByUser[user.uid] || []).push(rcDayLabel(rcDecodeTree(nf), i) + ': ' + rcShiftText(nv) + ' (was ' + rcShiftText(ov) + ')');
+          var day = nf.dates && nf.dates[i];
+          if (day && day.iso && day.iso < getISO()) return;            // no alerts about days already gone
+          var label = rcDayLabel(rcDecodeTree(nf), i);
+          var bucket = changesByUser[user.uid] = changesByUser[user.uid] || { abs: [], back: [], shift: [] };
+          var orig = ns.originalShifts && ns.originalShifts[i] != null ? String(ns.originalShifts[i]) : ov;
+          if (rcIsAbsentVal(nv) && !rcIsAbsentVal(ov)) bucket.abs.push(label + ' - ' + (rcIsEmptyVal(orig) || rcIsAbsentVal(orig) ? 'day off' : 'your ' + orig + ' shift'));
+          else if (rcIsAbsentVal(ov) && !rcIsAbsentVal(nv)) bucket.back.push(label + ' - ' + (rcIsEmptyVal(nv) ? 'OFF' : 'back on ' + nv));
+          else bucket.shift.push(label + ': ' + rcShiftText(nv) + ' (was ' + rcShiftText(ov) + ')');
         });
       });
       Object.keys(changesByUser).forEach(function (uid) {
-        var lines = changesByUser[uid];
-        notes.push({ uids: [uid], note: { type: 'shift-update', title: 'Your shifts changed', body: lines.length <= 3 ? lines.join('\n') : (lines.length + ' shifts changed in ' + fnLabel + '. Open the roster to check.') } });
+        var b = changesByUser[uid];
+        if (b.abs.length) notes.push({ uids: [uid], note: { type: 'absent', title: 'Marked absent (AB)', body: 'A manager has marked you absent for:\n' + b.abs.join('\n') } });
+        if (b.back.length) notes.push({ uids: [uid], note: { type: 'absent-removed', title: 'Absence removed', body: b.back.join('\n') } });
+        var lines = b.shift;
+        if (lines.length) notes.push({ uids: [uid], note: { type: 'shift-update', title: 'Your shifts changed', body: lines.length <= 3 ? lines.join('\n') : (lines.length + ' shifts changed in ' + fnLabel + '. Open the roster to check.') } });
       });
       if (!of && prev) {
         var who = {};
@@ -290,9 +301,17 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
       if (!o && n.status === 'pending' && !rcIsMgr()) {
         notes.push({ uids: rcManagerUids(), note: { type: 'request-new', title: 'New request', body: (n.username || '') + ': ' + rcReqSummary(rcDecodeTree(n)) } });
       }
+      var dn = rcDecodeTree(n), aff = rcAsArray(dn.affected);
       if (o && o.status === 'pending' && n.status && n.status !== 'pending') {
         var u = rcUserByUsername(n.username);
-        if (u && u.uid !== me) notes.push({ uids: [u.uid], note: { type: 'request-' + n.status, title: 'Request ' + n.status, body: rcReqSummary(rcDecodeTree(n)) } });
+        var extra = '';
+        if (n.status === 'approved' && dn.type === 'unavailability') extra = aff.length ? '\nShifts marked absent (AB):\n' + aff.join('\n') : '\nNo rostered shifts were affected.';
+        if (n.status === 'approved' && dn.type === 'shift-correction' && aff.length) extra = '\nRoster updated: ' + aff.join(', ');
+        if (u && u.uid !== me) notes.push({ uids: [u.uid], note: { type: 'request-' + n.status, title: 'Request ' + n.status, body: rcReqSummary(dn) + extra } });
+      }
+      if (o && o.status === 'approved' && n.status === 'reversed') {
+        var ur = rcUserByUsername(n.username);
+        if (ur && ur.uid !== me) notes.push({ uids: [ur.uid], note: { type: 'request-reversed', title: 'Approval reversed', body: rcReqSummary(dn) + (aff.length ? '\nBack on the roster:\n' + aff.join('\n') : '') } });
       }
     });
   }
@@ -303,6 +322,7 @@ function rcReqSummary(r) {
   if (r.type === 'shift-correction') return 'Shift correction ' + (r.shiftDate || '') + ': ' + (r.oldShift || '') + ' -> ' + (r.newShift || '');
   return r.type || 'request';
 }
+function rcIsAbsentVal(v) { return /^(AB|ABSENT)$/i.test(String(v === undefined || v === null ? '' : v).trim()); }
 function rcIsEmptyVal(v) { var u = String(v === undefined || v === null ? '' : v).toUpperCase().trim(); return u === '' || u === 'OFF'; }
 function rcShiftText(v) { return rcIsEmptyVal(v) ? 'OFF' : String(v); }
 function rcDayLabel(fn, i) { var d = fn && fn.dates && fn.dates[i]; return d ? (d.day + ' ' + d.date) : ('day ' + (parseInt(i, 10) + 1)); }
@@ -880,30 +900,44 @@ function rcApplyApprovedUnavailability() {
   });
   if (changed) { safeSetJSON('retail_roster_byFortnight_v1', fns); toast('Approved unavailability applied to the new roster'); }
 }
+/* Roster saves made on behalf of a request decision don't send a separate "shifts changed" alert */
+function rcQuietFor(username, fn) {
+  var u = rcUserByUsername(username), q = {};
+  if (u) q[u.uid] = 1;
+  RC.quietUids = q;
+  try { fn(); } finally { RC.quietUids = null; }
+}
 function rcDecide(id, approve) {
   var f = rcFindReq(id); if (f.idx === -1) { toast('Request no longer exists'); return; }
   var req = f.all[f.idx];
   if (req.status !== 'pending') { toast('Already ' + req.status); return; }
   if (approve) {
-    var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), hit = 0, applied = {};
+    var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), hit = 0, applied = {}, affected = [];
     fns.forEach(function (fn) {
       var si = rcStaffIndexForUsername(fn, req.username); if (si === -1) return;
       var st = fn.staff[si];
       if (req.type === 'unavailability') {
-        rcAsArray(req.dates).forEach(function (d) { var di = fn.dates.findIndex(function (x) { return x.date === rcDateKey(d); }); if (di !== -1) { rcMarkUnavailable(st, di); hit++; } });
+        rcAsArray(req.dates).forEach(function (d) {
+          var di = fn.dates.findIndex(function (x) { return x.date === rcDateKey(d); }); if (di === -1) return;
+          var was = st.shifts[di];
+          if (!rcIsEmptyVal(was) && !rcIsAbsentVal(was) && !(fn.dates[di].iso < getISO())) affected.push(fn.dates[di].day + ' ' + fn.dates[di].date + ' - ' + was);
+          rcMarkUnavailable(st, di); hit++;
+        });
         applied[fn.id] = true;
       } else if (req.type === 'shift-correction') {
         if (req.fnId && fn.id !== req.fnId) return;
         var di = fn.dates.findIndex(function (x) { return x.date === req.shiftDate; });
         if (di === -1) return;
+        affected.push(fn.dates[di].day + ' ' + fn.dates[di].date + ': ' + req.newShift);
         if (String(req.newShift).toUpperCase() === 'AB') rcMarkUnavailable(st, di);
         else { if (!st.originalShifts) st.originalShifts = {}; if (!st.absentApproved) st.absentApproved = {}; if (st.originalShifts[di] == null) st.originalShifts[di] = st.shifts[di]; st.shifts[di] = req.newShift; st.absentApproved[di] = false; }
         hit++;
       }
     });
     if (!hit && req.type === 'shift-correction') { toast('Could not find ' + req.username + ' on the roster for ' + req.shiftDate + ' - check their first/last name in Account Management'); return; }
-    safeSetJSON('retail_roster_byFortnight_v1', fns);
+    rcQuietFor(req.username, function () { safeSetJSON('retail_roster_byFortnight_v1', fns); });
     req.appliedFns = applied;
+    req.affected = affected;
   }
   req.status = approve ? 'approved' : 'denied';
   req.decidedBy = RC.session.profile.username;
@@ -920,7 +954,7 @@ function rcReverseReq(id) {
   var req = f.all[f.idx];
   showCustomConfirm('Reverse this approval?', rcEsc(req.username) + ' - ' + rcEsc(rcReqSummary(req)) + '<br><br>The roster goes back to the uploaded shifts for those days.', function (ok) {
     if (!ok) return;
-    var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), n = 0;
+    var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), n = 0, back = [];
     fns.forEach(function (fn) {
       var si = rcStaffIndexForUsername(fn, req.username); if (si === -1) return;
       var st = fn.staff[si];
@@ -930,11 +964,12 @@ function rcReverseReq(id) {
         if (req.type === 'unavailability' && !(st.absentApproved && st.absentApproved[di])) return;
         if (st.originalShifts && st.originalShifts[di] != null) { st.shifts[di] = st.originalShifts[di]; delete st.originalShifts[di]; }
         if (st.absentApproved) st.absentApproved[di] = false;
+        if (!rcIsEmptyVal(st.shifts[di]) && !(fn.dates[di].iso < getISO())) back.push(fn.dates[di].day + ' ' + fn.dates[di].date + ' - ' + st.shifts[di]);
         n++;
       });
     });
-    safeSetJSON('retail_roster_byFortnight_v1', fns);
-    var g = rcFindReq(id); if (g.idx !== -1) { g.all[g.idx].status = 'reversed'; g.all[g.idx].decidedBy = RC.session.profile.username; g.all[g.idx].decidedTs = Date.now(); safeSetJSON('retail_roster_requests_v2', g.all); }
+    rcQuietFor(req.username, function () { safeSetJSON('retail_roster_byFortnight_v1', fns); });
+    var g = rcFindReq(id); if (g.idx !== -1) { g.all[g.idx].affected = back; g.all[g.idx].status = 'reversed'; g.all[g.idx].decidedBy = RC.session.profile.username; g.all[g.idx].decidedTs = Date.now(); safeSetJSON('retail_roster_requests_v2', g.all); }
     toast('Reversed - ' + n + ' day(s) back to the uploaded roster');
     renderRequests(); renderRosterSafe();
   });
