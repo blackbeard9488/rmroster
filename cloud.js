@@ -514,6 +514,7 @@ async function rcStartSession(user) {
   if (!profile) { await RC.auth.signOut(); rcShowLogin('This account has been disabled. Ask a manager for help.'); return; }
   rcSaveLegacyCopy();
   RC.session = { uid: user.uid, profile: profile };
+  rcStampLogin(user.uid, profile);
   RC.sessionStart = Date.now();
   safeSet('repco_username', profile.username);
   safeSet('repco_currentRole', String(profile.role || 'staff').toLowerCase());
@@ -591,6 +592,17 @@ function rcClearLocal() {
   ['retail_roster_users_v1', 'retail_roster_session_v1', 'retail_roster_backup_autosave_v1', 'repco_currentRole'].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
 }
 function rcForceLogout(msg) { doLogout(); setTimeout(function () { rcLoginMsg(msg); }, 50); }
+
+/* Lets managers confirm each person has logged in and set up their phone */
+function rcDeviceKind() { var u = navigator.userAgent; return /android/i.test(u) ? 'Android' : rcIsIOS() ? 'iPhone' : /mobile/i.test(u) ? 'phone' : 'computer'; }
+function rcStampLogin(uid, profile) {
+  var p = 'users/' + uid + '/', upd = {}, now = firebase.database.ServerValue.TIMESTAMP;
+  if (!profile.firstLoginTs) upd[p + 'firstLoginTs'] = now;
+  upd[p + 'lastLoginTs'] = now;
+  upd[p + 'lastDevice'] = rcDeviceKind();
+  if (rcIsStandalone()) upd[p + 'appInstalled'] = true;
+  RC.db.ref().update(upd).catch(function (e) { console.warn('login stamp', e); });
+}
 
 /* Data the old version kept on this device, saved once so it can be imported later */
 function rcSaveLegacyCopy() {
@@ -713,7 +725,12 @@ renderAccountMgmtPage = function () {
   var h = '<div class="card"><div class="rc-h">ALL USERS (' + users.length + ')</div>';
   h += users.map(function (u) {
     var linked = cur && rcStaffForUser(cur, u) !== -1;
-    return '<div class="rc-row"><div><b>' + rcEsc(u.username) + '</b> <span class="rc-pill">' + rcEsc(u.role) + '</span><br><span class="rc-small">' + rcEsc((u.firstName || '') + ' ' + (u.lastName || '')) + ' • ' + rcEsc(u.employmentType || '') + ' • ' + (linked ? '<span style="color:#1a7f37">on roster</span>' : '<span style="color:#E30613">no matching roster name</span>') + '</span></div>'
+    var when = function (t) { return new Date(t).toLocaleString('en-AU', { timeZone: 'Australia/Brisbane', day: '2-digit', month: '2-digit', year: '2-digit', hour: 'numeric', minute: '2-digit' }); };
+    var setup = u.firstLoginTs
+      ? '<span class="am-ok">First login ' + rcEsc(when(u.firstLoginTs)) + '</span>' + (u.lastLoginTs ? ' • last seen ' + rcEsc(when(u.lastLoginTs)) + (u.lastDevice ? ' on ' + rcEsc(u.lastDevice) : '') : '')
+        + ' • ' + (u.appInstalled ? '<span class="am-ok">app installed ✓</span>' : '<span class="am-no">app not installed</span>') + ' • ' + (u.pushOn ? '<span class="am-ok">alerts on ✓</span>' : '<span class="am-no">alerts off</span>')
+      : '<span class="am-no">Never logged in</span>';
+    return '<div class="rc-row"><div><b>' + rcEsc(u.username) + '</b> <span class="rc-pill">' + rcEsc(u.role) + '</span><br><span class="rc-small">' + rcEsc((u.firstName || '') + ' ' + (u.lastName || '')) + ' • ' + rcEsc(u.employmentType || '') + ' • ' + (linked ? '<span style="color:#1a7f37">on roster</span>' : '<span style="color:#E30613">no matching roster name</span>') + '</span><br><span class="rc-small">' + setup + '</span></div>'
       + '<div class="rc-btns"><button class="rc-b" onclick="rcEditUser(\'' + u.uid + '\')">EDIT</button><button class="rc-b" onclick="rcResetUserPassword(\'' + u.uid + '\')">RESET PASSWORD</button>' + (u.uid === RC.session.uid ? '' : '<button class="rc-b rc-red" onclick="rcDeleteUser(\'' + u.uid + '\')">DEL</button>') + '</div></div>';
   }).join('');
   h += '<div class="rc-h" style="margin-top:16px">ADD NEW USER</div><div class="rc-small">First and last name must match the roster so their shifts, offers and alerts reach them.</div>'
@@ -1584,6 +1601,8 @@ async function rcSubscribePush(silent) {
     var json = sub.toJSON();
     var id = Array.prototype.map.call(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json.endpoint))), function (x) { return x.toString(16).padStart(2, '0'); }).join('').slice(0, 32);
     await RC.db.ref('push/' + RC.session.uid + '/' + id).set({ endpoint: json.endpoint, keys: json.keys, ua: navigator.userAgent.slice(0, 160), ts: firebase.database.ServerValue.TIMESTAMP });
+    var pu = {}; pu['users/' + RC.session.uid + '/pushOn'] = true; pu['users/' + RC.session.uid + '/pushTs'] = firebase.database.ServerValue.TIMESTAMP;
+    RC.db.ref().update(pu).catch(function () {});
     if (!silent) toast('Notifications on for this device');
   } catch (e) { if (!silent) toast('Could not turn on notifications: ' + (e.message || e)); console.warn('push subscribe', e); }
   rcRefreshPushState();
@@ -2256,6 +2275,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.bd-legend{font-size:10px;color:#666;margin-top:8px;display:flex;align-items:center;gap:6px}.bd-key{display:inline-block;width:18px;height:8px;border-radius:9999px;background:#111}.bd-key.me{background:#ffd6d9}'
     + '.pc-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #eee;cursor:pointer;flex-wrap:wrap}.pc-item input[type=checkbox]{width:22px;height:22px;accent-color:#E30613}'
     + '.pc-who{flex:1;min-width:150px}.pc-vals{display:flex;align-items:center;gap:6px;font-weight:900}.pc-cur{color:#999;text-decoration:line-through}.pc-vals input{width:120px;padding:7px 10px;border:2px solid #111;border-radius:9999px;font-size:16px;font-weight:700}'
+    + '.am-ok{color:#1a7f37;font-weight:700}.am-no{color:#E30613;font-weight:700}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
