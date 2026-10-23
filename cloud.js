@@ -825,6 +825,54 @@ deleteHiddenStaff = (function (orig) {
   };
 })(deleteHiddenStaff);
 
+/* Hidden Staff page: current shifts from the roster, edit in place, delete */
+renderHiddenStaffPage = (function (orig) {
+  return function () {
+    try { orig.apply(this, arguments); } catch (e) { console.error(e); }
+    var list = document.getElementById('hs-list'); if (!list) return;
+    var fn = getSelectedFortnight() || getCurrentFortnight();
+    var rows = fn ? (fn.staff || []).map(function (st, i) { return { st: st, i: i }; }).filter(function (x) { return isHiddenStaffRow(x.st); }) : [];
+    if (!rows.length) { list.innerHTML = '<div class="card">No hidden staff yet.</div>'; return; }
+    list.innerHTML = '<div class="card"><div class="rc-h">HIDDEN STAFF' + (fn ? ' • ' + rcEsc(rcFnRange(fn)) : '') + '</div>' + rows.map(function (x) {
+      var st = x.st, u = rcUserForStaff(st), name = st.firstName + ' ' + st.lastName, key = rcEsc(name).replace(/'/g, '');
+      var hrs = 0, chips = fn.dates.map(function (d, i) { var sh = st.shifts[i]; var on = parseShiftRange(sh); if (on) hrs += netH(sh); return '<span class="hs-chip' + (on ? ' on' : '') + '"><b>' + rcEsc(d.day.slice(0, 2)) + ' ' + rcEsc(d.date.slice(0, 2)) + '</b>' + (on ? rcEsc(fmt(sh)) : rcIsUAVal(sh) ? 'UA' : rcIsAbsentVal(sh) ? 'AB' : '-') + '</span>'; }).join('');
+      return '<div class="hs-person" id="hs-p-' + x.i + '"><div class="rc-row" style="border:none;padding:0"><div><b>' + rcEsc(String(st.lastName).toUpperCase() + ', ' + st.firstName) + '</b> <span class="rc-pill">' + rcEsc(st.employmentType || 'casual') + '</span><br><span class="rc-small">' + (u ? 'Login: ' + rcEsc(u.username) : 'No login') + ' • ' + hrs.toFixed(1) + 'h this fortnight</span></div>'
+        + '<div class="rc-btns"><button class="rc-b" onclick="rcHiddenEditShifts(' + x.i + ')">EDIT SHIFTS</button><button class="rc-b rc-white" onclick="rcHiddenEditDetails(' + x.i + ')">EDIT</button><button class="rc-b rc-red" onclick="deleteHiddenStaff(\'' + key + '\')">DELETE</button></div></div>'
+        + '<div class="hs-chips">' + chips + '</div><div class="hs-edit" id="hs-e-' + x.i + '"></div></div>';
+    }).join('') + '</div>';
+  };
+})(renderHiddenStaffPage);
+function rcHiddenEditShifts(rowIdx) {
+  showMain();
+  setTimeout(function () {
+    var td = document.querySelector('#roster-mount .hidden-sec td[data-r="' + rowIdx + '"][data-i="0"]');
+    if (!td) { toast('Their row is in the last table on the roster'); return; }
+    td.scrollIntoView({ block: 'center', inline: 'nearest' });
+    editCell(td, rowIdx, 0);
+    toast('Type a shift and press Tab to move along the days');
+  }, 300);
+}
+function rcHiddenEditDetails(rowIdx) {
+  var fn = getSelectedFortnight() || getCurrentFortnight(); var st = fn && fn.staff[rowIdx]; if (!st) return;
+  var box = document.getElementById('hs-e-' + rowIdx); if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="rc-grid"><input id="hse-f" value="' + rcEsc(st.firstName) + '" placeholder="First name"><input id="hse-l" value="' + rcEsc(st.lastName) + '" placeholder="Last name"><select id="hse-t"><option value="casual"' + (st.employmentType === 'casual' ? ' selected' : '') + '>casual</option><option value="fulltime"' + (st.employmentType !== 'casual' ? ' selected' : '') + '>full time</option></select></div>'
+    + '<div class="rc-btns"><button class="rc-b" onclick="rcHiddenSaveDetails(' + rowIdx + ')">SAVE</button><button class="rc-b rc-white" onclick="document.getElementById(\'hs-e-' + rowIdx + '\').innerHTML=\'\'">CANCEL</button></div>';
+}
+function rcHiddenSaveDetails(rowIdx) {
+  var cur = getSelectedFortnight() || getCurrentFortnight(); var st0 = cur && cur.staff[rowIdx]; if (!st0) return;
+  var f = document.getElementById('hse-f').value.trim(), l = document.getElementById('hse-l').value.trim(), t = document.getElementById('hse-t').value;
+  if (!f || !l) { toast('First and last name are needed'); return; }
+  var oldName = (st0.firstName + ' ' + st0.lastName).toLowerCase(), u = rcUserForStaff(st0);
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
+  fns.forEach(function (fn) { (fn.staff || []).forEach(function (st) { if ((st.firstName + ' ' + st.lastName).toLowerCase() === oldName) { st.firstName = f; st.lastName = l; st.employmentType = t; st.isHidden = true; } }); fn.staff.sort(rcStaffSort); });
+  var hid = rcAsArray(safeGetJSON('retail_roster_hidden_v1', [])).map(function (n) { return String(n).toLowerCase() === oldName ? f + ' ' + l : n; });
+  safeSetJSON('retail_roster_hidden_v1', hid);
+  safeSetJSON('retail_roster_byFortnight_v1', fns);
+  if (u) { var upd = {}; upd['users/' + u.uid + '/firstName'] = f; upd['users/' + u.uid + '/lastName'] = l; upd['users/' + u.uid + '/employmentType'] = t; RC.db.ref().update(upd).catch(function () {}); }
+  toast('Saved'); renderHiddenStaffPage();
+}
+
 /* Own account page */
 renderAccountPage = function () {
   var target = document.getElementById('account-list'); var inner = document.getElementById('account-inner');
@@ -1022,7 +1070,7 @@ function rcDeleteReq(id) {
 }
 var _rcOrigRenderRequests = renderRequests;
 renderRequests = function () {
-  if (!rcIsMgr()) { _rcOrigRenderRequests(); setTimeout(rcRenderMyRequestsList, 0); return; }
+  if (!rcIsMgr()) { rcRenderTimeOffForm(); return; }
   var el = document.getElementById('requests-list'); if (!el) return;
   var reqs = rcAsArray(safeGetJSON('retail_roster_requests_v2', []));
   var pending = reqs.filter(function (r) { return !r.status || r.status === 'pending'; });
@@ -1038,6 +1086,36 @@ renderRequests = function () {
     + (done.length ? '<div class="rc-h" style="margin:14px 0 8px">RECENT DECISIONS</div>' + done.map(function (r) { return card(r, false); }).join('') : '')
     + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK</button></div>';
 };
+/* Staff: one simple time-off form (shift changes are made from My Schedule) */
+function rcRenderTimeOffForm() {
+  var el = document.getElementById('requests-list'); if (!el) return;
+  var tomorrow = new Date(new Date(getISO() + 'T00:00:00').getTime() + 86400000);
+  var iso = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  el.innerHTML = '<div class="card"><div class="rc-h">REQUEST TIME OFF</div>'
+    + '<div class="ms-edit-row" style="margin-top:6px"><label class="rc-to">First day<input type="date" id="to-from" min="' + getISO() + '" value="' + iso(tomorrow) + '"></label><label class="rc-to">Last day <span style="font-weight:400">(blank = one day)</span><input type="date" id="to-to" min="' + getISO() + '"></label></div>'
+    + '<input id="to-reason" class="rc-to-in" placeholder="Reason (optional)">'
+    + '<button class="rc-b rc-red rc-wide" style="margin-top:10px" onclick="rcSubmitTimeOff()">SEND REQUEST</button>'
+    + '<div class="rc-small" style="margin-top:8px">Need to change one shift instead? <a href="#" onclick="openPage(\'mysched-page\');return false">Tap it on My Schedule</a>.</div></div>'
+    + '<div id="rc-my-reqs"></div>'
+    + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK</button></div>';
+  rcRenderMyRequestsList();
+}
+function rcSubmitTimeOff() {
+  var from = (document.getElementById('to-from') || {}).value, to = (document.getElementById('to-to') || {}).value || from;
+  var reason = ((document.getElementById('to-reason') || {}).value || '').trim();
+  if (!from) { toast('Choose the first day'); return; }
+  if (to < from) { toast('The last day is before the first day'); return; }
+  if (from < getISO()) { toast('Choose today or a later day'); return; }
+  var dates = expandDateRange(from, to);
+  if (!dates.length) { toast('Choose the dates'); return; }
+  if (dates.length > 60) { toast('That is more than 60 days - please split it up'); return; }
+  var all = rcAsArray(safeGetJSON('retail_roster_requests_v2', []));
+  all.push({ username: RC.session.profile.username, type: 'unavailability', dates: dates, reason: reason, status: 'pending', ts: Date.now() });
+  safeSetJSON('retail_roster_requests_v2', all);
+  toast('Time-off request sent');
+  rcRenderTimeOffForm();
+}
+
 /* Staff: replace the "my requests" box with one that shows live status and can withdraw pending ones */
 function rcRenderMyRequestsList() {
   var el = document.getElementById('requests-list'); if (!el || !RC.session) return;
@@ -1865,6 +1943,54 @@ function rcStartSchedTicker() {
   }, 15000);
 }
 
+/* ---------- Today's / Tomorrow's Buddies ---------- */
+renderBuddies = function (which) {
+  var el = document.getElementById(which === 'tomorrow' ? 'buddies-tomorrow-list' : 'buddies-today-list'); if (!el) return;
+  try {
+    var iso = getISO(); if (which === 'tomorrow') { var t = new Date(iso + 'T12:00:00'); t.setDate(t.getDate() + 1); iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+    var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
+    var fn = fns.find(function (f) { return (f.dates || []).some(function (d) { return d.iso === iso; }); });
+    var tabs = '<div class="rc-tabs"><button class="rc-tab' + (which !== 'tomorrow' ? ' on' : '') + '" onclick="openPage(\'buddies-today-page-v141\')">TODAY</button><button class="rc-tab' + (which === 'tomorrow' ? ' on' : '') + '" onclick="openPage(\'buddies-tomorrow-page-v141\')">TOMORROW</button></div>';
+    if (!fn) { el.innerHTML = tabs + '<div class="card">No roster has been uploaded for ' + (which === 'tomorrow' ? 'tomorrow' : 'today') + ' yet.</div>'; return; }
+    var i = fn.dates.findIndex(function (d) { return d.iso === iso; }), day = fn.dates[i];
+    var me = findMyStaff(fn);
+    var mineSh = me ? String(me.shifts[i] || 'OFF') : 'OFF';
+    var meOut = !me || (me.unavailable && me.unavailable[i]) || (me.absentApproved && me.absentApproved[i]) || rcIsUAVal(mineSh) || rcIsAbsentVal(mineSh);
+    var mine = meOut ? null : parseShiftRange(mineSh);
+    var people = (fn.staff || []).filter(function (st) {
+      if (st === me || !st.firstName) return false;
+      if (isHiddenStaffRow(st)) return false;
+      if ((st.unavailable && st.unavailable[i]) || (st.absentApproved && st.absentApproved[i])) return false;
+      return !!parseShiftRange(st.shifts[i]);
+    }).map(function (st) {
+      var p = parseShiftRange(st.shifts[i]);
+      var ov = mine ? Math.max(0, Math.min(mine.end, p.end) - Math.max(mine.start, p.start)) : 0;
+      var mgr = (st.cellGreen && st.cellGreen[i]) || isAutoGreenShift(st, st.shifts[i]);
+      return { st: st, p: p, ov: ov, mgr: mgr };
+    }).filter(function (x) { return !mine || x.ov > 0; }).sort(function (a, b) { return a.p.start - b.p.start || a.p.end - b.p.end; });
+    var lo = Math.min.apply(null, people.map(function (x) { return x.p.start; }).concat(mine ? [mine.start] : [])), hi = Math.max.apply(null, people.map(function (x) { return x.p.end; }).concat(mine ? [mine.end] : []));
+    if (!isFinite(lo)) { lo = 7 * 60; hi = 18 * 60; }
+    lo = Math.floor(lo / 60) * 60; hi = Math.ceil(hi / 60) * 60; if (hi - lo < 240) hi = lo + 240;
+    var pct = function (m) { return ((m - lo) / (hi - lo) * 100).toFixed(2) + '%'; };
+    var hm = function (m) { var h = Math.floor(m / 60) % 24, mm = m % 60; return (h % 12 || 12) + (mm ? ':' + String(mm).padStart(2, '0') : '') + (h < 12 ? 'am' : 'pm'); };
+    var dur = function (m) { return Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : ''); };
+    var band = mine ? '<div class="bd-me-band" style="left:' + pct(mine.start) + ';width:calc(' + pct(mine.end) + ' - ' + pct(mine.start) + ')"></div>' : '';
+    var h = tabs + '<div class="bd-hero"><div class="ms-kicker">' + (which === 'tomorrow' ? 'TOMORROW' : 'TODAY') + '</div><div class="bd-day">' + rcEsc(day.day + ' ' + day.date) + '</div>'
+      + '<div class="bd-you">' + (mine ? 'You: <b>' + rcEsc(fmt(mineSh)) + '</b>' : meOut && me && (rcIsUAVal(mineSh) || rcIsAbsentVal(mineSh) || (me.unavailable && me.unavailable[i]) || (me.absentApproved && me.absentApproved[i])) ? 'You are not working this day' : "You're OFF") + '</div>'
+      + '<div class="bd-count">' + (mine ? people.length + (people.length === 1 ? ' buddy' : ' buddies') + ' on with you' : people.length + ' working') + '</div></div>';
+    if (!people.length) h += '<div class="card">' + (mine ? 'Nobody else overlaps with your shift.' : 'Nobody is rostered this day.') + '</div>';
+    else {
+      var ticks = ''; for (var m = lo; m <= hi; m += 120) ticks += '<span style="left:' + pct(m) + '">' + hm(m) + '</span>';
+      h += '<div class="bd-list"><div class="bd-axis">' + ticks + '</div>' + people.map(function (x) {
+        return '<div class="bd-row"><div class="bd-name"><b>' + rcEsc(x.st.firstName) + '</b> ' + rcEsc(String(x.st.lastName || '').charAt(0).toUpperCase() + String(x.st.lastName || '').slice(1).toLowerCase()) + (x.mgr ? ' <span class="ms-tag" style="background:#1a7f37">MANAGER</span>' : '') + '<span class="bd-time">' + rcEsc(fmt(x.st.shifts[i])) + (mine ? ' • ' + dur(x.ov) + ' together' : '') + '</span></div>'
+          + '<div class="bd-track">' + band + '<div class="bd-bar' + (x.mgr ? ' mgr' : '') + '" style="left:' + pct(x.p.start) + ';width:calc(' + pct(x.p.end) + ' - ' + pct(x.p.start) + ')"></div></div></div>';
+      }).join('') + (mine ? '<div class="bd-legend"><span class="bd-key me"></span>your shift <span class="bd-key"></span>their shift</div>' : '') + '</div>';
+    }
+    h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">BACK TO ROSTER</button></div>';
+    el.innerHTML = h;
+  } catch (e) { console.error('buddies', e); el.innerHTML = '<div class="card">Could not show buddies: ' + rcEsc(e.message) + '</div>'; }
+};
+
 /* ---------- PDF export: a picture of the roster tables exactly as they look on screen ---------- */
 exportPDF = async function () {
   var fn = getSelectedFortnight() || getCurrentFortnight();
@@ -1999,6 +2125,18 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.ms-edit{background:#fff5f5;border-top:1px dashed #E30613;padding:12px 14px 14px;font-size:13px}.ms-edit-h{font-weight:900;margin-bottom:8px}'
     + '.ms-edit-row{display:flex;gap:10px}.ms-edit-row label{flex:1;font-size:11px;font-weight:900;display:flex;flex-direction:column;gap:4px}'
     + '.ms-edit input{width:100%;box-sizing:border-box;padding:9px 12px;border:2px solid #111;border-radius:9999px;font-size:16px;background:#fff}.ms-reason{margin-top:8px}'
+    + '.rc-to{flex:1;font-size:11px;font-weight:900;display:flex;flex-direction:column;gap:4px}.rc-to input,.rc-to-in{width:100%;box-sizing:border-box;padding:9px 12px;border:2px solid #111;border-radius:9999px;font-size:16px;background:#fff}.rc-to-in{margin-top:8px}'
+    + '.hs-person{padding:10px 0;border-top:1px solid #e3e3e3}.hs-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}'
+    + '.hs-chip{font-size:10px;border:1px solid #ccc;border-radius:8px;padding:3px 6px;color:#999;display:flex;flex-direction:column;align-items:center;min-width:44px}.hs-chip b{font-size:9px;color:#666}.hs-chip.on{border-color:#111;color:#111;font-weight:700;background:#fff}'
+    + '.hs-edit{margin-top:8px}'
+    + '.bd-hero{background:#0a0a0a;color:#fff;border-radius:16px;padding:16px 18px;margin-bottom:12px;border-left:12px solid #E30613;box-shadow:5px 5px 0 #E30613}'
+    + '.bd-day{font-family:"Arial Black",Impact,sans-serif;font-size:28px;font-style:italic;margin:2px 0}.bd-you{font-size:14px}.bd-count{margin-top:6px;font-size:12px;font-weight:900;color:#E30613;letter-spacing:.5px;text-transform:uppercase}'
+    + '.bd-list{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;padding:10px 14px 12px;margin-bottom:12px}'
+    + '.bd-axis{position:relative;height:16px;margin:0 0 4px;font-size:9px;color:#888;font-weight:700}.bd-axis span{position:absolute;transform:translateX(-50%);white-space:nowrap}.bd-axis span:first-child{transform:none}.bd-axis span:last-child{transform:translateX(-100%)}'
+    + '.bd-row{padding:8px 0;border-top:1px solid #eee}.bd-name{font-size:14px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}.bd-time{margin-left:auto;font-size:11px;font-weight:700;color:#555}'
+    + '.bd-track{position:relative;height:12px;background:#f1f1f1;border-radius:9999px;margin-top:6px;overflow:hidden}.bd-me-band{position:absolute;top:0;bottom:0;background:#ffd6d9}'
+    + '.bd-bar{position:absolute;top:2px;bottom:2px;background:#111;border-radius:9999px}.bd-bar.mgr{background:#1a7f37}'
+    + '.bd-legend{font-size:10px;color:#666;margin-top:8px;display:flex;align-items:center;gap:6px}.bd-key{display:inline-block;width:18px;height:8px;border-radius:9999px;background:#111}.bd-key.me{background:#ffd6d9}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
