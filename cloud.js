@@ -250,6 +250,7 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
       Object.keys((nf && nf.staff) || {}).forEach(function (sk) {
         var ns = nf.staff[sk], os = of && of.staff && of.staff[sk];
         var user = rcUserForStaff(ns);
+        var targets = rcUsersForStaff(ns).map(function (u) { return u.uid; }).filter(function (uid) { return uid !== me; });
         var nsh = (ns && ns.shifts) || {}, osh = (os && os.shifts) || {};
         Object.keys(nsh).forEach(function (i) {
           var nv = String(nsh[i]), ov = osh[i] === undefined ? undefined : String(osh[i]);
@@ -261,33 +262,32 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
             rcWithdrawOfferAlert(offer, updates);
             notes.push({ withdraw: offer });
           }
-          if (!of || ov === undefined || ov === nv || !user || user.uid === me) return;
-          if (RC.quietUids && RC.quietUids[user.uid]) return;          // a request decision sends its own alert
+          if (!of || ov === undefined || ov === nv || !targets.length) return;
+          if (RC.quietUids && targets.some(function (uid) { return RC.quietUids[uid]; })) return;   // a request decision sends its own alert
           if (rcIsEmptyVal(ov) && rcIsEmptyVal(nv)) return;
           var day = nf.dates && nf.dates[i];
           if (day && day.iso && day.iso < getISO()) return;            // no alerts about days already gone
           var label = rcDayLabel(rcDecodeTree(nf), i);
-          var bucket = changesByUser[user.uid] = changesByUser[user.uid] || { abs: [], back: [], shift: [] };
+          var bucket = changesByUser[sk] = changesByUser[sk] || { abs: [], back: [], shift: [], uids: targets };
           var orig = ns.originalShifts && ns.originalShifts[i] != null ? String(ns.originalShifts[i]) : ov;
           if (rcIsAbsentVal(nv) && !rcIsAbsentVal(ov)) bucket.abs.push(label + ' - ' + (rcIsEmptyVal(orig) || rcIsAbsentVal(orig) ? 'day off' : 'your ' + orig + ' shift'));
           else if (rcIsAbsentVal(ov) && !rcIsAbsentVal(nv)) bucket.back.push(label + ' - ' + (rcIsEmptyVal(nv) ? 'OFF' : 'back on ' + nv));
           else bucket.shift.push(label + ': ' + rcShiftText(nv) + ' (was ' + rcShiftText(ov) + ')');
         });
       });
-      Object.keys(changesByUser).forEach(function (uid) {
-        var b = changesByUser[uid];
-        if (b.abs.length) notes.push({ uids: [uid], note: { type: 'absent', title: 'Marked absent (AB)', body: 'A manager has marked you absent for:\n' + b.abs.join('\n') } });
-        if (b.back.length) notes.push({ uids: [uid], note: { type: 'absent-removed', title: 'Absence removed', body: b.back.join('\n') } });
+      Object.keys(changesByUser).forEach(function (key) {
+        var b = changesByUser[key], uid = b.uids;
+        if (b.abs.length) notes.push({ uids: uid, note: { type: 'absent', title: 'Marked absent (AB)', body: 'A manager has marked you absent for:\n' + b.abs.join('\n') } });
+        if (b.back.length) notes.push({ uids: uid, note: { type: 'absent-removed', title: 'Absence removed', body: b.back.join('\n') } });
         var lines = b.shift;
-        if (lines.length) notes.push({ uids: [uid], note: { type: 'shift-update', title: 'Your shifts changed', body: lines.length <= 3 ? lines.join('\n') : (lines.length + ' shifts changed in ' + fnLabel + '. Open the roster to check.') } });
+        if (lines.length) notes.push({ uids: uid, note: { type: 'shift-update', title: 'Your shifts changed', body: lines.length <= 3 ? lines.join('\n') : (lines.length + ' shifts changed in ' + fnLabel + '. Open the roster to check.') } });
       });
       if (!of && prev) {
         var who = {};
         Object.keys((nf && nf.staff) || {}).forEach(function (sk) {
-          var ns = nf.staff[sk], u = rcUserForStaff(ns);
-          if (!u || u.uid === me) return;
+          var ns = nf.staff[sk];
           var works = Object.keys((ns && ns.shifts) || {}).some(function (i) { return !rcIsEmptyVal(String(ns.shifts[i])); });
-          if (works) who[u.uid] = 1;
+          if (works) rcUsersForStaff(ns).forEach(function (u) { if (u.uid !== me) who[u.uid] = 1; });
         });
         var uids = Object.keys(who);
         if (uids.length) notes.push({ uids: uids, note: { type: 'roster-new', title: 'New roster published', body: fnLabel + ' is now on the roster.' } });
@@ -332,12 +332,17 @@ function rcFnRange(fn) { var d = (fn && fn.dates) || []; return d.length ? (d[0]
 function rcUserList() { return Object.keys(RC.users).map(function (uid) { return Object.assign({ uid: uid }, RC.users[uid]); }); }
 function rcManagerUids() { return rcUserList().filter(function (u) { return rcIsMgrRole(u.role); }).map(function (u) { return u.uid; }); }
 function rcUserByUsername(name) { var l = String(name || '').toLowerCase(); return rcUserList().find(function (u) { return u.usernameLower === l; }) || null; }
-function rcUserForStaff(st) {
-  if (!st) return null;
+/* Every login whose name matches a roster row (someone can have an admin and a staff login) */
+function rcUsersForStaff(st) {
+  if (!st) return [];
   var f = String(st.firstName || '').toLowerCase().trim(), l = String(st.lastName || '').toLowerCase().trim();
-  if (!f) return null;
-  var list = rcUserList();
-  return list.find(function (u) { return String(u.firstName || '').toLowerCase().trim() === f && String(u.lastName || '').toLowerCase().trim() === l; }) || null;
+  if (!f) return [];
+  return rcUserList().filter(function (u) { return String(u.firstName || '').toLowerCase().trim() === f && String(u.lastName || '').toLowerCase().trim() === l; });
+}
+/* The one login that receives shift offers for a row: their staff login if they have one */
+function rcUserForStaff(st) {
+  var all = rcUsersForStaff(st);
+  return all.find(function (u) { return !rcIsMgrRole(u.role); }) || all[0] || null;
 }
 function rcStaffForUser(fn, user) {
   if (!fn || !user) return -1;
@@ -557,10 +562,22 @@ doLogout = function () {
   rcEndSession();
 };
 function rcEndSession() {
+  var leaving = RC.session && RC.session.uid;
   RC.session = null;
   rcDetach();
   rcClearLocal();
-  if (RC.auth && RC.auth.currentUser) RC.auth.signOut();
+  if (!RC.auth || !RC.auth.currentUser) return;
+  // Stop this phone getting the leaving person's alerts, then sign out
+  var done = false, out = function () { if (done) return; done = true; if (RC.auth.currentUser) RC.auth.signOut(); };
+  setTimeout(out, 2500);
+  rcThisDeviceSubId().then(function (sid) { return sid && leaving ? RC.db.ref('push/' + leaving + '/' + sid).remove() : null; }).catch(function () {}).then(out);
+}
+function rcThisDeviceSubId() {
+  if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+  return navigator.serviceWorker.getRegistration().then(function (reg) { return reg ? reg.pushManager.getSubscription() : null; }).then(function (sub) {
+    if (!sub) return null;
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(sub.endpoint)).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return x.toString(16).padStart(2, '0'); }).join('').slice(0, 32); });
+  });
 }
 /* Nothing from the cloud stays on the device after logout */
 function rcClearLocal() {
@@ -1290,16 +1307,18 @@ function rcNotify(uids, note, fixedKey) {
     ids[uid] = key;
     upd['notifications/' + uid + '/' + key] = Object.assign({ ts: firebase.database.ServerValue.TIMESTAMP, read: false, from: RC.session.profile.username }, note);
   });
-  RC.db.ref().update(upd).then(function () { rcSendPush(ids, note); }).catch(function (e) { console.error('notify', e); });
+  return RC.db.ref().update(upd).then(function () { return rcSendPush(ids, note); }).catch(function (e) { console.error('notify', e); return { error: rcErrMsg(e) }; });
 }
+/* Resolves with what the relay reported ({sent, removed} or {error}) so problems can be shown */
 function rcSendPush(ids, note) {
-  if (!RC_PUSH_WORKER_URL || !RC.auth.currentUser) return;
-  RC.auth.currentUser.getIdToken().then(function (token) {
+  if (!RC_PUSH_WORKER_URL || !RC.auth.currentUser) return Promise.resolve({ error: 'relay not configured' });
+  return RC.auth.currentUser.getIdToken().then(function (token) {
     return fetch(RC_PUSH_WORKER_URL.replace(/\/$/, '') + '/notify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idToken: token, targets: Object.keys(ids).map(function (uid) { return { uid: uid, tag: ids[uid] }; }), title: note.title, body: note.body, close: !!note.close })
     });
-  }).catch(function (e) { console.warn('push not sent', e); });
+  }).then(function (r) { return r.json().catch(function () { return { error: 'relay answered ' + r.status }; }); })
+    .catch(function (e) { console.warn('push not sent', e); return { error: 'could not reach the relay (' + (e.message || e) + ')' }; });
 }
 function rcAlertForeground(n) {
   toast('🔔 ' + n.title);
@@ -1452,7 +1471,18 @@ function rcEnablePush() {
     navigator.serviceWorker.register('sw.js').then(function () { return rcSubscribePush(false); });
   });
 }
-function rcTestPush() { rcNotify([RC.session.uid], { type: 'test', title: 'Test alert', body: 'Notifications are working on this device.' }); }
+function rcTestPush() {
+  toast('Sending test alert...');
+  rcNotify([RC.session.uid], { type: 'test', title: 'Test alert', body: 'Notifications are working on this device.' }).then(function (res) {
+    var msg = !res ? 'No answer from the relay'
+      : res.error ? 'Test failed: ' + res.error
+      : res.sent ? 'Relay sent the alert to ' + res.sent + ' device(s)' + (res.removed ? ' (' + res.removed + ' old device(s) removed)' : '') + '. Lock your phone - it should appear within a few seconds.'
+      : res.removed ? 'This device\'s registration had expired and was removed. Press TURN ON NOTIFICATIONS again.'
+      : 'Relay found your device but the phone\'s push service refused the alert.';
+    var st = document.getElementById('rc-push-state'); if (st) st.textContent = msg;
+    toast(msg);
+  });
+}
 
 /* ---------- new phone: set up the app and notifications ---------- */
 var _rcInstallEvt = null;
