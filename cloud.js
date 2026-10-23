@@ -324,7 +324,8 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
 function rcReqSummary(r) {
   if (!r) return '';
   if (r.type === 'unavailability') { var d = rcAsArray(r.dates); return 'Unavailable ' + (d.length > 1 ? d[0] + ' - ' + d[d.length - 1] : (d[0] || '')) + (r.reason ? ' (' + r.reason + ')' : ''); }
-  if (r.type === 'shift-correction') return 'Shift correction ' + (r.shiftDate || '') + ': ' + (r.oldShift || '') + ' -> ' + (r.newShift || '');
+  if (r.type === 'shift-correction' && rcIsUAVal(r.newShift)) return "Can't work " + (r.shiftDate || '') + (r.oldShift ? ' (' + r.oldShift + ')' : '') + (r.reason ? ' - ' + r.reason : '');
+  if (r.type === 'shift-correction') return 'Shift change ' + (r.shiftDate || '') + ': ' + (r.oldShift || '') + ' -> ' + (r.newShift || '') + (r.reason ? ' - ' + r.reason : '');
   return r.type || 'request';
 }
 function rcIsAbsentVal(v) { return /^(AB|ABSENT)$/i.test(String(v === undefined || v === null ? '' : v).trim()); }
@@ -1729,6 +1730,57 @@ function rcMyRows() {
 }
 function rcSchedDismissed(key) { try { return localStorage.getItem('repco_sched_dismiss') === key; } catch (e) { return false; } }
 function rcSchedDismiss(key) { try { localStorage.setItem('repco_sched_dismiss', key); } catch (e) {} renderMySchedule(); }
+/* Shift changes are asked for right under the day on My Schedule */
+function rcMyPendingChange(fnId, i, date) {
+  if (!RC.session) return null;
+  var me = RC.session.profile.usernameLower;
+  return rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).find(function (q) {
+    return q.type === 'shift-correction' && (!q.status || q.status === 'pending') && String(q.username || '').toLowerCase() === me
+      && (q.fnId ? q.fnId === fnId && Number(q.shiftIdx) === Number(i) : q.shiftDate === date);
+  }) || null;
+}
+function rcSchedToggle(key) { RC.schedOpen = RC.schedOpen === key ? null : key; renderMySchedule(); }
+function rcSchedPanel(r, pend) {
+  var id = 'ms-ed';
+  if (pend) {
+    return '<div class="ms-edit" onclick="event.stopPropagation()"><div class="ms-edit-h">You asked for: ' + rcEsc(rcReqSummary(pend)) + '</div><div class="rc-small">Waiting for a manager.</div>'
+      + '<div class="rc-btns" style="margin-top:8px"><button class="rc-b rc-white" onclick="rcSchedWithdraw(\'' + rcEsc(rcReqId(pend)) + '\')">WITHDRAW</button><button class="rc-b rc-white" onclick="rcSchedToggle(null)">CLOSE</button></div></div>';
+  }
+  var p = parseShiftRange(r.sh), pad = function (n) { return String(n).padStart(2, '0'); };
+  var st = p ? pad(Math.floor(p.start / 60) % 24) + ':' + pad(p.start % 60) : '', en = p ? pad(Math.floor(p.end / 60) % 24) + ':' + pad(p.end % 60) : '';
+  return '<div class="ms-edit" onclick="event.stopPropagation()">'
+    + '<div class="ms-edit-h">Change ' + rcEsc(r.d.day + ' ' + r.d.date) + ' • ' + rcEsc(fmt(r.sh)) + '</div>'
+    + '<div class="ms-edit-row"><label>Start<input type="time" id="' + id + '-s" value="' + st + '"></label><label>Finish<input type="time" id="' + id + '-e" value="' + en + '"></label></div>'
+    + '<input id="' + id + '-r" class="ms-reason" placeholder="Reason (optional)">'
+    + '<div class="rc-btns" style="margin-top:8px"><button class="rc-b" onclick="rcSchedSend(\'' + rcEsc(r.fn.id) + '\',' + r.i + ',false)">SEND NEW TIMES</button>'
+    + '<button class="rc-b rc-red" onclick="rcSchedSend(\'' + rcEsc(r.fn.id) + '\',' + r.i + ',true)">I CAN\'T WORK IT</button>'
+    + '<button class="rc-b rc-white" onclick="rcSchedToggle(null)">CANCEL</button></div></div>';
+}
+function rcSchedSend(fnId, i, cant) {
+  var fn = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (f) { return f.id === fnId; });
+  var me = fn && findMyStaff(fn); if (!me) { toast('Could not find your roster row'); return; }
+  var old = me.shifts[i] || 'OFF', newShift;
+  if (cant) newShift = 'UA';
+  else {
+    var s = (document.getElementById('ms-ed-s') || {}).value, e = (document.getElementById('ms-ed-e') || {}).value;
+    if (!s || !e) { toast('Enter a start and finish time'); return; }
+    newShift = s + '-' + e;
+    if (newShift === old) { toast('Those are the same times as now'); return; }
+  }
+  var reason = ((document.getElementById('ms-ed-r') || {}).value || '').trim();
+  var all = rcAsArray(safeGetJSON('retail_roster_requests_v2', []));
+  all.push({ username: RC.session.profile.username, type: 'shift-correction', fnId: fnId, shiftDate: fn.dates[i].date, shiftIdx: i, oldShift: old, newShift: newShift, reason: reason, status: 'pending', ts: Date.now(), dates: [fn.dates[i].date] });
+  RC.schedOpen = null;
+  safeSetJSON('retail_roster_requests_v2', all);
+  toast(cant ? 'Sent - a manager will review it' : 'New times sent to a manager');
+  renderMySchedule();
+}
+function rcSchedWithdraw(id) {
+  var f = rcFindReq(id); if (f.idx === -1) return;
+  f.all.splice(f.idx, 1); RC.schedOpen = null;
+  safeSetJSON('retail_roster_requests_v2', f.all);
+  toast('Request withdrawn'); renderMySchedule();
+}
 function rcRequestChange(fnId, i) {
   safeSet('retail_roster_currentFortnightId', fnId);
   openPage('requests-page');
@@ -1762,7 +1814,7 @@ renderMySchedule = function () {
     } else {
       h += '<div class="ms-panel ms-none"><div class="ms-kicker">NO UPCOMING SHIFTS</div><div class="ms-sub">Nothing on the roster for you yet.</div></div>';
     }
-    h += '<div class="ms-hint">Need a change? Tap an upcoming shift to request a correction.</div>';
+    h += '<div class="ms-hint">Need a change? Tap an upcoming shift.</div>';
     var byFn = {}, order = [];
     rows.forEach(function (r) { if (!byFn[r.fn.id]) { byFn[r.fn.id] = []; order.push(r.fn); } byFn[r.fn.id].push(r); });
     order.filter(function (fn) { var last = fn.dates[fn.dates.length - 1]; return last && last.iso >= today; }).slice(0, 2).forEach(function (fn) {
@@ -1775,7 +1827,11 @@ renderMySchedule = function () {
         var cls = 'ms-day' + (isToday ? ' ms-today' : '') + (past ? ' ms-past' : '') + (work ? '' : ' ms-off');
         var right = r.ab ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ua">UNAVAILABLE</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
         var tap = work && !past && (!r.t || r.t.start.getTime() > now);
-        h += '<div class="' + cls + (tap ? ' ms-tap" onclick="rcRequestChange(\'' + rcEsc(r.fn.id) + '\',' + r.i + ')"' : '"') + '><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">›</span>' : '') + '</span></div>';
+        var pend = tap ? rcMyPendingChange(r.fn.id, r.i, r.d.date) : null;
+        var key = r.fn.id + '|' + r.i, open = tap && RC.schedOpen === key;
+        if (pend) right += '<span class="ms-tag ms-req">CHANGE REQUESTED</span>';
+        h += '<div class="' + cls + (tap ? ' ms-tap' + (open ? ' ms-open' : '') + '" onclick="rcSchedToggle(\'' + rcEsc(key) + '\')"' : '"') + '><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">' + (open ? '⌄' : '›') + '</span>' : '') + '</span></div>';
+        if (open) h += rcSchedPanel(r, pend);
       });
       h += '</div>';
     });
@@ -1939,6 +1995,10 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.ms-sub{font-size:13px;font-weight:700;opacity:.85}'
     + '.ms-bar{height:10px;background:#333;border-radius:9999px;margin-top:12px;overflow:hidden}.ms-bar div{height:100%;background:#E30613;border-radius:9999px}'
     + '.ms-x{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:50%;border:2px solid #111;background:#fff;font-weight:900;cursor:pointer}'
+    + '.ms-open{background:#fff5f5}.ms-req{background:#b58900}'
+    + '.ms-edit{background:#fff5f5;border-top:1px dashed #E30613;padding:12px 14px 14px;font-size:13px}.ms-edit-h{font-weight:900;margin-bottom:8px}'
+    + '.ms-edit-row{display:flex;gap:10px}.ms-edit-row label{flex:1;font-size:11px;font-weight:900;display:flex;flex-direction:column;gap:4px}'
+    + '.ms-edit input{width:100%;box-sizing:border-box;padding:9px 12px;border:2px solid #111;border-radius:9999px;font-size:16px;background:#fff}.ms-reason{margin-top:8px}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
