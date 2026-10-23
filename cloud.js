@@ -12,7 +12,7 @@ var RC_CONFIG = {
   appId: "1:61137172083:web:82ddd7799346cdec171c06"
 };
 // Phone alerts while the app is closed: paste your Cloudflare worker URL here (see push-worker/README.md)
-var RC_PUSH_WORKER_URL = "";
+var RC_PUSH_WORKER_URL = "https://repco-roster-push.blackbeard9488.workers.dev";
 var RC_VAPID_PUBLIC_KEY = "BPo8UDyWHwgVI8cVIXiB0uVBEiPgiCRjmtZ8MLOYE_BbfGFqpWasjhPL0uA8TYVf_n0tlH4aw8JVU4qq04bWc8I";
 var RC_OLD_DB_URL = "https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
 var RC_EMAIL_DOMAIN = "repco-roster.firebaseapp.com";
