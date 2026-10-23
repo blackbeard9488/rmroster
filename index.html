@@ -50,7 +50,7 @@ button{cursor:pointer}
 .r-table th.staff-col{background:#E9E9E9;color:#111;text-align:left;padding-left:10px;min-width:145px;max-width:145px;width:145px;position:sticky;left:0;z-index:4}
 .r-table td{border:1.6px solid #222;padding:7px 2px;text-align:center;font-size:11px;font-weight:400;min-width:88px;width:88px;max-width:88px;background:#fff}
 .r-table td.staff-cell{background:#fff;text-align:left;padding-left:10px;font-weight:900;min-width:145px;max-width:145px;width:145px;position:sticky;left:0;z-index:3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.r-table tr.own td.staff-cell{background:#FFEB3B !important;border-left:6px solid #E30613}
+.r-table tr.own td.staff-cell{background:#0a0a0a !important;color:#fff !important;border-left:6px solid #E30613 !important}.r-table tr.own td{box-shadow:inset 0 3px 0 #E30613,inset 0 -3px 0 #E30613}.you-pill{display:inline-block;background:#E30613;color:#fff;border-radius:9999px;padding:1px 6px;font-size:8px;font-weight:900;letter-spacing:.5px;vertical-align:middle;margin-left:4px}
 .r-table td.cell-work{background:#fff !important;cursor:pointer;font-weight:400 !important}
 .r-table td.cell-off{background:#9DA0A3 !important;color:transparent !important;cursor:pointer}
 .r-table td.cell-na{background:#111 !important;color:#fff !important}
@@ -333,7 +333,7 @@ function getDatesForFortnight(fnId){
 
 <script>
 
-const BUILD_ID="20261023_V208_LIVE_SYNC";
+const BUILD_ID="20261023_V209_LIVE_SYNC";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -688,10 +688,10 @@ function renderRosterCore(){
     var dayTotals=Array(cur.dates.length).fill(0);var grand=0;var rows=''; list.sort(function(a,b){ var c=a.lastName.localeCompare(b.lastName); if(c!==0) return c; return a.firstName.localeCompare(b.firstName); });
     list.forEach(function(st){
       var own=isOwn(st);var hrs=0; var rowClass=own?'own':''; var globalStaffIdx=cur.staff.indexOf(st);
-      rows+='<tr class="'+rowClass+'"><td class="staff-cell" '+(isMgr?'onclick="editStaffType('+globalStaffIdx+')" style="cursor:pointer"':'')+'>'+st.lastName.toUpperCase()+', '+st.firstName+(own?' ← YOU':'')+'</td>';
+      rows+='<tr class="'+rowClass+'"><td class="staff-cell" '+(isMgr?'onclick="editStaffType('+globalStaffIdx+')" style="cursor:pointer"':'')+'>'+st.lastName.toUpperCase()+', '+st.firstName+(own?' <span class="you-pill">YOU</span>':'')+'</td>';
       (st.shifts||[]).forEach(function(sh,idx){
-        var na=st.unavailable && st.unavailable[idx]; var isAbsentApproved=st.absentApproved && st.absentApproved[idx]; var isGreen=(st.cellGreen && st.cellGreen[idx]) || isAutoGreenShift(st, st.shifts[idx]); var orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : null;
-        var disp=na?'NA':sh; var txt=fmt(disp); if(isAbsentApproved && orig){ txt=fmt(orig)+' AB'; } else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
+        var na=(st.unavailable && st.unavailable[idx]) || /^(UA|NA)$/i.test(String(sh||'').trim()); var isAbsentApproved=st.absentApproved && st.absentApproved[idx]; var isGreen=(st.cellGreen && st.cellGreen[idx]) || isAutoGreenShift(st, st.shifts[idx]); var orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : null;
+        var disp=na?'UA':sh; var txt=fmt(disp); if(na){ txt=(orig && !/^(UA|NA|AB|ABSENT|OFF)$/i.test(String(orig).trim()))?fmt(orig)+' UA':'UA'; } else if(isAbsentApproved && orig){ txt=fmt(orig)+' AB'; } else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
         var off=['OFF',''].includes((disp||'').toUpperCase().trim()); var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
         var cls=''; if(na) cls='cell-na'; else if(absent) cls='cell-absent'; else if(off) cls='cell-off'; else if(isGreen) cls='cell-green'; else cls='cell-work';
         var isWeekendCol=isWeekend(cur.dates[idx].day); var weekendClass=''; if(isWeekendCol){ var prevWeekend=idx>0?isWeekend(cur.dates[idx-1].day):false; var nextWeekend=idx<cur.dates.length-1?isWeekend(cur.dates[idx+1].day):false; /*weekend same*/ /*weekend same*/ cls+=' col-weekend'+weekendClass; }
@@ -738,6 +738,7 @@ function revertCellToOriginal(fnId, rowIdx, colIdx){
   var orig=(st.originalShifts && st.originalShifts[colIdx]!=null && st.originalShifts[colIdx]!=='') ? st.originalShifts[colIdx] : null;
   if(orig!==null){ st.shifts[colIdx]=orig; delete st.originalShifts[colIdx]; }
   if(st.absentApproved) st.absentApproved[colIdx]=false;
+  if(st.unavailable) st.unavailable[colIdx]=false;
   if(st.cellGreen) st.cellGreen[colIdx]=false;
   if(st.cellG) st.cellG[colIdx]=false;
   safeSetJSON('retail_roster_byFortnight_v1',fns);
@@ -2317,6 +2318,6 @@ window.addEventListener('load', function(){
 });
 window.addEventListener("unhandledrejection", function(e){ if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")) e.preventDefault(); });
 </script>
-<script src="cloud.js?v=20261023_V208"></script>
+<script src="cloud.js?v=20261023_V209"></script>
 </body>
 </html>

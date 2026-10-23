@@ -268,9 +268,12 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
           var day = nf.dates && nf.dates[i];
           if (day && day.iso && day.iso < getISO()) return;            // no alerts about days already gone
           var label = rcDayLabel(rcDecodeTree(nf), i);
-          var bucket = changesByUser[sk] = changesByUser[sk] || { abs: [], back: [], shift: [], uids: targets };
+          var bucket = changesByUser[sk] = changesByUser[sk] || { abs: [], back: [], ua: [], uaBack: [], shift: [], uids: targets };
           var orig = ns.originalShifts && ns.originalShifts[i] != null ? String(ns.originalShifts[i]) : ov;
-          if (rcIsAbsentVal(nv) && !rcIsAbsentVal(ov)) bucket.abs.push(label + ' - ' + (rcIsEmptyVal(orig) || rcIsAbsentVal(orig) ? 'day off' : 'your ' + orig + ' shift'));
+          var missed = rcIsEmptyVal(orig) || rcIsAbsentVal(orig) || rcIsUAVal(orig) ? 'day off' : 'your ' + orig + ' shift';
+          if (rcIsUAVal(nv) && !rcIsUAVal(ov)) bucket.ua.push(label + ' - ' + missed);
+          else if (rcIsUAVal(ov) && !rcIsUAVal(nv) && !rcIsAbsentVal(nv)) bucket.uaBack.push(label + ' - ' + (rcIsEmptyVal(nv) ? 'OFF' : 'back on ' + nv));
+          else if (rcIsAbsentVal(nv) && !rcIsAbsentVal(ov)) bucket.abs.push(label + ' - ' + (rcIsEmptyVal(orig) || rcIsAbsentVal(orig) ? 'day off' : 'your ' + orig + ' shift'));
           else if (rcIsAbsentVal(ov) && !rcIsAbsentVal(nv)) bucket.back.push(label + ' - ' + (rcIsEmptyVal(nv) ? 'OFF' : 'back on ' + nv));
           else bucket.shift.push(label + ': ' + rcShiftText(nv) + ' (was ' + rcShiftText(ov) + ')');
         });
@@ -278,6 +281,8 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
       Object.keys(changesByUser).forEach(function (key) {
         var b = changesByUser[key], uid = b.uids;
         if (b.abs.length) notes.push({ uids: uid, note: { type: 'absent', title: 'Marked absent (AB)', body: 'A manager has marked you absent for:\n' + b.abs.join('\n') } });
+        if (b.ua.length) notes.push({ uids: uid, note: { type: 'unavailable', title: 'Marked unavailable (UA)', body: 'You have been marked unavailable for:\n' + b.ua.join('\n') } });
+        if (b.uaBack.length) notes.push({ uids: uid, note: { type: 'unavailable-removed', title: 'Unavailability removed', body: b.uaBack.join('\n') } });
         if (b.back.length) notes.push({ uids: uid, note: { type: 'absent-removed', title: 'Absence removed', body: b.back.join('\n') } });
         var lines = b.shift;
         if (lines.length) notes.push({ uids: uid, note: { type: 'shift-update', title: 'Your shifts changed', body: lines.length <= 3 ? lines.join('\n') : (lines.length + ' shifts changed in ' + fnLabel + '. Open the roster to check.') } });
@@ -305,7 +310,7 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
       if (o && o.status === 'pending' && n.status && n.status !== 'pending') {
         var u = rcUserByUsername(n.username);
         var extra = '';
-        if (n.status === 'approved' && dn.type === 'unavailability') extra = aff.length ? '\nShifts marked absent (AB):\n' + aff.join('\n') : '\nNo rostered shifts were affected.';
+        if (n.status === 'approved' && dn.type === 'unavailability') extra = aff.length ? '\nShifts marked unavailable (UA):\n' + aff.join('\n') : '\nNo rostered shifts were affected.';
         if (n.status === 'approved' && dn.type === 'shift-correction' && aff.length) extra = '\nRoster updated: ' + aff.join(', ');
         if (u && u.uid !== me) notes.push({ uids: [u.uid], note: { type: 'request-' + n.status, title: 'Request ' + n.status, body: rcReqSummary(dn) + extra } });
       }
@@ -873,13 +878,25 @@ function rcStaffIndexForUsername(fn, username) {
   return i;
 }
 function rcDateKey(s) { return String(s || '').split(' ')[0].trim(); }
+/* UA = unavailable (approved time off); AB = absent. Both keep the uploaded shift as the original */
 function rcMarkUnavailable(st, i) {
   if (!st.originalShifts) st.originalShifts = {};
   if (!st.absentApproved) st.absentApproved = {};
-  if (!st.originalShifts[i]) st.originalShifts[i] = st.shifts[i];
+  if (!st.unavailable) st.unavailable = [];
+  if (st.originalShifts[i] == null && !rcIsUAVal(st.shifts[i]) && !rcIsAbsentVal(st.shifts[i])) st.originalShifts[i] = st.shifts[i];
+  st.unavailable[i] = true;
+  st.absentApproved[i] = false;
+  st.shifts[i] = 'UA';
+}
+function rcMarkAbsent(st, i) {
+  if (!st.originalShifts) st.originalShifts = {};
+  if (!st.absentApproved) st.absentApproved = {};
+  if (st.originalShifts[i] == null && !rcIsUAVal(st.shifts[i]) && !rcIsAbsentVal(st.shifts[i])) st.originalShifts[i] = st.shifts[i];
+  if (st.unavailable) st.unavailable[i] = false;
   st.absentApproved[i] = true;
   st.shifts[i] = 'AB';
 }
+function rcIsUAVal(v) { return /^(UA|NA)$/i.test(String(v === undefined || v === null ? '' : v).trim()); }
 /* Hidden staff aren't in the Excel files, so a newly uploaded fortnight gets their rows (empty) */
 function rcEnsureHiddenRows() {
   if (!rcIsMgr()) return;
@@ -911,7 +928,7 @@ function rcApplyApprovedUnavailability() {
       var st = fn.staff[si];
       rcAsArray(r.dates).forEach(function (d) {
         var di = fn.dates.findIndex(function (x) { return x.date === rcDateKey(d); });
-        if (di !== -1 && !(st.absentApproved && st.absentApproved[di])) { rcMarkUnavailable(st, di); changed = true; }
+        if (di !== -1 && !rcIsUAVal(st.shifts[di]) && !(st.unavailable && st.unavailable[di])) { rcMarkUnavailable(st, di); changed = true; }
       });
     });
   });
@@ -937,7 +954,7 @@ function rcDecide(id, approve) {
         rcAsArray(req.dates).forEach(function (d) {
           var di = fn.dates.findIndex(function (x) { return x.date === rcDateKey(d); }); if (di === -1) return;
           var was = st.shifts[di];
-          if (!rcIsEmptyVal(was) && !rcIsAbsentVal(was) && !(fn.dates[di].iso < getISO())) affected.push(fn.dates[di].day + ' ' + fn.dates[di].date + ' - ' + was);
+          if (!rcIsEmptyVal(was) && !rcIsAbsentVal(was) && !rcIsUAVal(was) && !(fn.dates[di].iso < getISO())) affected.push(fn.dates[di].day + ' ' + fn.dates[di].date + ' - ' + was);
           rcMarkUnavailable(st, di); hit++;
         });
         applied[fn.id] = true;
@@ -946,7 +963,8 @@ function rcDecide(id, approve) {
         var di = fn.dates.findIndex(function (x) { return x.date === req.shiftDate; });
         if (di === -1) return;
         affected.push(fn.dates[di].day + ' ' + fn.dates[di].date + ': ' + req.newShift);
-        if (String(req.newShift).toUpperCase() === 'AB') rcMarkUnavailable(st, di);
+        if (String(req.newShift).toUpperCase() === 'AB') rcMarkAbsent(st, di);
+        else if (rcIsUAVal(req.newShift)) rcMarkUnavailable(st, di);
         else { if (!st.originalShifts) st.originalShifts = {}; if (!st.absentApproved) st.absentApproved = {}; if (st.originalShifts[di] == null) st.originalShifts[di] = st.shifts[di]; st.shifts[di] = req.newShift; st.absentApproved[di] = false; }
         hit++;
       }
@@ -978,9 +996,12 @@ function rcReverseReq(id) {
       var days = req.type === 'unavailability' ? rcAsArray(req.dates).map(rcDateKey) : [req.shiftDate];
       days.forEach(function (dk) {
         var di = fn.dates.findIndex(function (x) { return x.date === dk; }); if (di === -1) return;
-        if (req.type === 'unavailability' && !(st.absentApproved && st.absentApproved[di])) return;
+        var marked = (st.unavailable && st.unavailable[di]) || rcIsUAVal(st.shifts[di]) || (st.absentApproved && st.absentApproved[di]);
+        if (req.type === 'unavailability' && !marked) return;
         if (st.originalShifts && st.originalShifts[di] != null) { st.shifts[di] = st.originalShifts[di]; delete st.originalShifts[di]; }
+        else if (rcIsUAVal(st.shifts[di]) || rcIsAbsentVal(st.shifts[di])) st.shifts[di] = 'OFF';
         if (st.absentApproved) st.absentApproved[di] = false;
+        if (st.unavailable) st.unavailable[di] = false;
         if (!rcIsEmptyVal(st.shifts[di]) && !(fn.dates[di].iso < getISO())) back.push(fn.dates[di].day + ' ' + fn.dates[di].date + ' - ' + st.shifts[di]);
         n++;
       });
@@ -1055,18 +1076,37 @@ var submitCorrection = submitShiftCorrection;
 submitUnavail = (function (orig) { return function () { orig.apply(this, arguments); setTimeout(rcRenderMyRequestsList, 50); }; })(submitUnavail);
 
 /* Unavailable page: absences on the current roster plus approved upcoming unavailability */
-renderUnavail = (function (orig) {
-  return function () {
-    orig.apply(this, arguments);
-    var el = document.getElementById('unavail-list'); if (!el) return;
-    var reqs = rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).filter(function (r) { return r.type === 'unavailability' && r.status === 'approved'; });
-    var pend = rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).filter(function (r) { return r.type === 'unavailability' && (!r.status || r.status === 'pending'); });
-    var h = '';
-    if (pend.length) h += '<div class="card" style="background:#FFF6CC"><div class="rc-h">WAITING FOR APPROVAL (' + pend.length + ')</div>' + pend.map(function (r) { return '<div class="rc-small">' + rcEsc(r.username) + ' - ' + rcEsc(rcReqSummary(r)) + '</div>'; }).join('') + '<button class="rc-b" style="margin-top:6px" onclick="openPage(\'requests-page\')">REVIEW REQUESTS</button></div>';
-    if (reqs.length) h += '<div class="card"><div class="rc-h">APPROVED UNAVAILABILITY</div>' + reqs.map(function (r) { return '<div class="rc-small">' + rcEsc(r.username) + ' - ' + rcEsc(rcReqSummary(r)) + '</div>'; }).join('') + '</div>';
-    el.insertAdjacentHTML('afterbegin', h);
+/* STAFF UNAVAILABLE: time-off requests and days marked UA (absences are a separate thing) */
+renderUnavail = function () {
+  var el = document.getElementById('unavail-list'); if (!el) return;
+  var reqs = rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).filter(function (r) { return r.type === 'unavailability'; });
+  var pend = reqs.filter(function (r) { return !r.status || r.status === 'pending'; });
+  var today = getISO();
+  // requests store dd/mm without a year: use the year that puts the last day nearest to today
+  var upcoming = function (r) {
+    var d = rcAsArray(r.dates), m = String(d[d.length - 1] || '').match(/^(\d{1,2})\/(\d{1,2})/); if (!m) return true;
+    var now = new Date(today + 'T00:00:00'), best = null;
+    [-1, 0, 1].forEach(function (k) { var t = new Date(now.getFullYear() + k, +m[2] - 1, +m[1]); if (best === null || Math.abs(t - now) < Math.abs(best - now)) best = t; });
+    return best >= now;
   };
-})(renderUnavail);
+  var appr = reqs.filter(function (r) { return r.status === 'approved' && upcoming(r); });
+  var fn = getSelectedFortnight() || getCurrentFortnight();
+  var marked = [];
+  if (fn) (fn.staff || []).forEach(function (st) {
+    if (isHiddenStaffRow(st) && !rcIsMgr()) return;
+    (fn.dates || []).forEach(function (d, i) {
+      if (!((st.unavailable && st.unavailable[i]) || rcIsUAVal(st.shifts[i]))) return;
+      var o = st.originalShifts && st.originalShifts[i] != null ? String(st.originalShifts[i]) : '';
+      marked.push({ name: String(st.lastName || '').toUpperCase() + ', ' + st.firstName, day: d.day + ' ' + d.date, shift: rcIsEmptyVal(o) || rcIsUAVal(o) || rcIsAbsentVal(o) ? 'day off' : o, past: d.iso < today });
+    });
+  });
+  var h = '';
+  h += '<div class="card" style="background:#FFF6CC"><div class="rc-h">WAITING FOR APPROVAL (' + pend.length + ')</div>' + (pend.length ? pend.map(function (r) { return '<div class="rc-small">' + rcEsc(r.username) + ' - ' + rcEsc(rcReqSummary(r)) + '</div>'; }).join('') + '<button class="rc-b" style="margin-top:6px" onclick="openPage(\'requests-page\')">REVIEW REQUESTS</button>' : '<div class="rc-small">No time-off requests waiting.</div>') + '</div>';
+  h += '<div class="card"><div class="rc-h">APPROVED TIME OFF</div>' + (appr.length ? appr.map(function (r) { return '<div class="rc-row"><span><b>' + rcEsc(r.username) + '</b> <span class="rc-small">' + rcEsc(rcReqSummary(r)) + '</span></span></div>'; }).join('') : '<div class="rc-small">No upcoming approved time off.</div>') + '</div>';
+  h += '<div class="card"><div class="rc-h">MARKED UA' + (fn ? ' • ' + rcEsc(rcFnRange(fn)) : '') + '</div>' + (marked.length ? marked.map(function (m) { return '<div class="rc-row" style="' + (m.past ? 'opacity:.5' : '') + '"><span><b>' + rcEsc(m.name) + '</b></span><span class="rc-small">' + rcEsc(m.day) + ' • ' + rcEsc(m.shift) + ' <span class="rc-pill" style="background:#555">UA</span></span></div>'; }).join('') : '<div class="rc-small">Nobody is marked unavailable on this roster.</div>') + '</div>';
+  h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+  el.innerHTML = h;
+};
 
 /* ---------- shift offers ---------- */
 function rcOfferId(fn, staffIdx, i) { var keys = rcStaffKeys(fn); return rcEncodeKey(fn.id) + '~' + rcEncodeKey(keys[staffIdx]) + '~' + i; }
@@ -1104,15 +1144,17 @@ function rcSaveCell(fnId, rowIdx, colIdx, raw) {
     if (clean.toUpperCase() === 'OFF' && !rcIsEmptyVal(current)) clean = current;
   }
   if (/^(ABSENT)$/i.test(clean)) clean = 'AB';
+  if (/^(UA|NA)$/i.test(clean)) clean = 'UA';
   if (/^OFF$/i.test(clean)) clean = 'OFF';
   st.originalShifts = st.originalShifts || {}; st.cellGreen = st.cellGreen || {}; st.cellG = st.cellG || {}; st.absentApproved = st.absentApproved || {};
   var green = upper === 'G' ? true : (isG && clean.toUpperCase() !== 'OFF');
-  var ab = /^AB$/i.test(clean);
-  if (clean === current && !!st.cellGreen[colIdx] === green && !!st.absentApproved[colIdx] === ab) return;
-  if (st.originalShifts[colIdx] == null) st.originalShifts[colIdx] = st.shifts[colIdx];
+  var ab = /^AB$/i.test(clean), ua = clean === 'UA';
+  if (!st.unavailable) st.unavailable = [];
+  if (clean === current && !!st.cellGreen[colIdx] === green && !!st.absentApproved[colIdx] === ab && !!st.unavailable[colIdx] === ua) return;
+  if (st.originalShifts[colIdx] == null && !rcIsUAVal(st.shifts[colIdx]) && !rcIsAbsentVal(st.shifts[colIdx])) st.originalShifts[colIdx] = st.shifts[colIdx];
   st.shifts[colIdx] = clean;
-  st.cellGreen[colIdx] = green; st.cellG[colIdx] = green; st.absentApproved[colIdx] = ab;
-  if (st.originalShifts[colIdx] === clean && !green && !ab) delete st.originalShifts[colIdx];
+  st.cellGreen[colIdx] = green && !ua; st.cellG[colIdx] = green && !ua; st.absentApproved[colIdx] = ab; st.unavailable[colIdx] = ua;
+  if (st.originalShifts[colIdx] === clean && !green && !ab && !ua) delete st.originalShifts[colIdx];
   safeSetJSON('retail_roster_byFortnight_v1', fns);
 }
 
@@ -1675,7 +1717,7 @@ function rcMyRows() {
     fn.dates.forEach(function (d, i) {
       var sh = (me.shifts && me.shifts[i] != null) ? String(me.shifts[i]) : 'OFF';
       var ab = !!(me.absentApproved && me.absentApproved[i]) || /^(AB|ABSENT)$/i.test(sh.trim());
-      var na = !!(me.unavailable && me.unavailable[i]) || /^NA$/i.test(sh.trim());
+      var na = !!(me.unavailable && me.unavailable[i]) || rcIsUAVal(sh);
       var t = (!ab && !na) ? rcShiftTimes(d.iso, sh) : null;
       var orig = me.originalShifts && me.originalShifts[i] != null ? String(me.originalShifts[i]) : '';
       out.push({ fn: fn, i: i, d: d, sh: sh, ab: ab, na: na, t: t, orig: (rcIsEmptyVal(orig) || rcIsAbsentVal(orig)) ? '' : orig, mgr: !!((me.cellGreen && me.cellGreen[i]) || (me.cellG && me.cellG[i])) });
@@ -1729,7 +1771,7 @@ renderMySchedule = function () {
       list.forEach(function (r) {
         var past = r.d.iso < today, isToday = r.d.iso === today, work = !!r.t;
         var cls = 'ms-day' + (isToday ? ' ms-today' : '') + (past ? ' ms-past' : '') + (work ? '' : ' ms-off');
-        var right = r.ab ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? '<span class="ms-tag ms-ab">NA</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
+        var right = r.ab ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ua">UNAVAILABLE</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
         var tap = work && !past && (!r.t || r.t.start.getTime() > now);
         h += '<div class="' + cls + (tap ? ' ms-tap" onclick="rcRequestChange(\'' + rcEsc(r.fn.id) + '\',' + r.i + ')"' : '"') + '><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">›</span>' : '') + '</span></div>';
       });
@@ -1791,7 +1833,7 @@ exportPDF = async function () {
       c.querySelectorAll('.r-table-wrap').forEach(function (w) { w.style.overflow = 'visible'; });
       c.querySelectorAll('th,td').forEach(function (cell) { cell.style.position = 'static'; });
       c.querySelectorAll('tr.own').forEach(function (tr) { tr.classList.remove('own'); });
-      c.querySelectorAll('td.staff-cell').forEach(function (td) { td.textContent = td.textContent.replace(/\s*←\s*YOU\s*$/, ''); });
+      c.querySelectorAll('.you-pill').forEach(function (p) { p.remove(); });
       holder.appendChild(c);
       blocks.push(c);
     });
@@ -1907,6 +1949,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.ms-day{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 14px;border-top:1px solid #e6e6e6;font-size:13px}'
     + '.ms-today{background:#FFF6CC;border-left:6px solid #E30613}.ms-past{opacity:.45}.ms-off .ms-date{color:#777}.ms-tap{cursor:pointer}.ms-tap:active{background:#f3f3f3}'
     + '.ms-right{display:flex;align-items:center;gap:8px}.ms-time{font-weight:900;font-size:14px}.ms-hrs{font-size:11px;color:#666;min-width:34px;text-align:right}.ms-offtxt{font-size:11px;font-weight:900;color:#999}'
+    + '.ms-ua{background:#555}'
     + '.ms-struck{text-decoration:line-through;color:#999;font-weight:700}'
     + '.ms-tag{background:#111;color:#fff;border-radius:9999px;padding:2px 7px;font-size:9px;font-weight:900}.ms-ab{background:#E30613}.ms-tt{background:#E30613}.ms-chev{font-size:20px;font-weight:900;color:#E30613;line-height:1}'
     + '.r-table td.rc-cell-edit{background:#fff !important;outline:3px solid #E30613;outline-offset:-3px;padding:2px !important;vertical-align:middle}'
