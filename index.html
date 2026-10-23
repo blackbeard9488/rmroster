@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>REPCO ROSTER V197 FINAL</title>
+<title>REPCO ROSTER V198 FIXED isCasual</title>
 <style>
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -104,11 +104,17 @@ var db = null;
 var cloudLoadRunning = false;
 var cloudSaveTimeout = null;
 var fortnightDatesCache = {};
+
 function safeGet(k,d){try{var v=localStorage.getItem(k); if(v===null) return d!==undefined?d:v; return v;}catch(e){return d;}}
 function safeSet(k,v){try{localStorage.setItem(k,v);}catch(e){MEMORY_STORE[k]=v;}}
 function safeGetJSON(k,d){try{var raw=safeGet(k,null); if(raw===null||raw===undefined) return d; if(typeof raw==="object") return raw; return JSON.parse(raw);}catch(e){return d;}}
 function safeSetJSON(k,o){try{var s=JSON.stringify(o); safeSet(k,s);}catch(e){MEMORY_STORE[k]=JSON.stringify(o);}}
 function getISO(d){try{var now=d||new Date(); var fmt=new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Brisbane',year:'numeric',month:'2-digit',day:'2-digit'}); var parts=fmt.formatToParts(now); var y=parts.find(function(p){return p.type==='year';}).value; var mo=parts.find(function(p){return p.type==='month';}).value; var dd=parts.find(function(p){return p.type==='day';}).value; return y+'-'+mo+'-'+dd;}catch(e){var now=d||new Date(); return now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');}}
+
+function getNow(){return new Date();}
+function rawH(sh){if(!sh)return 0;let up=sh.toUpperCase().trim();if(['OFF','NA','ABSENT','AB'].includes(up))return 0;let m=sh.replace(/A/g,'').trim().match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);if(!m)return 0;let sH=parseInt(m[1])+parseInt(m[2])/60;let eH=parseInt(m[3])+parseInt(m[4])/60;if(eH<sH)eH+=24;return eH-sH;}
+function netH(sh){let r=rawH(sh);if(r===0)return 0;return r>=5?r-0.5:r;}
+function isCasual(st){return st.employmentType==='casual';}
 
 try {
   if(typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length===0){
@@ -125,7 +131,8 @@ async function cloudLoadAll(){ if(cloudLoadRunning) return; if(!db) return; clou
 function cloudSave(){ try{ var state=getAllState(); if(db && db.ref){ db.ref("repco_state").set(state).then(function(){ localStorage.setItem("repco_cloud_ts", String(state._ts)); }).catch(function(){}); } }catch(e){} }
 function renderAllSafe(){ try{ if(typeof populateFortnightSelect==='function') populateFortnightSelect(); }catch(e){} try{ if(typeof renderRosterSafe==='function') renderRosterSafe(); }catch(e){} }
 function cloudLoad(){ return cloudLoadAll(); }
-function checkForIndexUpdate(){ console.log('checkForIndexUpdate stub'); }
+function checkForIndexUpdate(){}
+
 function generateFortnightId(d){
   try{
     var date = new Date(d);
@@ -312,35 +319,6 @@ async function checkForIndexUpdate(isInitial){
     if(currentHtmlHash!==null && h!==currentHtmlHash){ toast("New version - reloading"); setTimeout(()=>location.reload(true),3000); }
   }catch(e){}
 }
-
-
-
-
-
-function getISO(){
-  try{
-    var now=new Date();
-    var dateFmt=new Intl.DateTimeFormat('en-CA',{timeZone:'Australia/Brisbane',year:'numeric',month:'2-digit',day:'2-digit'});
-    var parts=dateFmt.formatToParts(now);
-    var y=parts.find(function(p){ return p.type==='year'; }).value;
-    var mo=parts.find(function(p){ return p.type==='month'; }).value;
-    var d=parts.find(function(p){ return p.type==='day'; }).value;
-    return y+'-'+mo+'-'+d;
-  }catch(e){
-    var now=new Date();
-    return now.toISOString().slice(0,10);
-  }
-}
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2318,9 +2296,7 @@ window.createAdmin = function(){
   ]));
   location.reload();
 };
-window.addEventListener("unhandledrejection", function(e){
-  if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")) e.preventDefault();
-});
+window.addEventListener("unhandledrejection", function(e){ if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")) e.preventDefault(); });
 </script>
 </body>
 </html>
