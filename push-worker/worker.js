@@ -11,6 +11,7 @@
      ALLOWED_ORIGIN     https://blackbeard9488.github.io  (optional, defaults to *)
      GEMINI_API_KEY     Google AI Studio key, as a *Secret* (for the roster photo check)
      GEMINI_MODEL       optional, defaults to gemini-flash-latest (Google's always-current Flash model)
+     AI                 Workers AI binding: the backup reader when Gemini fails or is too slow
 */
 
 export default {
@@ -58,7 +59,7 @@ export default {
 async function scanRoster(body, env, cors) {
   const { idToken, image, mime, roster } = body || {};
   if (!idToken || !image || !roster || !Array.isArray(roster.rows) || !Array.isArray(roster.dates)) return json({ error: 'bad request' }, 400, cors);
-  if (!env.GEMINI_API_KEY) return json({ error: 'photo check is not set up (no Gemini key)' }, 501, cors);
+  if (!env.GEMINI_API_KEY && !env.AI) return json({ error: 'photo check is not set up' }, 501, cors);
   if (image.length > 14000000) return json({ error: 'photo is too large' }, 413, cors);
   // Only managers can read mgrdata, so the database rules decide who may use this
   const db = env.DB_URL.replace(/\/$/, '');
@@ -83,23 +84,63 @@ async function scanRoster(body, env, cors) {
     'Reply with JSON only: {"changes":[{"name":"","date":"","photo":"","mark":"","confidence":0}]}. If nothing is changed, reply {"changes":[]}.'
   ].join('\n');
 
+  // Gemini first; Cloudflare's own vision model if Gemini errors, is over its limit or takes over 60s
+  let res = env.GEMINI_API_KEY ? await askGemini(env, image, mime, prompt) : { error: 'no Gemini key' };
+  let service = 'Gemini';
+  if (res.error && env.AI) {
+    const why = res.why || 'unavailable';
+    const backup = await askWorkersAI(env, image, mime, prompt);
+    if (!backup.error) { res = backup; service = 'Cloudflare AI (backup - Gemini ' + why + ')'; }
+    else res = { error: 'Gemini: ' + res.error + ' | backup: ' + backup.error };
+    res.why = undefined;
+  }
+  if (res.error) return json({ error: res.error }, 502, cors);
+  return json({ changes: res.changes, service }, 200, cors);
+}
+
+function parseChanges(raw) {
+  const m = String(raw || '').replace(/```(json)?/g, '').match(/\{[\s\S]*\}/);
+  const parsed = JSON.parse(m ? m[0] : raw);
+  return Array.isArray(parsed.changes) ? parsed.changes.slice(0, 200) : [];
+}
+
+async function askGemini(env, image, mime, prompt) {
   const model = env.GEMINI_MODEL || 'gemini-flash-latest';
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-    body: JSON.stringify({
-      contents: [{ parts: [{ inline_data: { mime_type: mime || 'image/jpeg', data: image } }, { text: prompt }] }],
-      generationConfig: { temperature: 0, responseMimeType: 'application/json' }
-    })
-  });
-  const out = await r.json().catch(() => null);
-  if (!r.ok) return json({ error: 'Gemini: ' + ((out && out.error && out.error.message) || r.status) }, 502, cors);
-  const text = (((out || {}).candidates || [])[0] || {}).content;
-  const raw = text && text.parts ? text.parts.map(p => p.text || '').join('') : '';
-  let parsed;
-  try { parsed = JSON.parse(raw.replace(/^```(json)?|```$/g, '').trim()); } catch (e) { return json({ error: 'could not read the result', raw: raw.slice(0, 500) }, 502, cors); }
-  const changes = Array.isArray(parsed.changes) ? parsed.changes.slice(0, 200) : [];
-  return json({ changes }, 200, cors);
+  const ask = (thinking) => {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 60000);
+    return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        contents: [{ parts: [{ inline_data: { mime_type: mime || 'image/jpeg', data: image } }, { text: prompt }] }],
+        // Long "thinking" made answers take over 100 seconds, which Cloudflare cuts off (error 524)
+        generationConfig: Object.assign({ temperature: 0, responseMimeType: 'application/json' }, thinking ? { thinkingConfig: { thinkingLevel: 'low' } } : {})
+      })
+    }).finally(() => clearTimeout(timer));
+  };
+  try {
+    let r = await ask(true);
+    let out = await r.json().catch(() => null);
+    if (r.status === 400 && /think/i.test(JSON.stringify(out || ''))) { r = await ask(false); out = await r.json().catch(() => null); }
+    if (!r.ok) { const msg = (out && out.error && out.error.message) || String(r.status); return { error: msg, why: r.status === 429 ? 'daily limit reached' : 'error ' + r.status }; }
+    const content = (((out || {}).candidates || [])[0] || {}).content;
+    const raw = content && content.parts ? content.parts.map(p => p.text || '').join('') : '';
+    return { changes: parseChanges(raw) };
+  } catch (e) {
+    const slow = e && e.name === 'AbortError';
+    return { error: slow ? 'took longer than 60 seconds' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
+  }
+}
+
+async function askWorkersAI(env, image, mime, prompt) {
+  try {
+    const out = await env.AI.run(env.BACKUP_MODEL || '@cf/meta/llama-4-scout-17b-16e-instruct', {
+      messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: 'data:' + (mime || 'image/jpeg') + ';base64,' + image } }] }],
+      max_tokens: 2048, temperature: 0
+    });
+    const raw = typeof out === 'string' ? out : (out && (out.response !== undefined ? (typeof out.response === 'string' ? out.response : JSON.stringify(out.response)) : JSON.stringify(out)));
+    return { changes: parseChanges(raw) };
+  } catch (e) { return { error: String(e && e.message || e) }; }
 }
 
 function json(o, status, headers) { return new Response(JSON.stringify(o), { status, headers: { ...headers, 'Content-Type': 'application/json' } }); }

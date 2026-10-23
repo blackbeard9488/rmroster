@@ -2083,12 +2083,12 @@ async function rcScanPhoto() {
     var r = await fetch(RC_PUSH_WORKER_URL.replace(/\/$/, '') + '/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token, image: image, mime: 'image/jpeg', roster: roster }) });
     var res = await r.json().catch(function () { return { error: 'the relay answered ' + r.status }; });
     if (res.error) throw new Error(res.error);
-    rcShowPhotoResults(fn, res.changes || []);
+    rcShowPhotoResults(fn, res.changes || [], res.service);
   } catch (e) {
     out.innerHTML = '<div class="card"><b style="color:#E30613">Could not check the photo:</b> ' + rcEsc(e.message || e) + '</div>';
   } finally { go.disabled = false; go.textContent = 'CHECK PHOTO'; }
 }
-function rcShowPhotoResults(fn, changes) {
+function rcShowPhotoResults(fn, changes, service) {
   var out = document.getElementById('pc-results');
   var byName = {}; fn.staff.forEach(function (st, i) { byName[rcNameKey(st.lastName + st.firstName)] = i; byName[rcNameKey(st.firstName + st.lastName)] = i; });
   var items = [], skipped = [];
@@ -2112,6 +2112,7 @@ function rcShowPhotoResults(fn, changes) {
       + '<span class="pc-vals"><span class="pc-cur">' + rcEsc(rcShiftText(it.cur)) + '</span> → <input id="pc-v-' + k + '" value="' + rcEsc(it.photo) + '"></span></label>';
   }).join('');
   if (items.length) h += '<button class="rc-b rc-red rc-wide" style="margin-top:10px" onclick="rcApplyPhoto()">APPLY TICKED CHANGES</button>';
+  if (service) h += '<div class="rc-small" style="margin-top:8px;color:#777">Read by ' + rcEsc(service) + (/backup/i.test(service) ? ' - check these carefully, the backup is weaker at handwriting.' : '') + '</div>';
   if (skipped.length) h += '<div class="rc-small" style="margin-top:10px;color:#777">Couldn\'t match to the roster: ' + skipped.map(function (c) { return rcEsc((c.name || '?') + ' ' + (c.date || '?') + ' ' + (c.photo || '')); }).join('; ') + '</div>';
   out.innerHTML = h + '</div>';
 }
@@ -2125,6 +2126,94 @@ function rcApplyPhoto() {
   });
   toast(n ? n + ' change' + (n > 1 ? 's' : '') + ' applied' : 'Nothing ticked');
   if (n) { safeSet('retail_roster_currentFortnightId', RC.photoFn); showMain(); }
+}
+
+/* ---------- Excel export: the uploaded file itself, with the roster's edits written into it ---------- */
+renderImportExportPage = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    var csv = document.getElementById('btn-export-csv'); if (!csv || document.getElementById('btn-export-xlsx')) return;
+    var b = document.createElement('button');
+    b.id = 'btn-export-xlsx'; b.textContent = 'EXPORT EXCEL (.xlsx)'; b.onclick = rcExportExcel;
+    b.style.cssText = 'background:#E30613;color:#fff;border:none;border-radius:9999px;padding:8px 14px;font-weight:900';
+    csv.parentNode.insertBefore(b, csv);
+  };
+})(renderImportExportPage);
+function rcLoadScript(src) {
+  return new Promise(function (res, rej) { var sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = function () { rej(new Error('could not load ' + src)); }; document.head.appendChild(sc); });
+}
+function rcB64ToBuf(b64) { var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a.buffer; }
+/* Split "LAST, First" / "LAST First" the same way the importer does */
+function rcSheetNameKey(raw) {
+  var n = String(raw || '').trim(); if (!n) return '';
+  var last, first;
+  if (n.indexOf(',') !== -1) { var parts = n.split(','); last = parts[0]; first = parts.slice(1).join(','); }
+  else { var t = n.split(/\s+/); if (t.length < 2) return ''; last = t[0]; first = t.slice(1).join(' '); }
+  return rcNameKey(String(first).trim() + String(last).trim());
+}
+/* What a roster cell should look like in the spreadsheet: two time cells, or a code, or empty */
+function rcSheetCells(st, i) {
+  var sh = String((st.shifts || [])[i] == null ? 'OFF' : st.shifts[i]).trim();
+  if ((st.absentApproved && st.absentApproved[i]) || rcIsAbsentVal(sh)) return ['AB', null];
+  if ((st.unavailable && st.unavailable[i]) || rcIsUAVal(sh)) return ['UA', null];
+  var p = parseShiftRange(sh);
+  if (!p) return rcIsEmptyVal(sh) ? [null, null] : [sh, null];
+  var t = function (m) { return new Date(Date.UTC(1899, 11, 30, Math.floor(m / 60) % 24, m % 60)); };
+  return [t(p.start), t(p.end)];
+}
+function rcSameCell(a, b) {
+  var norm = function (v) { if (v && v.result !== undefined && v.formula === undefined) v = v.result; if (v instanceof Date) return 'd' + Math.round(((v.getTime() % 86400000) + 86400000) % 86400000 / 60000); if (v === '' || v === undefined) v = null; return v === null ? null : String(v).trim().toUpperCase(); };
+  return norm(a) === norm(b);
+}
+async function rcExportExcel() {
+  var fn = getSelectedFortnight() || getCurrentFortnight(); if (!fn) { toast('No roster'); return; }
+  var ups = rcAsArray(safeGetJSON('retail_roster_uploaded_excels_v1', [])).filter(function (u) { return u && u.data; });
+  var tpl = ups.filter(function (u) { return u.fortnightId === fn.id; }).pop() || ups.slice().sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); }).pop();
+  if (!tpl) { toast('No uploaded Excel to use as the template - export CSV instead'); return; }
+  toast('Building Excel...');
+  try {
+    if (!window.ExcelJS) await rcLoadScript('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
+    var wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(rcB64ToBuf(tpl.data));
+    var ws = wb.worksheets[0];
+    var sameFn = tpl.fortnightId === fn.id;
+    if (!sameFn) {
+      // another fortnight's file: put this fortnight's dates and day names in the header rows
+      fn.dates.forEach(function (d, i) {
+        var c = 2 + i * 2, p = d.iso.split('-');
+        ws.getCell(1, c).value = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+        var names = { SUN: 'SUNDAY', MON: 'MONDAY', TUE: 'TUESDAY', WED: 'WEDNESDAY', THU: 'THURSDAY', FRI: 'FRIDAY', SAT: 'SATURDAY' };
+        var dc = ws.getCell(2, c); if (dc.value) dc.value = names[d.day] || d.day;
+      });
+    }
+    var byKey = {}; fn.staff.forEach(function (st) { if (!isHiddenStaffRow(st)) byKey[rcNameKey(st.firstName + st.lastName)] = st; });
+    var changed = 0, matched = {};
+    for (var r = 3; r <= ws.rowCount; r++) {
+      var row = ws.getRow(r), rowText = [];
+      row.eachCell({ includeEmpty: false }, function (c) { if (typeof c.value === 'string') rowText.push(c.value); });
+      if (/\bkate\b/i.test(rowText.join(' '))) continue;               // notes row
+      var key = rcSheetNameKey(ws.getCell(r, 1).value); if (!key) continue;
+      var st = byKey[key]; if (!st) continue;
+      matched[key] = 1;
+      fn.dates.forEach(function (d, i) {
+        var want = rcSheetCells(st, i);
+        [0, 1].forEach(function (k) {
+          var cell = ws.getCell(r, 2 + i * 2 + k);
+          if (rcSameCell(cell.value, want[k])) return;
+          cell.value = want[k];
+          changed++;
+        });
+      });
+    }
+    wb.calcProperties = Object.assign({}, wb.calcProperties, { fullCalcOnLoad: true });   // TOTAL HOURS recalculates in Excel
+    var missing = Object.keys(byKey).filter(function (k) { return !matched[k]; }).map(function (k) { var st = byKey[k]; return st.firstName + ' ' + st.lastName; });
+    var buf = await wb.xlsx.writeBuffer();
+    var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = sameFn ? tpl.name : ('Roster ' + rcFnRange(fn).replace(/\//g, '.').replace(/\s/g, '') + '.xlsx');
+    a.click();
+    toast('Excel exported - ' + changed + ' cell' + (changed === 1 ? '' : 's') + ' updated' + (missing.length ? '. Not in the file: ' + missing.join(', ') : ''));
+  } catch (e) { console.error('xlsx export', e); toast('Excel export failed: ' + (e.message || e)); }
 }
 
 /* ---------- PDF export: a picture of the roster tables exactly as they look on screen ---------- */
