@@ -1826,7 +1826,6 @@ exportPDF = async function () {
       + '<div style="font-family:\'Arial Black\',Impact,sans-serif;font-weight:900;font-size:26px;font-style:italic"><span style="color:#E30613">REPCO</span> ROSTER</div></div>'
       + '<div style="font-family:\'Arial Black\',Impact,sans-serif;font-weight:900;font-size:16px">' + rcEsc(rcFnRange(fn)) + '</div>';
     holder.appendChild(head);
-    var blocks = [head];
     document.querySelectorAll('#roster-mount .roster-section').forEach(function (sec) {
       var c = sec.cloneNode(true);
       c.style.margin = '8px 10px';
@@ -1835,22 +1834,17 @@ exportPDF = async function () {
       c.querySelectorAll('tr.own').forEach(function (tr) { tr.classList.remove('own'); });
       c.querySelectorAll('.you-pill').forEach(function (p) { p.remove(); });
       holder.appendChild(c);
-      blocks.push(c);
     });
     document.body.appendChild(holder);
     var JsPDF = window.jspdf.jsPDF;
     var doc = new JsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' });
-    var pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight(), m = 8, y = m;
-    var fullW = holder.scrollWidth;
-    for (var i = 0; i < blocks.length; i++) {
-      var canvas = await html2canvas(blocks[i], { scale: 2, backgroundColor: '#ffffff', logging: false, width: Math.max(blocks[i].scrollWidth, blocks[i].offsetWidth), windowWidth: fullW + 100 });
-      var wmm = (pw - 2 * m) * (blocks[i].offsetWidth / fullW);
-      var hmm = canvas.height * (wmm / canvas.width);
-      if (hmm > ph - 2 * m) { wmm = wmm * (ph - 2 * m) / hmm; hmm = ph - 2 * m; }
-      if (y + hmm > ph - m && y > m) { doc.addPage(); y = m; }
-      doc.addImage(canvas.toDataURL('image/png'), 'PNG', m, y, wmm, hmm);
-      y += hmm + 3;
-    }
+    var pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight(), m = 8;
+    // One picture of the header and every table, scaled once so they all share one page and one scale
+    holder.style.padding = '4px 6px 10px';
+    var canvas = await html2canvas(holder, { scale: 2, backgroundColor: '#ffffff', logging: false, width: holder.scrollWidth, height: holder.scrollHeight, windowWidth: holder.scrollWidth + 100 });
+    var k = Math.min((pw - 2 * m) / canvas.width, (ph - 2 * m) / canvas.height);
+    var wmm = canvas.width * k, hmm = canvas.height * k;
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', (pw - wmm) / 2, m, wmm, hmm);
     doc.save(String(fn.label || 'roster').replace(/[^a-z0-9]+/gi, '_') + '.pdf');
     toast('PDF exported');
   } catch (e) {
