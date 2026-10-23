@@ -1677,7 +1677,8 @@ function rcMyRows() {
       var ab = !!(me.absentApproved && me.absentApproved[i]) || /^(AB|ABSENT)$/i.test(sh.trim());
       var na = !!(me.unavailable && me.unavailable[i]) || /^NA$/i.test(sh.trim());
       var t = (!ab && !na) ? rcShiftTimes(d.iso, sh) : null;
-      out.push({ fn: fn, i: i, d: d, sh: sh, ab: ab, na: na, t: t, mgr: !!((me.cellGreen && me.cellGreen[i]) || (me.cellG && me.cellG[i])) });
+      var orig = me.originalShifts && me.originalShifts[i] != null ? String(me.originalShifts[i]) : '';
+      out.push({ fn: fn, i: i, d: d, sh: sh, ab: ab, na: na, t: t, orig: (rcIsEmptyVal(orig) || rcIsAbsentVal(orig)) ? '' : orig, mgr: !!((me.cellGreen && me.cellGreen[i]) || (me.cellG && me.cellG[i])) });
     });
   });
   return out;
@@ -1728,7 +1729,7 @@ renderMySchedule = function () {
       list.forEach(function (r) {
         var past = r.d.iso < today, isToday = r.d.iso === today, work = !!r.t;
         var cls = 'ms-day' + (isToday ? ' ms-today' : '') + (past ? ' ms-past' : '') + (work ? '' : ' ms-off');
-        var right = r.ab ? '<span class="ms-tag ms-ab">UNAVAILABLE</span>' : r.na ? '<span class="ms-tag ms-ab">NA</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
+        var right = r.ab ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? '<span class="ms-tag ms-ab">NA</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
         var tap = work && !past && (!r.t || r.t.start.getTime() > now);
         h += '<div class="' + cls + (tap ? ' ms-tap" onclick="rcRequestChange(\'' + rcEsc(r.fn.id) + '\',' + r.i + ')"' : '"') + '><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">›</span>' : '') + '</span></div>';
       });
@@ -1906,6 +1907,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.ms-day{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 14px;border-top:1px solid #e6e6e6;font-size:13px}'
     + '.ms-today{background:#FFF6CC;border-left:6px solid #E30613}.ms-past{opacity:.45}.ms-off .ms-date{color:#777}.ms-tap{cursor:pointer}.ms-tap:active{background:#f3f3f3}'
     + '.ms-right{display:flex;align-items:center;gap:8px}.ms-time{font-weight:900;font-size:14px}.ms-hrs{font-size:11px;color:#666;min-width:34px;text-align:right}.ms-offtxt{font-size:11px;font-weight:900;color:#999}'
+    + '.ms-struck{text-decoration:line-through;color:#999;font-weight:700}'
     + '.ms-tag{background:#111;color:#fff;border-radius:9999px;padding:2px 7px;font-size:9px;font-weight:900}.ms-ab{background:#E30613}.ms-tt{background:#E30613}.ms-chev{font-size:20px;font-weight:900;color:#E30613;line-height:1}'
     + '.r-table td.rc-cell-edit{background:#fff !important;outline:3px solid #E30613;outline-offset:-3px;padding:2px !important;vertical-align:middle}'
     + '.r-table td.rc-cell-edit{overflow:hidden}'
