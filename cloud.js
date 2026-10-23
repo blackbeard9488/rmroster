@@ -2083,12 +2083,12 @@ async function rcScanPhoto() {
     var r = await fetch(RC_PUSH_WORKER_URL.replace(/\/$/, '') + '/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token, image: image, mime: 'image/jpeg', roster: roster }) });
     var res = await r.json().catch(function () { return { error: 'the relay answered ' + r.status }; });
     if (res.error) throw new Error(res.error);
-    rcShowPhotoResults(fn, res.changes || [], res.service);
+    rcShowPhotoResults(fn, res.changes || [], res.service, res.weak);
   } catch (e) {
     out.innerHTML = '<div class="card"><b style="color:#E30613">Could not check the photo:</b> ' + rcEsc(e.message || e) + '</div>';
   } finally { go.disabled = false; go.textContent = 'CHECK PHOTO'; }
 }
-function rcShowPhotoResults(fn, changes, service) {
+function rcShowPhotoResults(fn, changes, service, weak) {
   var out = document.getElementById('pc-results');
   var byName = {}; fn.staff.forEach(function (st, i) { byName[rcNameKey(st.lastName + st.firstName)] = i; byName[rcNameKey(st.firstName + st.lastName)] = i; });
   var items = [], skipped = [];
@@ -2100,7 +2100,7 @@ function rcShowPhotoResults(fn, changes, service) {
     var st = fn.staff[row], cur = String(st.shifts[col] || 'OFF');
     var photo = /^off$/i.test(String(c.photo || '').trim()) || !String(c.photo || '').trim() ? 'OFF' : (rcCleanShift(c.photo) || String(c.photo).trim().toUpperCase());
     if ((rcIsEmptyVal(cur) && photo === 'OFF') || cur === photo) return;
-    items.push({ row: row, col: col, st: st, cur: cur, photo: photo, mark: c.mark || 'different', conf: typeof c.confidence === 'number' ? c.confidence : 0.5 });
+    items.push({ row: row, col: col, st: st, cur: cur, photo: photo, mark: c.mark || 'different', conf: weak ? 0 : (typeof c.confidence === 'number' ? c.confidence : 0.5) });
   });
   RC.photoItems = items; RC.photoFn = fn.id;
   var mk = { crossed: 'crossed out', written: 'written in', different: 'differs' };
@@ -2112,7 +2112,7 @@ function rcShowPhotoResults(fn, changes, service) {
       + '<span class="pc-vals"><span class="pc-cur">' + rcEsc(rcShiftText(it.cur)) + '</span> → <input id="pc-v-' + k + '" value="' + rcEsc(it.photo) + '"></span></label>';
   }).join('');
   if (items.length) h += '<button class="rc-b rc-red rc-wide" style="margin-top:10px" onclick="rcApplyPhoto()">APPLY TICKED CHANGES</button>';
-  if (service) h += '<div class="rc-small" style="margin-top:8px;color:#777">Read by ' + rcEsc(service) + (/backup/i.test(service) ? ' - check these carefully, the backup is weaker at handwriting.' : '') + '</div>';
+  if (service) h += '<div class="rc-small" style="margin-top:8px;color:#777">Read by ' + rcEsc(service) + (weak ? ' - this last-resort reader often gets cells wrong, so nothing is ticked: check each one against the photo.' : '') + '</div>';
   if (skipped.length) h += '<div class="rc-small" style="margin-top:10px;color:#777">Couldn\'t match to the roster: ' + skipped.map(function (c) { return rcEsc((c.name || '?') + ' ' + (c.date || '?') + ' ' + (c.photo || '')); }).join('; ') + '</div>';
   out.innerHTML = h + '</div>';
 }

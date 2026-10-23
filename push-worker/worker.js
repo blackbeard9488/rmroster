@@ -11,7 +11,9 @@
      ALLOWED_ORIGIN     https://blackbeard9488.github.io  (optional, defaults to *)
      GEMINI_API_KEY     Google AI Studio key, as a *Secret* (for the roster photo check)
      GEMINI_MODEL       optional, defaults to gemini-flash-latest (Google's always-current Flash model)
-     AI                 Workers AI binding: the backup reader when Gemini fails or is too slow
+     GITHUB_MODELS_TOKEN  GitHub token with "Models: read", as a *Secret* (first backup: GPT-4.1 via GitHub Models)
+     GITHUB_MODEL       optional, defaults to openai/gpt-4.1
+     AI                 Workers AI binding: last-resort reader (weaker, so its suggestions arrive unticked)
 */
 
 export default {
@@ -59,7 +61,7 @@ export default {
 async function scanRoster(body, env, cors) {
   const { idToken, image, mime, roster } = body || {};
   if (!idToken || !image || !roster || !Array.isArray(roster.rows) || !Array.isArray(roster.dates)) return json({ error: 'bad request' }, 400, cors);
-  if (!env.GEMINI_API_KEY && !env.AI) return json({ error: 'photo check is not set up' }, 501, cors);
+  if (!env.GEMINI_API_KEY && !env.GITHUB_MODELS_TOKEN && !env.AI) return json({ error: 'photo check is not set up' }, 501, cors);
   if (image.length > 14000000) return json({ error: 'photo is too large' }, 413, cors);
   // Only managers can read mgrdata, so the database rules decide who may use this
   const db = env.DB_URL.replace(/\/$/, '');
@@ -84,18 +86,18 @@ async function scanRoster(body, env, cors) {
     'Reply with JSON only: {"changes":[{"name":"","date":"","photo":"","mark":"","confidence":0}]}. If nothing is changed, reply {"changes":[]}.'
   ].join('\n');
 
-  // Gemini first; Cloudflare's own vision model if Gemini errors, is over its limit or takes over 60s
-  let res = env.GEMINI_API_KEY ? await askGemini(env, image, mime, prompt) : { error: 'no Gemini key' };
-  let service = 'Gemini';
-  if (res.error && env.AI) {
-    const why = res.why || 'unavailable';
-    const backup = await askWorkersAI(env, image, mime, prompt);
-    if (!backup.error) { res = backup; service = 'Cloudflare AI (backup - Gemini ' + why + ')'; }
-    else res = { error: 'Gemini: ' + res.error + ' | backup: ' + backup.error };
-    res.why = undefined;
+  // Gemini first, then GPT-4.1 on GitHub Models, then Cloudflare's own model. All within Cloudflare's 100s limit.
+  const tries = [];
+  if (env.GEMINI_API_KEY) tries.push(['Gemini', () => askGemini(env, image, mime, prompt)]);
+  if (env.GITHUB_MODELS_TOKEN) tries.push(['GPT-4.1 (GitHub)', () => askGitHubModels(env, image, mime, prompt)]);
+  if (env.AI) tries.push(['Cloudflare AI', () => askWorkersAI(env, image, mime, prompt), true]);
+  const failed = [];
+  for (const [name, run, weak] of tries) {
+    const res = await run();
+    if (!res.error) return json({ changes: res.changes, service: name + (failed.length ? ' (backup - ' + failed.map(f => f.name + ' ' + f.why).join(', ') + ')' : ''), weak: !!weak }, 200, cors);
+    failed.push({ name, why: res.why || 'failed', error: res.error });
   }
-  if (res.error) return json({ error: res.error }, 502, cors);
-  return json({ changes: res.changes, service }, 200, cors);
+  return json({ error: failed.map(f => f.name + ': ' + f.error).join(' | ') }, 502, cors);
 }
 
 function parseChanges(raw) {
@@ -107,7 +109,7 @@ function parseChanges(raw) {
 async function askGemini(env, image, mime, prompt) {
   const model = env.GEMINI_MODEL || 'gemini-flash-latest';
   const ask = (thinking) => {
-    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 60000);
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 45000);
     return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: 'POST', signal: ctl.signal,
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
@@ -128,13 +130,33 @@ async function askGemini(env, image, mime, prompt) {
     return { changes: parseChanges(raw) };
   } catch (e) {
     const slow = e && e.name === 'AbortError';
-    return { error: slow ? 'took longer than 60 seconds' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
+    return { error: slow ? 'took longer than 45 seconds' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
   }
+}
+
+async function askGitHubModels(env, image, mime, prompt) {
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const r = await fetch('https://models.github.ai/inference/chat/completions', {
+      method: 'POST', signal: ctl.signal,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/vnd.github+json', Authorization: 'Bearer ' + env.GITHUB_MODELS_TOKEN, 'X-GitHub-Api-Version': '2022-11-28' },
+      body: JSON.stringify({
+        model: env.GITHUB_MODEL || 'openai/gpt-4.1', temperature: 0, max_tokens: 3000, response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: 'data:' + (mime || 'image/jpeg') + ';base64,' + image, detail: 'high' } }] }]
+      })
+    });
+    const out = await r.json().catch(() => null);
+    if (!r.ok) return { error: (out && out.error && (out.error.message || out.error.code)) || String(r.status), why: r.status === 429 ? 'daily limit reached' : 'error ' + r.status };
+    return { changes: parseChanges(((out.choices || [])[0] || {}).message ? out.choices[0].message.content : '') };
+  } catch (e) {
+    const slow = e && e.name === 'AbortError';
+    return { error: slow ? 'took longer than 30 seconds' : String(e && e.message || e), why: slow ? 'too slow' : 'not reachable' };
+  } finally { clearTimeout(timer); }
 }
 
 async function askWorkersAI(env, image, mime, prompt) {
   try {
-    const out = await env.AI.run(env.BACKUP_MODEL || '@cf/meta/llama-4-scout-17b-16e-instruct', {
+    const out = await env.AI.run(env.BACKUP_MODEL || '@cf/mistralai/mistral-small-3.1-24b-instruct', {
       messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: 'data:' + (mime || 'image/jpeg') + ';base64,' + image } }] }],
       max_tokens: 2048, temperature: 0
     });
