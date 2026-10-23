@@ -1565,7 +1565,7 @@ function rcRefreshPushState() {
   navigator.serviceWorker.getRegistration().then(function (reg) { return reg && reg.pushManager.getSubscription(); }).then(function (sub) {
     var s = document.getElementById('rc-push-state'), b = document.getElementById('rc-push-btn');
     if (!s) return;
-    if (sub) { s.textContent = 'On for this device ✓'; if (b) { b.textContent = 'SEND A TEST ALERT'; b.onclick = rcTestPush; } }
+    if (sub) { s.textContent = 'On for this device ✓'; if (b) b.remove(); }
     else s.textContent = 'Not set up on this device yet.';
   }).catch(function () {});
 }
