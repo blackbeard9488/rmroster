@@ -475,7 +475,14 @@ function doLogin(){
   }
   safeSet('repco_username', found.username);
   safeSetJSON('retail_roster_session_v1', found);
+  safeSet('repco_last_activity', String(Date.now()));
+  lastActivityTs=Date.now();
   if(err) err.textContent='';
+  enterApp(found);
+  toast('Welcome '+found.firstName);
+}
+
+function enterApp(found){
   document.getElementById('login-page').style.display='none';
   document.getElementById('global-header').classList.add('show');
   document.getElementById('repco-v65').classList.add('show');
@@ -488,8 +495,43 @@ function doLogin(){
   if(isManagerRole(getActualRole())){
     setTimeout(function(){ restoreEditDraftIfNeeded(); }, 1200);
   }
-  toast('Welcome '+found.firstName);
 }
+
+/* Keeps users logged in across refreshes, but only if active within the last 30 minutes */
+function autoRestoreSession(){
+  try{
+    var u=safeGet('repco_username','');
+    if(!u) return false;
+    var last=parseInt(safeGet('repco_last_activity','')||'0',10);
+    if(!last || (Date.now()-last)>INACTIVITY_LIMIT_MS){
+      safeSet('repco_username',''); safeSet('repco_last_activity','');
+      var er=document.getElementById('login-err');
+      if(er && last) er.textContent='Session timed out after 30 minutes of inactivity. Please log in again.';
+      return false;
+    }
+    seedIfEmpty();
+    var users=safeGetJSON('retail_roster_users_v1',[]);
+    var found=users.find(function(x){ return x.username.toLowerCase()===u.toLowerCase(); });
+    if(!found){ safeSet('repco_username',''); return false; }
+    updateActivity();
+    enterApp(found);
+    return true;
+  }catch(e){ console.error('autoRestoreSession',e); return false; }
+}
+
+/* Log out as soon as the tab becomes visible again if the 30 minutes have already passed (phones pause timers in the background) */
+document.addEventListener('visibilitychange', function(){
+  try{
+    if(document.visibilityState!=='visible') return;
+    if(!safeGet('repco_username','')) return;
+    var last=parseInt(safeGet('repco_last_activity','')||'0',10);
+    if(last && (Date.now()-last)>INACTIVITY_LIMIT_MS){
+      doLogout();
+      var er=document.getElementById('login-err');
+      if(er) er.textContent='Session timed out after 30 minutes of inactivity. Please log in again.';
+    }
+  }catch(e){}
+});
 
 
 function doLogout(){
