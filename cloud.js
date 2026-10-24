@@ -273,7 +273,7 @@ function rcFlush(spec) {
   try { rcCollectSideEffects(spec, prev, next, updates, extraNotes); } catch (e) { console.error('side effects', e); }
   RC.base[spec.key] = next;
   rcSetStatus('saving');
-  RC.db.ref().update(updates).then(function () {
+  rcSave(updates).then(function () {
     rcSetStatus('saved');
     extraNotes.forEach(function (n) { if (n.withdraw) rcPushWithdraw(n.withdraw); else rcNotify(n.uids, n.note); });
   }).catch(function (e) {
@@ -393,6 +393,15 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
   }
 }
 /* Change history: one entry per changed cell, kept for managers */
+/* Save a change; change-history entries go in a second write so a history problem (e.g. database
+   rules not updated yet) can never block the change itself */
+function rcSave(upd) {
+  var main = {}, hist = {};
+  Object.keys(upd).forEach(function (k) { (/^(teams\/[^/]+\/)?history\//.test(k) ? hist : main)[k] = upd[k]; });
+  return RC.db.ref().update(main).then(function () {
+    if (Object.keys(hist).length) RC.db.ref().update(hist).catch(function (e) { console.warn('history not saved', e && e.code); });
+  });
+}
 function rcLogHistory(updates, e, team) {
   team = team || RC.team;
   var key = RC.db.ref(rcTPx(team, 'history')).push().key;
@@ -1505,7 +1514,7 @@ function rcRespondOffer(oid, accept) {
     var hasOrig = curSt && curSt.originalShifts && curSt.originalShifts[o.i] != null;
     if (!hasOrig) upd[cellPath + '/originalShifts/' + o.i] = (curSt && curSt.shifts && curSt.shifts[o.i]) || 'OFF';
   }
-  RC.db.ref().update(upd).then(function () {
+  rcSave(upd).then(function () {
     toast(accept ? 'Accepted - the shift is now on your roster' : 'Offer declined');
     var who = RC.session.profile.username;
     var uids = rcManagerUids(team); if (o.byUid && uids.indexOf(o.byUid) === -1) uids.push(o.byUid);
@@ -2596,7 +2605,7 @@ function rcPublishFn(publish) {
     if (RC.importDraftIds) delete RC.importDraftIds[fn.id];
     var upd = {}; upd[rcTP('data/roster/' + rcEncodeKey(fn.id) + '/draft')] = publish ? null : true;
     rcLogHistory(upd, { fnId: fn.id, fn: rcFnRange(fn), action: publish ? 'Roster published' : 'Roster made draft' });
-    RC.db.ref().update(upd).then(function () {
+    rcSave(upd).then(function () {
       toast(publish ? 'Published - staff can see it now' : 'Now a draft - hidden from staff');
       if (!publish) return;
       var who = {};
