@@ -64,7 +64,8 @@ team can't see another team; masters see every team.
 1. Paste the latest `database.rules.json` into Firebase (Realtime Database → Rules → Publish).
 2. Sign in as a master. **Options → TEAMS → ADD TEAM**, then **OPEN** it. Add that team's managers, admins and
    staff in Account Management. New logins join the team that's open.
-3. Upload the team's Excel, or press **+ NEW FORTNIGHT** on the roster to start an empty one.
+3. Upload the team's Excel, or press **+ NEW / DUPLICATE** on the roster to start an empty fortnight or copy the
+   one on screen (copies always start as a draft).
 4. To give someone both teams, make them a master.
 
 To put someone from another team on a team's roster, open that team and go to **Account Management →

@@ -53,7 +53,7 @@ button{cursor:pointer}
 .r-table tr.own td.staff-cell{background:#0a0a0a !important;color:#fff !important;border-left:6px solid #E30613 !important}.r-table tr.own td{box-shadow:inset 0 3px 0 #E30613,inset 0 -3px 0 #E30613}.you-pill{display:inline-block;background:#E30613;color:#fff;border-radius:9999px;padding:1px 6px;font-size:8px;font-weight:900;letter-spacing:.5px;vertical-align:middle;margin-left:4px}
 .r-table td.cell-work{background:#fff !important;cursor:pointer;font-weight:400 !important}
 .r-table td.cell-off{background:#9DA0A3 !important;color:transparent !important;cursor:pointer}
-.r-table td.cell-na{background:#111 !important;color:#fff !important}
+.r-table td.cell-na,.r-table td.col-weekend.cell-na,table td.cell-na{background:#000 !important;color:#fff !important;font-weight:900 !important;letter-spacing:.3px}
 .r-table td.cell-absent{background:#FFA9B6 !important}
 .r-table td.col-weekend{background:#D6EBFF !important}
 .r-table td.col-weekend.cell-work{background:#D6EBFF !important}
@@ -333,7 +333,7 @@ function getDatesForFortnight(fnId){
 
 <script>
 
-const BUILD_ID="20261024_V229_LIVE_SYNC";
+const BUILD_ID="20261024_V230_LIVE_SYNC";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -693,12 +693,13 @@ function renderRosterCore(){
       rows+='<tr class="'+rowClass+'"><td class="staff-cell" '+(isMgr?'onclick="editStaffType('+globalStaffIdx+')" style="cursor:pointer"':'')+'>'+st.lastName.toUpperCase()+', '+st.firstName+(own?' <span class="you-pill">YOU</span>':'')+'</td>';
       (st.shifts||[]).forEach(function(sh,idx){
         var na=(st.unavailable && st.unavailable[idx]) || /^(UA|NA)$/i.test(String(sh||'').trim()); var isAbsentApproved=st.absentApproved && st.absentApproved[idx]; var isGreen=(st.cellGreen && st.cellGreen[idx]) || isAutoGreenShift(st, st.shifts[idx]); var orig=st.originalShifts && st.originalShifts[idx] ? st.originalShifts[idx] : null;
-        var disp=na?'UA':sh; var txt=fmt(disp); if(na){ txt=(orig && !/^(UA|NA|AB|ABSENT|OFF)$/i.test(String(orig).trim()))?fmt(orig)+' UA':'UA'; } else if(isAbsentApproved && orig){ txt=fmt(orig)+' AB'; } else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
+        var disp=na?'UA':sh; var txt=fmt(disp); if(na){ txt='UNAVAILABLE'; } else if(isAbsentApproved && orig){ txt=fmt(orig)+' AB'; } else if(disp.toUpperCase()==='OFF' || disp==='' ){ txt=''; }
         var off=['OFF',''].includes((disp||'').toUpperCase().trim()); var absent=['AB','ABSENT'].includes((disp||'').toUpperCase().trim()) || isAbsentApproved;
         var cls=''; if(na) cls='cell-na'; else if(absent) cls='cell-absent'; else if(off) cls='cell-off'; else if(isGreen) cls='cell-green'; else cls='cell-work';
         var isWeekendCol=isWeekend(cur.dates[idx].day); var weekendClass=''; if(isWeekendCol){ var prevWeekend=idx>0?isWeekend(cur.dates[idx-1].day):false; var nextWeekend=idx<cur.dates.length-1?isWeekend(cur.dates[idx+1].day):false; /*weekend same*/ /*weekend same*/ cls+=' col-weekend'+weekendClass; }
         var isFull=!isCasual(st); var net; if(isAbsentApproved){ net = isFull ? netH(orig||sh) : 0; } else if(isFull){ if(na){ net=netH(orig||sh); } else { net=netH(sh); } } else { if(na||off||absent){ net=0; } else { net=netH(sh); } } hrs+=net;dayTotals[idx]+=net;
         var clickAttr=' data-r="'+globalStaffIdx+'" data-i="'+idx+'"'; if(isMgr){ clickAttr+=' onclick="editCell(this,'+globalStaffIdx+','+idx+',\''+title+'\')" '; }
+        if(na && orig && !/^(UA|NA|AB|ABSENT|OFF)$/i.test(String(orig).trim())) clickAttr+=' title="Unavailable (was '+fmt(orig)+')"';
         rows+='<td class="'+cls+'"'+clickAttr+'>'+txt+'</td>';
       }); rows+='<td class="hrs">'+hrs.toFixed(1)+'h</td></tr>';grand+=hrs;
     }); var totalsRow=''; if(isMgr && !noTotals){ totalsRow='<tr class="totals"><td class="staff-cell">DAY TOTALS</td>'; dayTotals.forEach(function(t,i){ totalsRow+='<td>'+(t>0?t.toFixed(1)+'h':'0')+'</td>';}); totalsRow+='<td class="hrs">'+grand.toFixed(1)+'h</td></tr>'; } var head='<tr><th class="staff-col">STAFF</th>';cur.dates.forEach(function(d,i){ var cl=isWeekend(d.day)?'day-blue col-weekend':'day-yellow'; if(isWeekend(d.day)){ var prevWeekend=i>0?isWeekend(cur.dates[i-1].day):false; var nextWeekend=i<cur.dates.length-1?isWeekend(cur.dates[i+1].day):false; /*weekend same*/ /*weekend same*/ } head+='<th class="'+cl+'">'+d.day+'<br>'+d.date+'</th>'; });head+='<th class="staff-col">HRS</th></tr>';
@@ -2321,6 +2322,6 @@ window.addEventListener('load', function(){
 });
 window.addEventListener("unhandledrejection", function(e){ if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")) e.preventDefault(); });
 </script>
-<script src="cloud.js?v=20261024_V229"></script>
+<script src="cloud.js?v=20261024_V230"></script>
 </body>
 </html>

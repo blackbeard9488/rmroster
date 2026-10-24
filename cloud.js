@@ -2785,7 +2785,7 @@ function rcRenderTeamsPage() {
       + (t === RC.team ? '<span class="rc-pill">OPEN</span>' : '<button class="rc-b" onclick="rcSwitchTeam(\'' + t + '\')">OPEN</button>') + '</div>';
   });
   h += '<div class="tm-row" style="margin-top:10px"><input id="tm-new" class="rc-to-in" style="margin:0;flex:1" placeholder="New team name"><button class="rc-b rc-red" onclick="rcAddTeam()">ADD TEAM</button></div>';
-  h += '<div class="rc-small" style="margin-top:8px">To set up a new team: ADD TEAM, OPEN it, then add its admins, managers and staff in Account Management. Then upload its Excel or press + NEW FORTNIGHT on the roster.</div></div>';
+  h += '<div class="rc-small" style="margin-top:8px">To set up a new team: ADD TEAM, OPEN it, then add its managers, admins and staff in Account Management. Then upload its Excel or press + NEW / DUPLICATE on the roster.</div></div>';
   // people: masters see every team; everyone else belongs to one team
   h += '<div class="card"><div class="rc-h">PEOPLE IN EACH TEAM</div><div class="rc-small">Masters see and run every team. Everyone else sees only their own team (plus any team that has borrowed them, as staff). To give someone both teams, make them a master in Account Management.</div>';
   var users = Object.keys(all).map(function (k) { return Object.assign({ uid: k }, all[k]); });
@@ -2938,15 +2938,36 @@ function rcFreshRoster() {
     if (p.guestFrom) { people.push(rcRowFor(p, 14, p.guestFrom)); return; }
     people.push({ firstName: p.firstName, lastName: p.lastName, role: rcIsMgrRole(p.role) ? p.role : 'staff', employmentType: p.employmentType || 'casual', shifts: Array(14).fill('OFF'), unavailable: Array(14).fill(false), isHidden: !!(p.isHidden || isHiddenStaffRow(p)) });
   };
+  var shown = getSelectedFortnight(); if (shown) (shown.staff || []).forEach(addP);   // the fortnight on screen (it can be duplicated)
   recent.forEach(function (f) { (f.staff || []).forEach(addP); });
-  if (!recent.length) rcUserList().forEach(addP);
+  if (!recent.length && !shown) rcUserList().forEach(addP);
   if (!people.length) { toast('Add this team\'s staff in Account Management first'); return; }
-  showCustomConfirm('Start a fresh roster?', 'Creates an empty roster for <b>' + rcEsc(label) + '</b> with ' + people.length + ' staff ' + (recent.length ? '(everyone on the last ' + (recent.length > 1 ? recent.length + ' rosters' : 'roster') + ')' : '(everyone with a login in this team)') + '. Every day starts OFF - type shifts straight into the cells. Uploading the Excel for these dates later fills in the cells you haven\'t touched.'
-    + '<label class="rc-keep" style="margin-top:10px"><input type="checkbox" id="rc-fresh-draft"> Keep it as a draft (staff won\'t see it until you publish)</label>', function (ok) {
+  var src = getSelectedFortnight();
+  var hasHidden = !!(src && (src.staff || []).some(function (st) { return isHiddenStaffRow(st) && (st.shifts || []).some(function (v) { return !!parseShiftRange(v); }); }));
+  showCustomConfirm('New fortnight: ' + rcEsc(label), '<div class="rc-small" style="margin-bottom:8px">' + people.length + ' staff.</div>'
+    + '<label class="rc-keep"><input type="radio" name="rc-fresh-mode" id="rc-fresh-empty" value="empty" checked onchange="rcFreshModeUI()"> <span><b>Empty</b> - every day OFF, type shifts into the cells</span></label>'
+    + (src ? '<label class="rc-keep" style="margin-top:6px"><input type="radio" name="rc-fresh-mode" id="rc-fresh-copy" value="copy" onchange="rcFreshModeUI()"> <span><b>Duplicate ' + rcEsc(rcFnRange(src)) + '</b> - same shifts on the same weekdays (absences and UA aren\'t copied)</span></label>'
+      + '<label class="rc-keep rc-fresh-sub" style="margin:6px 0 0 26px;display:none"><input type="checkbox" id="rc-fresh-hidden"' + (hasHidden ? ' checked' : ' disabled') + '> Include hidden employees\' shifts</label>' : '')
+    + '<label class="rc-keep" id="rc-fresh-draft-row" style="margin-top:10px"><input type="checkbox" id="rc-fresh-draft"> Keep it as a draft (staff won\'t see it until you publish)</label>'
+    + '<div class="rc-small rc-fresh-sub" style="display:none;margin-top:10px">A duplicate always starts as a <b>draft</b>. Check it, then press PUBLISH TO STAFF.</div>'
+    + '<div class="rc-small" style="margin-top:8px">Uploading the Excel for these dates later fills in the cells you haven\'t changed.</div>', function (ok) {
     if (!ok) return;
-    var draft = !!(document.getElementById('rc-fresh-draft') || {}).checked;
+    var copy = !!(document.getElementById('rc-fresh-copy') || {}).checked && !!src;
+    var withHidden = copy && !!(document.getElementById('rc-fresh-hidden') || {}).checked;
+    var draft = copy || !!(document.getElementById('rc-fresh-draft') || {}).checked;   // duplicates always start as drafts
     var all = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
     if (all.some(function (f) { return (f.dates || []).some(function (d) { return d.iso === dates[0].iso; }); })) { toast('There is already a roster for ' + label); return; }
+    if (copy) {
+      // same weekday in the source fortnight: by position when both start on the same weekday, otherwise by matching day name
+      var srcIdx = dates.map(function (d, i) { if (src.dates[i] && src.dates[i].day === d.day) return i; var k = src.dates.findIndex(function (x) { return x.day === d.day; }); return k; });
+      var nameOf = function (x) { return (String(x.firstName || '').trim() + ' ' + String(x.lastName || '').trim()).toLowerCase(); };
+      people.forEach(function (p) {
+        var from = (src.staff || []).find(function (x) { return nameOf(x) === nameOf(p); }); if (!from) return;
+        if (isHiddenStaffRow(from) && !withHidden) return;
+        p.shifts = srcIdx.map(function (k) { var v = k >= 0 && from.shifts ? from.shifts[k] : 'OFF'; return parseShiftRange(v) ? String(v) : 'OFF'; });
+        if (from.isHidden) p.isHidden = true;
+      });
+    }
     people.sort(rcStaffSort);
     var fn = { id: 'fn_' + Date.now(), label: label, dates: dates, staff: people };
     if (draft) fn.draft = true;
@@ -2954,15 +2975,20 @@ function rcFreshRoster() {
     safeSet('retail_roster_currentFortnightId', fn.id);
     safeSetJSON('retail_roster_byFortnight_v1', all);
     populateFortnightSelect(); renderRosterSafe();
-    toast('Fresh roster started: ' + label + (draft ? ' (draft)' : ''));
+    toast((copy ? 'Duplicated ' + rcFnRange(src) + ' to ' : 'Fresh roster started: ') + label + (draft ? ' (draft)' : ''));
   });
+}
+function rcFreshModeUI() {
+  var copy = !!(document.getElementById('rc-fresh-copy') || {}).checked;
+  document.querySelectorAll('.rc-fresh-sub').forEach(function (e) { e.style.display = copy ? '' : 'none'; });
+  var dr = document.getElementById('rc-fresh-draft-row'); if (dr) dr.style.display = copy ? 'none' : '';
 }
 function rcFreshButton() {
   var ctl = document.querySelector('#repco-v65 .r-controls') || document.querySelector('.r-controls'); if (!ctl) return;
   var b = document.getElementById('rc-fresh-btn');
   if (!rcIsMgr() || RC.pdfMode) { if (b) b.remove(); return; }
   if (b) return;
-  b = document.createElement('button'); b.id = 'rc-fresh-btn'; b.textContent = '+ NEW FORTNIGHT'; b.title = 'Start an empty roster for the next fortnight'; b.onclick = rcFreshRoster;
+  b = document.createElement('button'); b.id = 'rc-fresh-btn'; b.textContent = '+ NEW / DUPLICATE'; b.title = 'Start the next fortnight: empty, or a copy of the one on screen'; b.onclick = rcFreshRoster;
   var del = document.getElementById('delete-roster-btn'); ctl.insertBefore(b, del || null);
 }
 renderImportExportPage = (function (orig) {
@@ -3128,7 +3154,7 @@ function rcSharedMarks() {
         var td = document.querySelector('#roster-mount td[data-r="' + r + '"][data-i="' + i + '"]');
         if (td && !td.querySelector('.rc-else')) {
           var mine = (st.shifts && st.shifts[i] != null) ? String(st.shifts[i]) : 'OFF', clash = !!parseShiftRange(mine) && !!parseShiftRange(v);
-          td.insertAdjacentHTML('beforeend', '<span class="rc-else' + (clash ? ' rc-clash' : '') + '" title="Rostered at ' + rcEsc(rcTeamName(t)) + '">' + (clash ? '⚠ ' : '') + rcEsc(rcTeamName(t)) + ' ' + rcEsc(label) + '</span>');
+          td.insertAdjacentHTML('beforeend', '<span class="rc-else' + (clash ? ' rc-clash' : '') + '" title="Rostered at ' + rcEsc(rcTeamName(t)) + '">' + (clash ? '⚠ ' : '') + rcEsc(label) + '<br>@ ' + rcEsc(rcTeamName(t)) + '</span>');
         }
       });
     });
@@ -3521,7 +3547,8 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-mobile.rc-rh-l .r-table td,body.rc-mobile.rc-rh-l table td{min-width:80px !important;width:80px !important;max-width:80px !important;font-size:13px !important}'
     + 'body.rc-rh-l .dv-row{padding:17px 16px;font-size:18px}body.rc-rh-l .dv-shift{font-size:19px}'
     + 'body.rc-mobile .r-controls #rc-rows-btn{order:4;min-width:0;padding:5px 10px;font-size:10px}'
-    + '.rc-else{display:block;margin-top:2px;font-size:8.5px;font-weight:800;color:#555 !important;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}td.cell-off .rc-else{color:#fff !important}.rc-else.rc-clash{color:#E30613 !important}.rc-else-dv{flex-basis:100%;font-size:11px;color:#666 !important}'
+    + '.rc-else{display:block;margin-top:2px;font-size:8.5px;font-weight:800;color:#555 !important;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}td.cell-off .rc-else{color:#111 !important;font-style:italic}.rc-else.rc-clash{color:#E30613 !important}.rc-else-dv{flex-basis:100%;font-size:11px;color:#666 !important}'
+    + 'body.rc-mobile table td.cell-na{font-size:7.5px !important;letter-spacing:0}body.rc-rh-l table td.cell-na{font-size:12px !important}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
