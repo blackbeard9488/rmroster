@@ -60,13 +60,15 @@ export default {
 
 /* ---- Roster photo check: managers only; Gemini compares the photo with the roster ---- */
 async function scanRoster(body, env, cors) {
-  const { idToken, image, mime, roster } = body || {};
+  const { idToken, image, mime, roster, team } = body || {};
   if (!idToken || !image || !roster || !Array.isArray(roster.rows) || !Array.isArray(roster.dates)) return json({ error: 'bad request' }, 400, cors);
   if (!env.GEMINI_API_KEY && !env.OPENROUTER_API_KEY && !env.AI) return json({ error: 'photo check is not set up' }, 501, cors);
   if (image.length > 14000000) return json({ error: 'photo is too large' }, 413, cors);
-  // Only managers can read mgrdata, so the database rules decide who may use this
+  // Only a team's managers can read its mgrdata, so the database rules decide who may use this
+  if (team !== undefined && team !== 'main' && !/^[a-z0-9]{2,30}$/.test(String(team))) return json({ error: 'bad team' }, 400, cors);
   const db = env.DB_URL.replace(/\/$/, '');
-  const chk = await fetch(`${db}/mgrdata.json?shallow=true&auth=${encodeURIComponent(idToken)}`);
+  const base = (!team || team === 'main') ? '' : `teams/${team}/`;
+  const chk = await fetch(`${db}/${base}mgrdata.json?shallow=true&auth=${encodeURIComponent(idToken)}`);
   if (!chk.ok) return json({ error: 'managers only' }, 403, cors);
 
   const table = roster.rows.map(r => `${r.name} | ` + r.shifts.map(v => v || 'OFF').join(' | ')).join('\n');

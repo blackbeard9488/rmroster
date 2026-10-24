@@ -333,7 +333,7 @@ function getDatesForFortnight(fnId){
 
 <script>
 
-const BUILD_ID="20261024_V225_LIVE_SYNC";
+const BUILD_ID="20261024_V226_LIVE_SYNC";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -717,7 +717,9 @@ function renderRosterCore(){
 function editStaffType(globalIdx){ if(!isManagerRole()) return; showCustomSelect('Set employment type for '+getCurrentFortnight().staff[globalIdx].firstName+' '+getCurrentFortnight().staff[globalIdx].lastName, ['Full time','Casual'], (choice)=>{ if(!choice) return; let norm=choice.toLowerCase().includes('casual')?'casual':'fulltime'; let fns=safeGetJSON('retail_roster_byFortnight_v1',[]); let fn=fns.find(f=>f.id===safeGet('retail_roster_currentFortnightId')); if(fn){ fn.staff[globalIdx].employmentType=norm; safeSetJSON('retail_roster_byFortnight_v1',fns); } toast(fn.staff[globalIdx].firstName+' set to '+norm+' - synced'); renderRosterSafe(); applyRoleVisibility(); }); }
 
 /* Luke and Chris: an opening shift (starts 07:30) or a closing shift (ends 20:00) is always shown green */
+function rcMainTeam(){ return typeof RC==='undefined' || !RC.team || RC.team==='main'; }   // the first team's own rules (Kate notes row, Luke/Chris green)
 function isAutoGreenShift(st, sh){
+  if(!rcMainTeam()) return false;
   var f=String((st&&st.firstName)||'').trim().toLowerCase();
   if(f!=='luke' && f!=='chris') return false;
   var p=parseShiftRange(sh); if(!p) return false;
@@ -1189,7 +1191,7 @@ function importExcelFile(file){
         // Any row mentioning Kate is a notes row, never a staff row - always ignore it
         let hasKate=false;
         for(let kc=0;kc<=range.e.c;kc++){ let kcell=ws[XLSX.utils.encode_cell({r:r,c:kc})]; if(kcell && kcell.v!=null && !(kcell.v instanceof Date) && /\bkate\b/i.test(String(kcell.v))){ hasKate=true; break; } }
-        if(hasKate) continue;
+        if(hasKate && rcMainTeam()) continue;
         let nameAddr=XLSX.utils.encode_cell({r:r,c:0});
         let nameCell=ws[nameAddr];
         if(!nameCell || !nameCell.v) continue;
@@ -2319,6 +2321,6 @@ window.addEventListener('load', function(){
 });
 window.addEventListener("unhandledrejection", function(e){ if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")) e.preventDefault(); });
 </script>
-<script src="cloud.js?v=20261024_V225"></script>
+<script src="cloud.js?v=20261024_V226"></script>
 </body>
 </html>

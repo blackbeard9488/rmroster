@@ -45,6 +45,22 @@ at the top of `cloud.js`.
 Each person then opens **INBOX → TURN ON NOTIFICATIONS ON THIS DEVICE**.
 On iPhone they must first use **Share → Add to Home Screen**, and open the app from that icon.
 
+## 6. More than one team (optional)
+
+Each team has its own staff, managers, admins, rosters, requests, offers and change history. People in one
+team can't see another team.
+
+1. Paste the latest `database.rules.json` into Firebase (Realtime Database → Rules → Publish).
+2. Sign in with your admin login, open **Account Management** and press **MAKE ME THE MAIN ADMIN**. This can be
+   done only once. To hand it to someone else later, change `meta/owner` in the Firebase console.
+3. **Options → TEAMS → ADD TEAM**, then **OPEN** it. Add that team's admins, managers and staff in
+   Account Management. New logins join the team that's open.
+4. Upload the team's Excel, or press **+ NEW FORTNIGHT** on the roster to start an empty one.
+5. To let someone see more than one team, tick that team next to their name on the **TEAMS** page. They get a
+   team button on the roster to switch between teams, with the same role they have in their own team.
+
+The Kate notes row and the Luke/Chris green cells only apply to the first team.
+
 ## How things work now
 
 - **Logins**: username and password only. Managers add people, reset forgotten passwords and remove
