@@ -3365,17 +3365,23 @@ var RC_WARN_TYPES = {
   dutyMin:       { label: 'People on a duty working on a day fewer than', unit: 'people', def: 2, msg: 'Not enough people for a duty', day: true, duty: true },
   dutyClose:     { label: 'Nobody on a duty working until closing', unit: 'none', def: '', msg: 'No one on duty at closing', day: true, duty: true },
   dutyOpen:      { label: 'Nobody on a duty starting by opening', unit: 'none', def: '', msg: 'No one on duty at opening', day: true, duty: true },
-  dutyBreak:     { label: 'Someone alone on a duty for longer than (no break cover)', unit: 'hours', def: 5, msg: 'No break cover', day: true, duty: true },
+  dutyBreak:     { label: 'Someone alone on a duty for longer than, with nobody to cover their break', unit: 'hours', def: 5, msg: 'No break cover', day: true, duty: true },
   mgrCover:      { label: 'Managers on at any time (store hours) fewer than', unit: 'people', def: 1, msg: 'No manager on', day: true },
   coverAnyTime:  { label: 'People in the store at any time (store hours) fewer than', unit: 'people', def: 2, msg: 'Too few people in the store', day: true },
   outsideHours:  { label: 'Shift starts or finishes outside store hours by more than', unit: 'hours', def: 1, msg: 'Shift outside store hours' }
 };
 /* ---------- Staff duties (register, audiologist, spares/parts, stock...): manager-only, never shown to staff ---------- */
-var RC_DEFAULT_DUTIES = [{ id: 'register', name: 'Register', cover: true }, { id: 'audiologist', name: 'Audiologist', cover: false }, { id: 'parts', name: 'Spares/Parts', cover: true }, { id: 'stock', name: 'Stock', cover: false }];
+var RC_DEFAULT_DUTIES = [{ id: 'register', name: 'Register', cover: true }, { id: 'regbreak', name: 'Register break cover', cover: false }, { id: 'audiologist', name: 'Audiologist', cover: false }, { id: 'parts', name: 'Spares/Parts', cover: true }, { id: 'stock', name: 'Stock', cover: false }];
 /* Duties that need cover through the day (checked for gaps); others are just listed. Audiologist and Stock don't by default. */
 function rcDutyNeedsCover(id) { var d = rcDuties().find(function (x) { return x.id === id; }); if (!d) return false; if (d.cover !== undefined) return !!d.cover; var def = RC_DEFAULT_DUTIES.find(function (x) { return x.id === id; }); return def ? def.cover : true; }
 function rcDutyEntry() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_duties'; }) || null; }
-function rcDuties() { var e = rcDutyEntry(); return (e && rcAsArray(e.list).length) ? rcAsArray(e.list) : RC_DEFAULT_DUTIES; }
+function rcDuties() {
+  var e = rcDutyEntry(); if (!(e && rcAsArray(e.list).length)) return RC_DEFAULT_DUTIES;
+  var list = rcAsArray(e.list).slice(), gone = rcAsArray(e.removed);
+  // defaults added in later versions (e.g. Register break cover) appear unless they were removed on purpose
+  RC_DEFAULT_DUTIES.forEach(function (d, k) { if (!list.some(function (x) { return x.id === d.id; }) && gone.indexOf(d.id) === -1) list.splice(Math.min(k, list.length), 0, d); });
+  return list;
+}
 function rcDutyName(id) { var d = rcDuties().find(function (x) { return x.id === id; }); return d ? d.name : id; }
 function rcPersonDuties(st) { var e = rcDutyEntry(); return rcAsArray(e && e.people && e.people[rcEncodeKey(rcPersonName(st))]); }
 function rcHasDuty(st, id) { return rcPersonDuties(st).indexOf(id) !== -1; }
@@ -3548,7 +3554,8 @@ function rcDayWarnings(fn, rules) {
       if (w.type === 'mgrCover' && on.length) { var lowM = rcLowCover(on, hrsD, +v, function (x) { return rcIsManagerRow(x.st); }); if (lowM.length) { bad = true; detail = lowM.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', ') + (lowM.length > 3 ? '…' : ''); } }
       if (w.type === 'dutyBreak' && w.duty && rcDutyHasPeople(w.duty)) {
         // a stretch where exactly one person who can do the duty is on, for longer than v hours
-        var alone = rcLowCover(on, hrsD, 2, function (x) { return rcHasDuty(x.st, w.duty); }).filter(function (g) { return g.n === 1 && (g.to - g.from) > (+v) * 60; });
+        var bk = w.duty === 'register' ? 'regbreak' : null;
+        var alone = rcLowCover(on, hrsD, 2, function (x) { return rcHasDuty(x.st, w.duty) || (bk && rcHasDuty(x.st, bk)); }).filter(function (g) { return g.n === 1 && (g.to - g.from) > (+v) * 60; });
         if (alone.length) { bad = true; detail = rcDutyName(w.duty) + ' alone ' + alone.map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', '); }
       }
       if (w.type === 'dutyClose' && w.duty && rcDutyHasPeople(w.duty) && on.length && !on.some(function (x) { return x.p.end >= hrsD.close && rcHasDuty(x.st, w.duty); })) { bad = true; detail = rcDutyName(w.duty) + ' at ' + rcHmText(hrsD.close); }
@@ -3656,10 +3663,11 @@ function rcRenderWarningsPage() {
   h += '</div><div class="card"><div class="rc-h">STORE HOURS</div><div class="rc-small">Used by the day overview (opening = starts by opening time, closing = works until closing time) and the "Nobody in for opening / until closing" warnings.</div>'
     + RC_WEEKDAYS.map(function (k) { var x = rcHoursFor(k); return '<div class="tm-row"><b style="width:44px">' + k + '</b><label class="rc-small">Open <input type="time" id="sh-o-' + k + '" value="' + x.openS + '"></label><label class="rc-small">Close <input type="time" id="sh-c-' + k + '" value="' + x.closeS + '"></label></div>'; }).join('')
     + '<button class="rc-b rc-red" style="margin-top:8px" onclick="rcSaveStoreHours()">SAVE STORE HOURS</button>';
-  var dus = rcDuties(), de = rcDutyEntry() || {}, dp = de.people || {};
-  h += '</div><div class="card" id="rc-duties-card"><div class="rc-h">STAFF DUTIES</div><div class="rc-small">Background only: managers and masters see this, staff never do and it\'s not on the roster. Tick what each person can do (more than one is fine), then add a <b>People on a duty…</b> warning to check every day against store hours. The day overview shows who is on each duty.</div>'
+  var dus = rcDuties(), de = rcDutyEntry() || {}, dp = de.people || {}, dPeople = {};
+  rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).forEach(function (f) { (f.staff || []).forEach(function (st) { dPeople[rcPersonName(st)] = st.firstName + ' ' + st.lastName + (isHiddenStaffRow(st) ? ' (hidden)' : ''); }); });
+  h += '</div><div class="card" id="rc-duties-card"><div class="rc-h">STAFF DUTIES</div><div class="rc-small">Background only: managers and masters see this, staff never do and it\'s not on the roster. Tick what each person can do (more than one is fine). <b>Register break cover</b> = can relieve the register for breaks (doesn\'t count as register cover itself). Then add a <b>People on a duty…</b> warning to check every day against store hours. The day overview shows who is on each duty.</div>'
     + '<div style="overflow:auto;margin-top:8px"><table class="cmp-t duty-t"><tr><th>Person</th>' + dus.map(function (du) { return '<th>' + rcEsc(du.name) + '</th>'; }).join('') + '</tr>'
-    + Object.keys(people).sort().map(function (k) { var ek = rcEncodeKey(k), mine = rcAsArray(dp[ek]); return '<tr><td>' + rcEsc(people[k]) + '</td>' + dus.map(function (du) { return '<td><input type="checkbox" class="rc-duty" data-p="' + rcEsc(ek) + '" data-d="' + rcEsc(du.id) + '"' + (mine.indexOf(du.id) !== -1 ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join('') + '</table></div>'
+    + Object.keys(dPeople).sort().map(function (k) { var ek = rcEncodeKey(k), mine = rcAsArray(dp[ek]); return '<tr><td>' + rcEsc(dPeople[k]) + '</td>' + dus.map(function (du) { return '<td><input type="checkbox" class="rc-duty" data-p="' + rcEsc(ek) + '" data-d="' + rcEsc(du.id) + '"' + (mine.indexOf(du.id) !== -1 ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join('') + '</table></div>'
     + '<div class="tm-row" style="border:none;padding:8px 0 0"><button class="rc-b rc-red" onclick="rcSaveDuties()">SAVE DUTIES</button><input id="duty-new" class="rc-to-in" style="margin:0;flex:1" placeholder="Add a duty, e.g. Forklift"><button class="rc-b rc-white" onclick="rcAddDuty()">ADD DUTY</button></div>'
     + '<div class="rc-small" style="margin-top:6px"><b>Needs cover through the day</b> (checked for gaps; the others are just listed):<br>' + dus.map(function (du) { return '<label style="margin-right:10px;white-space:nowrap"><input type="checkbox"' + (rcDutyNeedsCover(du.id) ? ' checked' : '') + ' onchange="rcDutyCoverToggle(\'' + rcEsc(du.id) + '\',this.checked)"> ' + rcEsc(du.name) + '</label>'; }).join('') + '</div>'
     + '<div class="rc-small" style="margin-top:4px">Remove a duty: ' + dus.map(function (du) { return '<a href="#" onclick="rcRemoveDuty(\'' + rcEsc(du.id) + '\');return false">' + rcEsc(du.name) + '</a>'; }).join(' • ') + '</div>';
@@ -3742,7 +3750,7 @@ function rcWarnIgnore(k) {
 function rcDutySave(mut, msg) {
   var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])), e = l.find(function (w) { return w && w.type === '_duties'; });
   if (!e) { e = { id: 'duties', type: '_duties', list: RC_DEFAULT_DUTIES.slice(), people: {} }; l.push(e); }
-  if (!rcAsArray(e.list).length) e.list = RC_DEFAULT_DUTIES.slice();
+  e.list = rcDuties().slice();
   e.people = e.people || {};
   mut(e);
   rcWarnSave(l, msg);
@@ -3773,7 +3781,7 @@ function rcAddDuty() {
 function rcRemoveDuty(id) {
   showCustomConfirm('Remove ' + rcEsc(rcDutyName(id)) + '?', 'People lose this duty and warnings for it stop.', function (ok) {
     if (!ok) return;
-    rcDutySave(function (e) { e.list = rcAsArray(e.list).filter(function (d) { return d.id !== id; }); Object.keys(e.people).forEach(function (k) { e.people[k] = rcAsArray(e.people[k]).filter(function (x) { return x !== id; }); }); }, 'Removed');
+    rcDutySave(function (e) { e.list = rcAsArray(e.list).filter(function (d) { return d.id !== id; }); e.removed = rcAsArray(e.removed).concat([id]); Object.keys(e.people).forEach(function (k) { e.people[k] = rcAsArray(e.people[k]).filter(function (x) { return x !== id; }); }); }, 'Removed');
   });
 }
 function rcWarnToggle(k, on) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); if (!l[k]) return; if (on) delete l[k].off; else l[k].off = true; rcWarnSave(l); }
