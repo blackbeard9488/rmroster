@@ -333,7 +333,7 @@ function getDatesForFortnight(fnId){
 
 <script>
 
-const BUILD_ID="20261024_V231_LIVE_SYNC";
+const BUILD_ID="20261024_V232_LIVE_SYNC";
 let currentHtmlHash=null;
 let currentBuildId=BUILD_ID;
 function computeHashSync(t){let h=0; for(let i=0;i<t.length;i++){h=((h<<5)-h)+t.charCodeAt(i); h|=0;} return h;}
@@ -418,9 +418,9 @@ function isManagerRole(r,u){
   u=(u||safeGet('repco_username')||'').toLowerCase();
   // FIXED: role is source of truth, not hardcoded username
   // If role is explicitly staff, never manager regardless of username
-  if(r==='staff') return false;
-  // If role is admin/master/manager, is manager
-  if(['admin','master','manager'].includes(r)) return true;
+  if(r==='staff' || r==='admin') return false;   // admins view the roster and send requests, like staff
+  // Managers and masters change rosters
+  if(['master','manager'].includes(r)) return true;
   // For backward compat, legacy admin usernames without role set still count as manager
   // BUT only if their role isn't staff
   if(['admin','master','manager'].includes(u) && r!=='staff') return true;
@@ -2322,6 +2322,6 @@ window.addEventListener('load', function(){
 });
 window.addEventListener("unhandledrejection", function(e){ if(e.reason && e.reason.message && e.reason.message.includes("message channel closed")) e.preventDefault(); });
 </script>
-<script src="cloud.js?v=20261024_V231"></script>
+<script src="cloud.js?v=20261024_V232"></script>
 </body>
 </html>

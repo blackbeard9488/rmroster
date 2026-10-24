@@ -16,7 +16,7 @@ var RC_PUSH_WORKER_URL = "https://repco-roster-push.blackbeard9488.workers.dev";
 var RC_VAPID_PUBLIC_KEY = "BPo8UDyWHwgVI8cVIXiB0uVBEiPgiCRjmtZ8MLOYE_BbfGFqpWasjhPL0uA8TYVf_n0tlH4aw8JVU4qq04bWc8I";
 var RC_OLD_DB_URL = "https://testing-de079-default-rtdb.asia-southeast1.firebasedatabase.app";
 var RC_EMAIL_DOMAIN = "repco-roster.firebaseapp.com";
-var RC_MANAGER_ROLES = ['admin', 'manager', 'master'];
+var RC_MANAGER_ROLES = ['manager', 'master'];   // can change rosters; admins view and send requests like staff
 var RC_EMULATOR = /[?&]emulator=1\b/.test(location.search);
 
 /* Which localStorage keys live in the cloud, where, and who may change them */
@@ -457,7 +457,7 @@ function rcUsersForStaff(st) {
 /* The one login that receives shift offers for a row: their staff login if they have one */
 function rcUserForStaff(st) {
   var all = rcUsersForStaff(st);
-  return all.find(function (u) { return !rcIsMgrRole(u.role); }) || all[0] || null;
+  return all.find(function (u) { return String(u.role || 'staff').toLowerCase() === 'staff'; }) || all.find(function (u) { return !rcIsMgrRole(u.role); }) || all[0] || null;
 }
 function rcStaffForUser(fn, user) {
   if (!fn || !user) return -1;
@@ -583,7 +583,7 @@ function rcRenderLiveInner() {
     var typing = open && open.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (open && !typing) {
       var id = open.id;
-      if (id === 'requests-page') { if (rcIsMgr()) renderRequests(); else rcRenderMyRequestsList(); }
+      if (id === 'requests-page') { if (rcIsMgr() || rcIsAdminOnly()) renderRequests(); else rcRenderMyRequestsList(); }
       else if (id === 'unavail-page') renderUnavail();
       else if (id === 'mysched-page') renderMySchedule();
       else if (id === 'notif-page') rcRenderNotifPage();
@@ -967,7 +967,7 @@ function rcResetUserPassword(uid) {
 }
 function rcFullNamePassword(u) { return (String(u.firstName || '') + String(u.lastName || '')).toLowerCase().replace(/\s+/g, ''); }
 function rcResetAllToFullName() {
-  var staff = rcUserList().filter(function (u) { return !rcIsMgrRole(u.role) && u.uid !== RC.session.uid; });
+  var staff = rcUserList().filter(function (u) { return String(u.role || 'staff').toLowerCase() === 'staff' && u.uid !== RC.session.uid; });
   showCustomConfirm('Set ' + staff.length + ' staff passwords?', 'Each staff member\'s password becomes their first + last name in lowercase (e.g. <b>michaelevans</b>). Their current password stops working.<br><br><b style="color:#E30613">Anyone who knows a colleague\'s name could then log in as them.</b> Ask staff to change it on the ACCOUNT page.', async function (ok) {
     if (!ok) return;
     var log = document.getElementById('rc-bulk-log'), say = function (t) { if (log) log.textContent += t + '\n'; };
@@ -1259,8 +1259,8 @@ function rcDeleteReq(id) {
 }
 var _rcOrigRenderRequests = renderRequests;
 renderRequests = function () {
-  if (!rcIsMgr()) { rcRenderTimeOffForm(); return; }
   if (rcIsAdminOnly()) { rcRenderAdminRequestForm(); return; }
+  if (!rcIsMgr()) { rcRenderTimeOffForm(); return; }
   var el = document.getElementById('requests-list'); if (!el) return;
   var reqs = rcAsArray(safeGetJSON('retail_roster_requests_v2', []));
   var pending = reqs.filter(function (r) { return !r.status || r.status === 'pending'; });
@@ -2171,7 +2171,7 @@ async function rcRunMigration() {
   for (var b = 0; b < boxes.length; b++) {
     var u = users[parseInt(boxes[b].getAttribute('data-i'), 10)];
     if (!u) continue;
-    var role = rcIsMgrRole(u.role) ? String(u.role).toLowerCase() : 'staff';
+    var role = /^(admin|manager|master)$/i.test(String(u.role)) ? String(u.role).toLowerCase() : 'staff';
     try {
       var pw = String(u.password || '');
       if (!pw) { say('✗ ' + u.username + ': no password saved - add them by hand'); continue; }
@@ -3030,6 +3030,12 @@ renderOptions = (function (orig) {
     orig.apply(this, arguments);
     if (!rcIsAdminOnly()) return;
     var inner = document.getElementById('options-inner'); if (!inner) return;
+    var grid = inner.querySelector('div');
+    if (grid && !document.getElementById('btn-admin-req')) {
+      var b = document.createElement('button'); b.className = 'card'; b.id = 'btn-admin-req'; b.style.cssText = 'font-weight:900;background:#111;color:#fff';
+      b.textContent = 'SEND A SHIFT CHANGE FOR AN EMPLOYEE'; b.onclick = function () { openPage('requests-page'); };
+      grid.insertBefore(b, grid.firstChild);
+    }
     inner.querySelectorAll('button').forEach(function (b) { if (/account-mgmt-page|hidden-staff-page/.test(b.getAttribute('onclick') || '')) b.remove(); });
     inner.querySelectorAll('.card').forEach(function (c) { if (/MAINTENANCE/.test(c.textContent) && c.tagName !== 'BUTTON') c.remove(); });
   };
@@ -3054,7 +3060,7 @@ function rcRenderAdminRequestForm() {
   h += '<div class="card"><div class="rc-h">CHANGES YOU SENT</div>' + (mine.length ? mine.map(function (q) {
     return '<div class="rc-row"><div><b>' + rcEsc(q.username) + '</b> ' + rcEsc(q.shiftDate || '') + ': ' + rcEsc(q.oldShift || '') + ' → <b>' + rcEsc(q.newShift || '') + '</b></div><span class="rc-pill rc-st-' + rcEsc(q.status || 'pending') + '">' + rcEsc(q.status || 'pending') + '</span></div>';
   }).join('') : '<div class="rc-small">None yet.</div>') + '</div>';
-  el.innerHTML = h + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK</button></div>';
+  el.innerHTML = h + '<div class="card"><button onclick="rcRenderTimeOffForm()" class="rc-b rc-white rc-wide">MY OWN TIME OFF / REQUESTS</button><button onclick="showMain()" class="rc-b rc-wide" style="margin-top:8px">← BACK</button></div>';
   if (!people.length) document.getElementById('ar-now').textContent = 'Nobody on this roster has a login yet.';
   if (keep['ar-who'] !== undefined) {
     ['ar-who', 'ar-day'].forEach(function (id) { var x = document.getElementById(id); if (x && [].some.call(x.options, function (o) { return o.value === keep[id]; })) x.value = keep[id]; });

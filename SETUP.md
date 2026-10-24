@@ -50,8 +50,8 @@ On iPhone they must first use **Share → Add to Home Screen**, and open the app
 | Role | Can do |
 |------|--------|
 | **Master** | Everything, in every team: logins and passwords, roles, teams, the access log |
-| **Manager** | Their own team: rosters, shift edits, requests, adding staff, hidden staff, settings, change history |
-| **Admin** | Their own team: roster changes (every change is in the change history), and sending a shift change for an employee for a manager to approve. No requests list and no logins. |
+| **Manager** | Their own team: rosters and shift edits (only managers and masters can change a roster), requests, adding staff, hidden staff, settings, change history |
+| **Admin** | Their own team: views the roster like staff and sends shift changes for employees (Options → SEND A SHIFT CHANGE FOR AN EMPLOYEE) for a manager to approve. Can't change rosters, see the requests list or manage logins. |
 | **Staff** | Their own schedule, offers and requests |
 
 Managers can't see master logins in Account Management. Passwords, roles and removing logins are done by a master.
