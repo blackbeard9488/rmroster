@@ -59,6 +59,11 @@ team can't see another team.
 5. To let someone see more than one team, tick that team next to their name on the **TEAMS** page. They get a
    team button on the roster to switch between teams, with the same role they have in their own team.
 
+To put someone from another team on a team's roster, open that team and go to **Account Management →
+BORROWED FROM OTHER TEAMS**. Pick the person and press **ADD TO ROSTER**. They get a row on that team's roster
+from the current fortnight on, along with that team's shift offers and alerts. Their shifts in both teams show
+live on their My Schedule. In the other team they only have staff access.
+
 The Kate notes row and the Luke/Chris green cells only apply to the first team.
 
 ## How things work now

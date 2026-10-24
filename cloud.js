@@ -51,7 +51,10 @@ var RC = {
   ownerUid: null,       // the main admin: sees and runs every team
   teamInfo: {},         // team id -> {name}
   access: {},           // uid -> {team id: true} extra teams someone may see
-  allUsers: {}          // every login in every team (RC.users is only this team's)
+  allUsers: {},         // every login in every team (RC.users is only this team's)
+  guests: {},           // team id -> {uid: true} people borrowed from other teams
+  otherRosters: {},     // team id -> fortnights, for people rostered in more than one team
+  xOffers: {}           // team id -> my offers from teams other than the open one
 };
 RC_SYNC.forEach(function (s) { s.base = s.path; RC.byKey[s.key] = s; });
 
@@ -71,7 +74,15 @@ try {
 function rcIsMgrRole(r) { return RC_MANAGER_ROLES.indexOf(String(r || '').toLowerCase()) !== -1; }
 function rcIsMgr() { return !!(RC.session && rcIsMgrRole(RC.session.profile.role)); }
 /* ---------- teams: each team's data lives apart; the first team keeps the original paths ---------- */
-function rcTP(p) { return RC.team === 'main' ? p : 'teams/' + RC.team + '/' + p; }
+function rcTP(p) { return rcTPx(RC.team, p); }
+function rcTPx(t, p) { return t === 'main' ? p : 'teams/' + t + '/' + p; }
+function rcGuestTeams(uid) { return Object.keys(RC.guests).filter(function (t) { return (RC.guests[t] || {})[uid] === true; }); }
+function rcIsGuestHere(uid) { return (RC.guests[RC.team] || {})[uid] === true; }
+/* Everyone who can be on this team's roster: its own people plus anyone borrowed from another team */
+function rcTeamPeople() {
+  return Object.keys(RC.allUsers).filter(function (k) { return rcHomeTeam(RC.allUsers[k]) === RC.team || rcIsGuestHere(k); })
+    .map(function (k) { return Object.assign({ uid: k }, RC.allUsers[k]); });
+}
 function rcHomeTeam(u) { return (u && u.team) || 'main'; }
 function rcIsOwner() { return !!(RC.session && RC.ownerUid && RC.ownerUid === RC.session.uid); }
 function rcTeamName(t) { var i = RC.teamInfo[t]; return (i && i.name) || (t === 'main' ? 'Main team' : t); }
@@ -79,11 +90,16 @@ function rcTeamIds() { return ['main'].concat(Object.keys(RC.teamInfo).filter(fu
 /* Teams a login may open: the main admin sees all, everyone else their own team plus any they were given */
 function rcTeamsFor(uid, prof) {
   if (uid === RC.ownerUid) return rcTeamIds();
-  var home = rcHomeTeam(prof), acc = RC.access[uid] || {};
-  return [home].concat(rcTeamIds().filter(function (t) { return t !== home && acc[t] === true; }));
+  var home = rcHomeTeam(prof), acc = RC.access[uid] || {}, guest = rcGuestTeams(uid);
+  return [home].concat(rcTeamIds().filter(function (t) { return t !== home && (acc[t] === true || guest.indexOf(t) !== -1); }));
 }
 /* Someone viewing another team keeps their own role there; the main admin is an admin everywhere */
-function rcEffProfile(uid, prof) { return uid === RC.ownerUid ? Object.assign({}, prof, { role: 'admin' }) : prof; }
+function rcEffProfile(uid, prof) {
+  if (uid === RC.ownerUid) return Object.assign({}, prof, { role: 'admin' });
+  // borrowed into another team: staff there, whatever their role at home
+  if (RC.team !== rcHomeTeam(prof) && (RC.access[uid] || {})[RC.team] !== true && rcIsGuestHere(uid)) return Object.assign({}, prof, { role: 'staff' });
+  return prof;
+}
 function rcCanManageAccounts() { return rcIsOwner() || (rcIsMgr() && rcHomeTeam(RC.allUsers[RC.session.uid] || RC.session.profile) === RC.team); }
 function rcSyncKeys() { return RC_SYNC.map(function (s) { return s.key; }).concat(['retail_roster_currentFortnightId']); }
 function rcSwitchTeam(t) {
@@ -95,8 +111,8 @@ function rcSwitchTeam(t) {
 }
 async function rcLoadTeamContext(uid, prof) {
   var get = function (p) { return RC.db.ref(p).once('value').then(function (s) { return s.val(); }).catch(function () { return null; }); };
-  var r = await Promise.all([get('meta/owner'), get('teamInfo'), get('access')]);
-  RC.ownerUid = r[0] || null; RC.teamInfo = r[1] || {}; RC.access = r[2] || {};
+  var r = await Promise.all([get('meta/owner'), get('teamInfo'), get('access'), get('guests')]);
+  RC.ownerUid = r[0] || null; RC.teamInfo = r[1] || {}; RC.access = r[2] || {}; RC.guests = r[3] || {};
   var allowed = rcTeamsFor(uid, prof), want = safeGet('repco_team', '') || rcHomeTeam(prof);
   RC.team = allowed.indexOf(want) !== -1 ? want : rcHomeTeam(prof);
   if (allowed.indexOf(RC.team) === -1) RC.team = allowed[0] || 'main';
@@ -377,9 +393,10 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
   }
 }
 /* Change history: one entry per changed cell, kept for managers */
-function rcLogHistory(updates, e) {
-  var key = RC.db.ref(rcTP('history')).push().key;
-  updates[rcTP('history/' + key)] = Object.assign({ ts: firebase.database.ServerValue.TIMESTAMP, by: RC.session.profile.username }, e);
+function rcLogHistory(updates, e, team) {
+  team = team || RC.team;
+  var key = RC.db.ref(rcTPx(team, 'history')).push().key;
+  updates[rcTPx(team, 'history/' + key)] = Object.assign({ ts: firebase.database.ServerValue.TIMESTAMP, by: RC.session.profile.username }, e);
 }
 function rcReqSummary(r) {
   if (!r) return '';
@@ -397,11 +414,12 @@ function rcFnRange(fn) { var d = (fn && fn.dates) || []; return d.length ? (d[0]
 
 /* ---------- users ---------- */
 function rcUserList() { return Object.keys(RC.users).map(function (uid) { return Object.assign({ uid: uid }, RC.users[uid]); }); }
-function rcManagerUids() {
+function rcManagerUids(team) {
+  team = team || RC.team;
   return Object.keys(RC.allUsers).filter(function (uid) {
     var u = RC.allUsers[uid];
     if (uid === RC.ownerUid) return true;
-    return rcIsMgrRole(u.role) && (rcHomeTeam(u) === RC.team || (RC.access[uid] || {})[RC.team] === true);
+    return rcIsMgrRole(u.role) && (rcHomeTeam(u) === team || (RC.access[uid] || {})[team] === true);
   });
 }
 function rcUserByUsername(name) { var l = String(name || '').toLowerCase(); return rcUserList().find(function (u) { return u.usernameLower === l; }) || null; }
@@ -410,7 +428,7 @@ function rcUsersForStaff(st) {
   if (!st) return [];
   var f = String(st.firstName || '').toLowerCase().trim(), l = String(st.lastName || '').toLowerCase().trim();
   if (!f) return [];
-  return rcUserList().filter(function (u) { return String(u.firstName || '').toLowerCase().trim() === f && String(u.lastName || '').toLowerCase().trim() === l; });
+  return rcTeamPeople().filter(function (u) { return String(u.firstName || '').toLowerCase().trim() === f && String(u.lastName || '').toLowerCase().trim() === l; });
 }
 /* The one login that receives shift offers for a row: their staff login if they have one */
 function rcUserForStaff(st) {
@@ -446,6 +464,7 @@ function rcAttach() {
     rcSetLocal('retail_roster_users_v1', rcUserList().map(function (u) { return { username: u.username, firstName: u.firstName || '', lastName: u.lastName || '', role: u.role, employmentType: u.employmentType || 'casual', isHidden: !!u.isHidden, uid: u.uid }; }));
     RC.ready.users = true;
     if (roleChanged) { toast('Your access level changed - reloading'); setTimeout(function () { location.reload(); }, 1500); return; }
+    rcWatchOtherTeams();
     rcScheduleRender('users');
   }, function () {
     // Losing read access to the user list means this account was deleted
@@ -476,6 +495,7 @@ function rcAttach() {
     if (rcTeamsFor(uid, mine).indexOf(RC.team) === -1) { toast('You no longer have access to ' + rcTeamName(RC.team)); setTimeout(function () { rcSwitchTeam(rcHomeTeam(mine)); }, 1200); }
   };
   rcListen(RC.db.ref('access'), 'value', function (s) { RC.access = s.val() || {}; reTeam(); rcScheduleRender('access'); });
+  rcListen(RC.db.ref('guests'), 'value', function (s) { RC.guests = s.val() || {}; reTeam(); rcWatchOtherTeams(); rcScheduleRender('guests'); });
   rcListen(RC.db.ref('teamInfo'), 'value', function (s) { RC.teamInfo = s.val() || {}; reTeam(); rcScheduleRender('teams'); });
   rcListen(RC.db.ref('meta/owner'), 'value', function (s) {
     var was = RC.ownerUid; RC.ownerUid = s.val() || null;
@@ -485,7 +505,27 @@ function rcAttach() {
   var conn = RC.db.ref('.info/connected');
   rcListen(conn, 'value', function (s) { rcSetStatus(s.val() ? 'live' : 'offline'); });
 }
-function rcDetach() { RC.listeners.forEach(function (off) { try { off(); } catch (e) {} }); RC.listeners = []; RC.ready = {}; RC.base = {}; RC.offers = {}; RC.notifs = []; RC.users = {}; RC.allUsers = {}; }
+/* People rostered in more than one team (borrowed): watch their other teams' rosters and offers, read-only */
+function rcWatchOtherTeams() {
+  if (!RC.session) return;
+  var uid = RC.session.uid, mine = RC.allUsers[uid] || RC.session.profile;
+  var want = [rcHomeTeam(mine)].concat(rcGuestTeams(uid)).filter(function (t, i, a) { return t !== RC.team && a.indexOf(t) === i; });
+  RC.otherWatch = RC.otherWatch || {};
+  Object.keys(RC.otherWatch).forEach(function (t) { if (want.indexOf(t) === -1) { RC.otherWatch[t](); delete RC.otherWatch[t]; delete RC.otherRosters[t]; delete RC.xOffers[t]; } });
+  want.forEach(function (t) {
+    if (RC.otherWatch[t]) return;
+    var rRef = RC.db.ref(rcTPx(t, 'data/roster')), oRef = RC.db.ref(rcTPx(t, 'offers')).orderByChild('toUid').equalTo(uid);
+    var onR = function (s) {
+      var fns = rcAsArray(rcDecodeTree(s.val())).map(function (fn) { fn.staff = rcAsArray(fn.staff).sort(rcStaffSort); fn.dates = rcAsArray(fn.dates); return fn; }).filter(function (fn) { return !fn.draft; });
+      RC.otherRosters[t] = fns; rcScheduleRender('other');
+    };
+    var onO = function (s) { RC.xOffers[t] = s.val() || {}; rcScheduleRender('other'); };
+    var quiet = function () { delete RC.otherRosters[t]; delete RC.xOffers[t]; };
+    rRef.on('value', onR, quiet); oRef.on('value', onO, quiet);
+    RC.otherWatch[t] = function () { rRef.off('value', onR); oRef.off('value', onO); };
+  });
+}
+function rcDetach() { if (RC.otherWatch) { Object.keys(RC.otherWatch).forEach(function (t) { try { RC.otherWatch[t](); } catch (e) {} }); RC.otherWatch = {}; } RC.otherRosters = {}; RC.xOffers = {}; RC.listeners.forEach(function (off) { try { off(); } catch (e) {} }); RC.listeners = []; RC.ready = {}; RC.base = {}; RC.offers = {}; RC.notifs = []; RC.users = {}; RC.allUsers = {}; }
 
 /* Re-draw whatever is on screen after live changes, keeping scroll positions and half-typed forms */
 var _rcRenderTimer = null;
@@ -1447,17 +1487,20 @@ function rcWithdrawOffer(oid, quiet) {
 }
 function rcCancelOffer(oid) { return rcWithdrawOffer(oid, false); }
 function rcRespondOffer(oid, accept) {
-  var o = RC.offers[oid];
+  var team = RC.team, sep = String(oid).indexOf('::');
+  if (sep !== -1) { team = oid.slice(0, sep); oid = oid.slice(sep + 2); }   // an offer from another team I'm on
+  var o = team === RC.team ? RC.offers[oid] : (RC.xOffers[team] || {})[oid];
+  var TP = function (p) { return rcTPx(team, p); };
   if (!o || o.status !== 'pending') { toast('This offer is no longer available'); return; }
   if (rcOfferExpired(o)) { toast('This shift date has passed'); return; }
   var upd = {};
-  upd[rcTP('offers/' + oid + '/status')] = accept ? 'accepted' : 'declined';
-  if (accept) rcLogHistory(upd, { fnId: o.fnId || '', fn: o.fnLabel || '', name: String(o.staffName || '').replace(/^(\S+)\s+(.*)$/, function (m, f, l) { return l.toUpperCase() + ', ' + f; }), day: o.dateLabel, from: 'OFF', to: o.shift, action: 'Accepted shift offer' });
-  upd[rcTP('offers/' + oid + '/respondedTs')] = firebase.database.ServerValue.TIMESTAMP;
+  upd[TP('offers/' + oid + '/status')] = accept ? 'accepted' : 'declined';
+  if (accept) rcLogHistory(upd, { fnId: o.fnId || '', fn: o.fnLabel || '', name: String(o.staffName || '').replace(/^(\S+)\s+(.*)$/, function (m, f, l) { return l.toUpperCase() + ', ' + f; }), day: o.dateLabel, from: 'OFF', to: o.shift, action: 'Accepted shift offer' }, team);
+  upd[TP('offers/' + oid + '/respondedTs')] = firebase.database.ServerValue.TIMESTAMP;
   if (accept) {
-    var cellPath = rcTP('data/roster/' + o.fn + '/staff/' + o.sk);
+    var cellPath = TP('data/roster/' + o.fn + '/staff/' + o.sk);
     upd[cellPath + '/shifts/' + o.i] = o.shift;
-    var curFn = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (f) { return rcEncodeKey(f.id) === o.fn; });
+    var curFn = rcAsArray(team === RC.team ? safeGetJSON('retail_roster_byFortnight_v1', []) : (RC.otherRosters[team] || [])).find(function (f) { return rcEncodeKey(f.id) === o.fn; });
     var curSt = curFn && curFn.staff[rcStaffKeys(curFn).map(rcEncodeKey).indexOf(o.sk)];
     var hasOrig = curSt && curSt.originalShifts && curSt.originalShifts[o.i] != null;
     if (!hasOrig) upd[cellPath + '/originalShifts/' + o.i] = (curSt && curSt.shifts && curSt.shifts[o.i]) || 'OFF';
@@ -1465,7 +1508,7 @@ function rcRespondOffer(oid, accept) {
   RC.db.ref().update(upd).then(function () {
     toast(accept ? 'Accepted - the shift is now on your roster' : 'Offer declined');
     var who = RC.session.profile.username;
-    var uids = rcManagerUids(); if (o.byUid && uids.indexOf(o.byUid) === -1) uids.push(o.byUid);
+    var uids = rcManagerUids(team); if (o.byUid && uids.indexOf(o.byUid) === -1) uids.push(o.byUid);
     rcNotify(uids, { type: accept ? 'offer-accepted' : 'offer-declined', title: who + (accept ? ' accepted a shift' : ' declined a shift'), body: o.dateLabel + ' ' + o.shift + (accept ? ' is now on the roster.' : ' is still open.') });
     rcCloseModal();
   }).catch(function (e) {
@@ -1474,15 +1517,17 @@ function rcRespondOffer(oid, accept) {
   });
 }
 function rcCloseModal() { var m = document.getElementById('custom-modal'); if (m) m.classList.remove('show'); }
-function rcMyPendingOffers() {
+function rcMyPendingOffers(otherOnly) {
   if (!RC.session) return [];
-  return Object.keys(RC.offers).map(function (k) { return Object.assign({ id: k }, RC.offers[k]); })
+  var list = otherOnly ? [] : Object.keys(RC.offers).map(function (k) { return Object.assign({ id: k }, RC.offers[k]); });
+  Object.keys(RC.xOffers).forEach(function (t) { var v = RC.xOffers[t] || {}; Object.keys(v).forEach(function (k) { list.push(Object.assign({ id: t + '::' + k }, v[k], { _team: t })); }); });
+  return list
     .filter(function (o) { return o.toUid === RC.session.uid && o.status === 'pending' && !rcOfferExpired(o); })
     .sort(function (a, b) { return String(a.dateIso).localeCompare(String(b.dateIso)); });
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
 /* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
 function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
@@ -1648,7 +1693,7 @@ function rcCloseDeviceAlert(tag) {
     navigator.serviceWorker.getRegistration().then(function (reg) { return reg && reg.getNotifications({ tag: tag }); }).then(function (ns) { (ns || []).forEach(function (n) { n.close(); }); }).catch(function () {});
   } catch (e) {}
 }
-function rcUnreadAlerts() { return RC.notifs.filter(function (n) { return !n.read; }).length + (rcIsMgr() ? 0 : rcMyPendingOffers().length); }
+function rcUnreadAlerts() { return RC.notifs.filter(function (n) { return !n.read; }).length + rcMyPendingOffers(rcIsMgr()).length; }
 function rcPendingRequests() {
   if (!RC.session) return 0;
   var me = RC.session.profile.usernameLower;
@@ -1706,10 +1751,14 @@ openPage = (function (orig) {
 function rcRenderNotifPage(markRead) {
   var el = document.getElementById('notif-inner'); if (!el || !RC.session) return;
   var h = '';
+  var myOff = rcIsMgr() ? rcMyPendingOffers(true) : [];
+  if (myOff.length) h += '<div class="card"><div class="rc-h">SHIFTS OFFERED TO YOU</div>' + myOff.map(function (o) {
+    return '<div class="rc-row"><div><b>' + rcEsc(o.dateLabel) + '</b> ' + rcEsc(fmt(o.shift)) + '<br><span class="rc-small">' + rcEsc(rcTeamName(o._team)) + ' • ' + rcEsc(o.fnLabel || '') + '</span></div><div class="rc-btns"><button class="rc-b rc-green" onclick="rcRespondOffer(\'' + o.id + '\',true)">ACCEPT</button><button class="rc-b" onclick="rcRespondOffer(\'' + o.id + '\',false)">DECLINE</button></div></div>';
+  }).join('') + '</div>';
   if (!rcIsMgr()) {
     var offers = rcMyPendingOffers();
     h += '<div class="card"><div class="rc-h">SHIFT OFFERS</div>' + (offers.length ? offers.map(function (o) {
-      return '<div class="rc-row"><div><b>' + rcEsc(o.dateLabel) + '</b> ' + rcEsc(fmt(o.shift)) + '<br><span class="rc-small">' + rcEsc(o.fnLabel || '') + '</span></div><div class="rc-btns"><button class="rc-b rc-green" onclick="rcRespondOffer(\'' + o.id + '\',true)">ACCEPT</button><button class="rc-b rc-white" onclick="rcRespondOffer(\'' + o.id + '\',false)">DECLINE</button></div></div>';
+      return '<div class="rc-row"><div><b>' + rcEsc(o.dateLabel) + '</b> ' + rcEsc(fmt(o.shift)) + '<br><span class="rc-small">' + (o._team ? rcEsc(rcTeamName(o._team)) + ' • ' : '') + rcEsc(o.fnLabel || '') + '</span></div><div class="rc-btns"><button class="rc-b rc-green" onclick="rcRespondOffer(\'' + o.id + '\',true)">ACCEPT</button><button class="rc-b rc-white" onclick="rcRespondOffer(\'' + o.id + '\',false)">DECLINE</button></div></div>';
     }).join('') : '<div class="rc-small">No open offers right now.</div>') + '</div>';
   } else {
     var all = Object.keys(RC.offers).map(function (k) { return Object.assign({ id: k }, RC.offers[k]); }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).slice(0, 40);
@@ -2072,10 +2121,17 @@ function rcDur(ms) {
   if (h) return h + 'h' + (mm ? ' ' + mm + 'm' : '');
   return mm + 'm';
 }
-function rcMyRows() {
-  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), out = [];
+function rcOtherRows() {
+  var out = [], prof = RC.session && (RC.allUsers[RC.session.uid] || RC.session.profile); if (!prof) return out;
+  Object.keys(RC.otherRosters).forEach(function (t) {
+    rcMyRows(RC.otherRosters[t], function (fn) { var i = rcStaffForUser(fn, prof); return i === -1 ? null : fn.staff[i]; }).forEach(function (r) { r.team = t; out.push(r); });
+  });
+  return out;
+}
+function rcMyRows(fnsIn, finder) {
+  var fns = fnsIn || rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), out = [];
   fns.forEach(function (fn) {
-    var me = findMyStaff(fn); if (!me) return;
+    var me = (finder || findMyStaff)(fn); if (!me) return;
     fn.dates.forEach(function (d, i) {
       var sh = (me.shifts && me.shifts[i] != null) ? String(me.shifts[i]) : 'OFF';
       var ab = !!(me.absentApproved && me.absentApproved[i]) || /^(AB|ABSENT)$/i.test(sh.trim());
@@ -2165,23 +2221,24 @@ function rcRequestChange(fnId, i) {
 renderMySchedule = function () {
   var el = document.getElementById('mysched-list'); if (!el) return;
   try {
-    var rows = rcMyRows(), now = Date.now(), today = getISO();
-    if (!rows.length) { el.innerHTML = '<div class="card">Your login isn\'t linked to a roster row yet. Ask a manager to check your first and last name in Account Management.</div>'; return; }
-    var current = rows.find(function (r) { return r.t && r.t.start.getTime() <= now && now < r.t.end.getTime(); });
-    var next = rows.filter(function (r) { return r.t && r.t.start.getTime() > now; }).sort(function (a, b) { return a.t.start - b.t.start; })[0];
+    var rows = rcMyRows(), now = Date.now(), today = getISO(), other = rcOtherRows();
+    if (!rows.length && !other.length) { el.innerHTML = '<div class="card">Your login isn\'t linked to a roster row yet. Ask a manager to check your first and last name in Account Management.</div>'; return; }
+    var both = rows.concat(other), tTag = function (r) { return r.team ? ' • ' + rcTeamName(r.team).toUpperCase() : ''; };
+    var current = both.find(function (r) { return r.t && r.t.start.getTime() <= now && now < r.t.end.getTime(); });
+    var next = both.filter(function (r) { return r.t && r.t.start.getTime() > now; }).sort(function (a, b) { return a.t.start - b.t.start; })[0];
     var h = '';
     if (current) {
       var pct = Math.min(100, Math.max(0, (now - current.t.start) / (current.t.end - current.t.start) * 100));
       h += '<div class="ms-panel ms-on" data-end="' + current.t.end.getTime() + '" data-start="' + current.t.start.getTime() + '"><div class="ms-kicker">ON SHIFT NOW</div>'
         + '<div class="ms-big"><span class="ms-count">' + rcDur(current.t.end - now) + '</span> to go</div>'
-        + '<div class="ms-sub">' + rcEsc(current.d.day + ' ' + current.d.date) + ' • ' + rcEsc(fmt(current.sh)) + ' • finishes ' + rcEsc(fmt(current.sh).split('-')[1] || '') + '</div>'
+        + '<div class="ms-sub">' + rcEsc(current.d.day + ' ' + current.d.date) + ' • ' + rcEsc(fmt(current.sh)) + ' • finishes ' + rcEsc(fmt(current.sh).split('-')[1] || '') + rcEsc(tTag(current)) + '</div>'
         + '<div class="ms-bar"><div style="width:' + pct.toFixed(1) + '%"></div></div></div>';
     } else if (next) {
-      var key = next.fn.id + '|' + next.i + '|' + next.sh;
+      var key = (next.team ? next.team + ':' : '') + next.fn.id + '|' + next.i + '|' + next.sh;
       if (!rcSchedDismissed(key)) {
         h += '<div class="ms-panel ms-next" data-start="' + next.t.start.getTime() + '"><button class="ms-x" title="Hide" onclick="rcSchedDismiss(\'' + rcEsc(key).replace(/'/g, '') + '\')">✕</button><div class="ms-kicker">NEXT SHIFT</div>'
           + '<div class="ms-big">starts in <span class="ms-count">' + rcDur(next.t.start - now) + '</span></div>'
-          + '<div class="ms-sub">' + rcEsc(next.d.day + ' ' + next.d.date) + ' • ' + rcEsc(fmt(next.sh)) + (next.d.iso === today ? ' • TODAY' : '') + '</div></div>';
+          + '<div class="ms-sub">' + rcEsc(next.d.day + ' ' + next.d.date) + ' • ' + rcEsc(fmt(next.sh)) + (next.d.iso === today ? ' • TODAY' : '') + rcEsc(tTag(next)) + '</div></div>';
       } else {
         h += '<button class="ms-show" onclick="rcSchedUndismiss()">⏱ SHOW COUNTDOWN TO NEXT SHIFT</button>';
       }
@@ -2211,6 +2268,7 @@ renderMySchedule = function () {
       });
       h += '</div>';
     });
+    h += rcOtherTeamsCard(other, today);
     h += rcMyHoursCard(rows, today);
     h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">BACK TO ROSTER</button></div>';
     el.innerHTML = h;
@@ -2574,10 +2632,11 @@ renderAccountMgmtPage = (function (orig) {
   return function () {
     var el = document.getElementById('account-mgmt-inner'); if (!el || !RC.session) return orig.apply(this, arguments);
     if (!rcCanManageAccounts()) {
-      el.innerHTML = '<div class="card"><div class="rc-h">' + rcEsc(rcTeamName(RC.team).toUpperCase()) + '</div><div class="rc-small">Logins for this team are looked after by its own admins and the main admin.</div></div>';
+      el.innerHTML = '<div class="card"><div class="rc-h">' + rcEsc(rcTeamName(RC.team).toUpperCase()) + '</div><div class="rc-small">Logins for this team are looked after by its own admins and the main admin.</div></div>' + rcBorrowCardHtml();
       return;
     }
     orig.apply(this, arguments);
+    if (!document.getElementById('rc-borrow-card')) { var first = el.querySelector('.card'); if (first) first.insertAdjacentHTML('afterend', rcBorrowCardHtml()); }
     var top = '';
     if (!RC.ownerUid && RC.team === 'main' && String((RC.allUsers[RC.session.uid] || {}).role) === 'admin')
       top += '<div class="card" style="background:#FFF6CC"><div class="rc-h">MAIN ADMIN</div><div class="rc-small">The main admin can add teams, open every team and choose who sees more than one team. Only one person can be main admin.</div><button class="rc-b rc-red rc-wide" style="margin-top:8px" onclick="rcClaimOwner()">MAKE ME THE MAIN ADMIN</button></div>';
@@ -2694,6 +2753,85 @@ function rcMoveUser(uid, t, sel) {
   });
 }
 
+/* ---------- Borrowed staff: someone from another team on this team's roster ---------- */
+function rcOtherTeamsCard(other, today) {
+  var up = other.filter(function (r) { return r.d.iso >= today && (r.t || r.ab || r.na); }).sort(function (a, b) { return a.d.iso < b.d.iso ? -1 : a.d.iso > b.d.iso ? 1 : 0; }).slice(0, 14);
+  if (!other.length) return '';
+  var h = '<div class="card"><div class="rc-h">YOUR SHIFTS IN OTHER TEAMS</div>';
+  if (!up.length) h += '<div class="rc-small">Nothing coming up.</div>';
+  up.forEach(function (r) {
+    var right = r.ab ? '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? '<span class="ms-tag">UNAVAILABLE</span>' : '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>';
+    h += '<div class="ms-day' + (r.d.iso === today ? ' ms-today' : '') + '"><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + ' <span class="rc-pill">' + rcEsc(rcTeamName(r.team)) + '</span></span>' + right + '</div>';
+  });
+  return h + '<div class="rc-small" style="margin-top:6px">Changes and requests for these shifts go through that team' + (rcTeamsFor(RC.session.uid, RC.allUsers[RC.session.uid] || RC.session.profile).length > 1 ? ' - use the team button on the roster to open it.' : '.') + '</div></div>';
+}
+function rcBorrowCardHtml() {
+  if (!rcIsMgr() || rcTeamIds().length < 2) return '';
+  var here = RC.guests[RC.team] || {}, all = RC.allUsers;
+  var guests = Object.keys(here).filter(function (k) { return here[k] === true && all[k]; });
+  var pool = Object.keys(all).filter(function (k) { return rcHomeTeam(all[k]) !== RC.team && !here[k] && all[k].firstName && all[k].lastName; })
+    .sort(function (a, b) { return (rcHomeTeam(all[a]) + all[a].lastName).localeCompare(rcHomeTeam(all[b]) + all[b].lastName); });
+  var h = '<div class="card" id="rc-borrow-card"><div class="rc-h">BORROWED FROM OTHER TEAMS</div><div class="rc-small">Put someone from another team on this team\'s roster. They get a row here (from this fortnight on), shift offers and alerts from this team, and see these shifts on their own My Schedule. They see this team as staff only.</div>';
+  h += guests.length ? guests.map(function (k) {
+    var u = all[k];
+    return '<div class="rc-row"><div><b>' + rcEsc(u.firstName + ' ' + u.lastName) + '</b><br><span class="rc-small">from ' + rcEsc(rcTeamName(rcHomeTeam(u))) + '</span></div><div class="rc-btns"><button class="rc-b" onclick="rcUnborrow(\'' + k + '\')">REMOVE</button></div></div>';
+  }).join('') : '<div class="rc-small" style="margin-top:6px"><i>Nobody borrowed.</i></div>';
+  if (pool.length) h += '<div class="tm-row" style="margin-top:8px"><select id="rc-borrow-pick" class="tm-move" style="flex:1;font-size:13px;padding:8px">' + pool.map(function (k) { var u = all[k]; return '<option value="' + k + '">' + rcEsc(u.firstName + ' ' + u.lastName) + ' (' + rcEsc(rcTeamName(rcHomeTeam(u))) + ')</option>'; }).join('') + '</select><button class="rc-b rc-red" onclick="rcBorrow()">ADD TO ROSTER</button></div>';
+  return h + '</div>';
+}
+function rcRowFor(u, len, from) { return { firstName: u.firstName, lastName: u.lastName, role: 'staff', employmentType: u.employmentType || 'casual', shifts: Array(len).fill('OFF'), unavailable: Array(len).fill(false), guestFrom: from || rcHomeTeam(u) }; }
+function rcBorrow() {
+  var uid = (document.getElementById('rc-borrow-pick') || {}).value, u = RC.allUsers[uid]; if (!u) return;
+  var today = getISO(), cur = getCurrentFortnight();
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), added = 0;
+  var nameOf = function (s) { return (String(s.firstName || '') + ' ' + String(s.lastName || '')).trim().toLowerCase(); }, me = nameOf(u);
+  fns.forEach(function (fn) {
+    var last = fn.dates[fn.dates.length - 1];
+    if (!last || last.iso < today) return;            // this fortnight and later only
+    if ((fn.staff || []).some(function (st) { return nameOf(st) === me; })) return;
+    fn.staff.push(rcRowFor(u, fn.dates.length)); fn.staff.sort(rcStaffSort); added++;
+  });
+  var upd = {}; upd['guests/' + RC.team + '/' + uid] = true;
+  RC.db.ref().update(upd).then(function () {
+    if (added) safeSetJSON('retail_roster_byFortnight_v1', fns);
+    renderRosterSafe();
+    rcNotify([uid], { type: 'borrowed', title: 'Added to ' + rcTeamName(RC.team), body: 'You are now on the ' + rcTeamName(RC.team) + ' roster. Your shifts there show on My Schedule.' });
+    toast(u.firstName + ' added to ' + added + ' roster' + (added === 1 ? '' : 's'));
+    renderAccountMgmtPage();
+  }).catch(function (e) { toast('Not added: ' + rcErrMsg(e)); });
+}
+function rcUnborrow(uid) {
+  var u = RC.allUsers[uid]; if (!u) return;
+  showCustomConfirm('Remove ' + rcEsc(u.firstName + ' ' + u.lastName) + '?', 'They stop seeing this team. Their empty rows on future rosters are removed; rows with shifts stay so nothing is lost - clear those first if they shouldn\'t be there.', function (ok) {
+    if (!ok) return;
+    var today = getISO(), me = (u.firstName + ' ' + u.lastName).toLowerCase(), changed = false;
+    var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
+    fns.forEach(function (fn) {
+      if (!fn.dates[0] || fn.dates[0].iso <= today) return;
+      var before = fn.staff.length;
+      fn.staff = fn.staff.filter(function (st) { return !((String(st.firstName) + ' ' + String(st.lastName)).toLowerCase() === me && (st.shifts || []).every(function (v) { return rcIsEmptyVal(v); })); });
+      if (fn.staff.length !== before) changed = true;
+    });
+    var upd = {}; upd['guests/' + RC.team + '/' + uid] = null;
+    RC.db.ref().update(upd).then(function () { if (changed) safeSetJSON('retail_roster_byFortnight_v1', fns); renderRosterSafe(); toast('Removed'); renderAccountMgmtPage(); }).catch(function (e) { toast('Not removed: ' + rcErrMsg(e)); });
+  });
+}
+/* Borrowed people appear on the roster with their team's name */
+function rcGuestTags() {
+  var fn = getSelectedFortnight(); if (!fn) return;
+  (fn.staff || []).forEach(function (st, r) {
+    if (!st.guestFrom || st.guestFrom === RC.team) return;
+    var cell = document.querySelector('#roster-mount tr td[data-r="' + r + '"]'); var row = cell && cell.parentNode;
+    var name = row && row.querySelector('td:first-child'); if (!name || name.querySelector('.rc-guest')) return;
+    name.insertAdjacentHTML('beforeend', ' <span class="rc-guest">' + rcEsc(rcTeamName(st.guestFrom)) + '</span>');
+  });
+  document.querySelectorAll('.dv-row').forEach(function (el) {
+    var r = parseInt(el.getAttribute('data-r'), 10), st = fn.staff[r];
+    if (!st || !st.guestFrom || st.guestFrom === RC.team || el.querySelector('.rc-guest')) return;
+    var nm = el.querySelector('.dv-name') || el.firstElementChild; if (nm) nm.insertAdjacentHTML('beforeend', ' <span class="rc-guest">' + rcEsc(rcTeamName(st.guestFrom)) + '</span>');
+  });
+}
+
 /* ---------- Start a fresh (empty) roster for the next fortnight ---------- */
 function rcIsoAdd(iso, n) { var p = iso.split('-'); var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + n)); return d.toISOString().slice(0, 10); }
 function rcFreshDates(startIso) {
@@ -2723,6 +2861,8 @@ function rcFreshRoster() {
   var people = [], seen = {};
   var addP = function (p) {
     var k = (String(p.firstName || '').trim() + ' ' + String(p.lastName || '').trim()).toLowerCase(); if (!p.firstName || !p.lastName || seen[k]) return; seen[k] = 1;
+    if (p.guestFrom && p.guestFrom !== RC.team && !rcTeamPeople().some(function (u) { return (String(u.firstName) + ' ' + String(u.lastName)).toLowerCase() === k; })) return;   // no longer borrowed
+    if (p.guestFrom) { people.push(rcRowFor(p, 14, p.guestFrom)); return; }
     people.push({ firstName: p.firstName, lastName: p.lastName, role: rcIsMgrRole(p.role) ? p.role : 'staff', employmentType: p.employmentType || 'casual', shifts: Array(14).fill('OFF'), unavailable: Array(14).fill(false), isHidden: !!(p.isHidden || isHiddenStaffRow(p)) });
   };
   recent.forEach(function (f) { (f.staff || []).forEach(addP); });
@@ -3032,6 +3172,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.rc-draft.on{background:#FFF6CC;border:3px solid #b58900;color:#111}body.rc-mobile .rc-draft{margin:8px 8px 0}'
     + '.tm-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-top:1px solid #eee;flex-wrap:wrap}.tm-team{margin:12px 0 2px;font-weight:900;color:#E30613;font-size:12px;letter-spacing:.5px}'
     + '.tm-user{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid #eee;flex-wrap:wrap}.tm-acc{display:flex;flex-direction:column;gap:4px;align-items:flex-end}.tm-chk{font-size:12px;font-weight:700}.tm-move{font-size:11px;padding:4px 8px;border:2px solid #111;border-radius:9999px;background:#fff}'
+    + '.rc-guest{display:inline-block;background:#111;color:#fff;border-radius:9999px;padding:1px 7px;font-size:9px;font-weight:900;letter-spacing:.3px;vertical-align:middle;text-transform:uppercase}'
     + '#rc-team-btn{background:#111!important;color:#fff!important}#rc-fresh-btn{background:#fff;border-color:#E30613!important;color:#E30613}'
     + 'body.rc-mobile .r-controls #rc-fresh-btn,body.rc-mobile .r-controls #rc-team-btn{order:4;min-width:0;padding:5px 10px;font-size:10px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
