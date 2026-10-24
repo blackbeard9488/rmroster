@@ -2170,8 +2170,7 @@ renderBuddies = function (which) {
     var meOut = !me || (me.unavailable && me.unavailable[i]) || (me.absentApproved && me.absentApproved[i]) || rcIsUAVal(mineSh) || rcIsAbsentVal(mineSh);
     var mine = meOut ? null : parseShiftRange(mineSh);
     var people = (fn.staff || []).filter(function (st) {
-      if (st === me || !st.firstName) return false;
-      if (isHiddenStaffRow(st)) return false;
+      if (st === me || !st.firstName) return false;      // hidden staff do show here: buddies are who you work with
       if ((st.unavailable && st.unavailable[i]) || (st.absentApproved && st.absentApproved[i])) return false;
       return !!parseShiftRange(st.shifts[i]);
     }).map(function (st) {
