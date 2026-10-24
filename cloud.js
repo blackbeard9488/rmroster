@@ -3364,7 +3364,11 @@ var RC_WARN_TYPES = {
   dutyCover:     { label: 'People on a duty at any time (store hours) fewer than', unit: 'people', def: 1, msg: 'Duty not covered', day: true, duty: true },
   dutyMin:       { label: 'People on a duty working on a day fewer than', unit: 'people', def: 2, msg: 'Not enough people for a duty', day: true, duty: true },
   dutyClose:     { label: 'Nobody on a duty working until closing', unit: 'none', def: '', msg: 'No one on duty at closing', day: true, duty: true },
-  dutyOpen:      { label: 'Nobody on a duty starting by opening', unit: 'none', def: '', msg: 'No one on duty at opening', day: true, duty: true }
+  dutyOpen:      { label: 'Nobody on a duty starting by opening', unit: 'none', def: '', msg: 'No one on duty at opening', day: true, duty: true },
+  dutyBreak:     { label: 'Someone alone on a duty for longer than (no break cover)', unit: 'hours', def: 5, msg: 'No break cover', day: true, duty: true },
+  mgrCover:      { label: 'Managers on at any time (store hours) fewer than', unit: 'people', def: 1, msg: 'No manager on', day: true },
+  coverAnyTime:  { label: 'People in the store at any time (store hours) fewer than', unit: 'people', def: 2, msg: 'Too few people in the store', day: true },
+  outsideHours:  { label: 'Shift starts or finishes outside store hours by more than', unit: 'hours', def: 1, msg: 'Shift outside store hours' }
 };
 /* ---------- Staff duties (register, audiologist, spares/parts, stock...): manager-only, never shown to staff ---------- */
 var RC_DEFAULT_DUTIES = [{ id: 'register', name: 'Register' }, { id: 'audiologist', name: 'Audiologist' }, { id: 'parts', name: 'Spares/Parts' }, { id: 'stock', name: 'Stock' }];
@@ -3407,6 +3411,17 @@ function rcDutyGapsAll(on, day, demands) {
   return out;
 }
 function rcDutyGaps(on, day, id, need) { var d = {}; d[id] = need; return rcDutyGapsAll(on, day, d)[id]; }
+/* Stretches in store hours with fewer than `need` matching people on: [{from, to, n}] */
+function rcLowCover(on, hrs, need, match) {
+  var out = [], cur = null;
+  for (var t = hrs.open; t < hrs.close; t += 15) {
+    var n = on.filter(function (x) { return match(x) && x.p.start <= t && x.p.end >= t + 15; }).length;
+    if (n < need) { if (cur && cur.n === n && cur.to === t) cur.to = t + 15; else { cur = { from: t, to: t + 15, n: n }; out.push(cur); } } else cur = null;
+  }
+  return out;
+}
+/* A roster row belongs to a manager (or master) login */
+function rcIsManagerRow(st) { return /^(manager|master)$/.test(rcRoleOf(st)) || rcUsersForStaff(st).some(function (u) { return /^(manager|master)$/.test(rcRoleOf(u)); }); }
 function rcHmText(m) { m = ((m % 1440) + 1440) % 1440; return fmt(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0') + '-00:00').split('-')[0]; }
 var RC_WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 function rcDayMatch(w, d) {
@@ -3417,8 +3432,12 @@ function rcDayMatch(w, d) {
   return f === day;
 }
 function rcWarnDaysLabel(f) { return !f || f === 'all' ? 'every day' : f === 'weekdays' ? 'weekdays' : f === 'weekends' ? 'weekends' : f; }
-var RC_WARN_PRESETS = [['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'], ['daysInRow', 6, 'More than 6 days in a row', 'all'],
-  ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['dutyCover', 1, 'Register not covered', 'all', 'register'], ['dutyClose', '', 'No register worker at closing', 'all', 'register'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all']];
+var RC_WARN_PRESETS = [
+  ['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'],
+  ['daysInRow', 6, 'More than 6 days in a row', 'all'], ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['outsideHours', 1, 'Shift outside store hours', 'all'],
+  ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['coverAnyTime', 2, 'Fewer than 2 people in the store', 'all'], ['mgrCover', 1, 'No manager on', 'all'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all'],
+  ['dutyCover', 1, 'Register not covered', 'all', 'register'], ['dutyOpen', '', 'No register worker at opening', 'all', 'register'], ['dutyClose', '', 'No register worker at closing', 'all', 'register'], ['dutyBreak', 5, 'Register worker has no break cover', 'all', 'register'],
+  ['dutyCover', 1, 'Audiologist not covered', 'all', 'audiologist'], ['dutyCover', 1, 'Spares/Parts not covered', 'all', 'parts'], ['dutyOpen', '', 'No spares/parts at opening', 'all', 'parts'], ['dutyClose', '', 'No spares/parts at closing', 'all', 'parts'], ['dutyCover', 1, 'Stock not covered', 'all', 'stock']];
 function rcWarnRules() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).filter(function (w) { return w && RC_WARN_TYPES[w.type]; }); }
 /* People never warned about (stored as a special entry in the same list) */
 function rcWarnIgnoreAll() { var e = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_ignore'; }); return rcAsArray(e && e.people); }
@@ -3460,6 +3479,7 @@ function rcRowWarnings(fn, st, rules) {
         [0, 7].forEach(function (s0) { var inWk = fn.dates.slice(s0, s0 + 7).length; if (!inWk) return; var worked = days.filter(function (x) { return x.i >= s0 && x.i < s0 + 7; }); var off = inWk - worked.length; if (off < +v) { hit = hit.concat(worked.map(function (x) { return x.i; })); detail = (detail ? detail + ', ' : '') + 'week ' + (s0 ? 2 : 1) + ': ' + off + ' off'; } });
         break;
       case 'shiftsUnder': if (days.length < +v) detail = days.length + ' shifts'; break;
+      case 'outsideHours': days.forEach(function (x) { var sh = rcHoursFor(fn.dates[x.i].day); if (x.p.start < sh.open - (+v) * 60 || x.p.end > sh.close + (+v) * 60) hit.push(x.i); }); break;
       case 'restRunUnder':
         // runs of days off across the fortnight (a run may cross from one week into the next)
         var runs = [], cur = null;
@@ -3522,6 +3542,13 @@ function rcDayWarnings(fn, rules) {
       if (w.type === 'dutyCover' && coverGaps && coverGaps[w.duty]) { var gp = coverGaps[w.duty]; if (gp.length) { bad = true; detail = rcDutyName(w.duty) + ' ' + gp.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to) + ' (' + g.n + ')'; }).join(', ') + (gp.length > 3 ? '…' : ''); } }
       if (w.type === 'dutyMin' && dayShort && w.duty in dayNeed && dayShort[w.duty]) { var can = on.filter(function (x) { return rcHasDuty(x.st, w.duty); }).length; bad = true; detail = rcDutyName(w.duty) + ': ' + (dayNeed[w.duty] - dayShort[w.duty]) + ' of ' + dayNeed[w.duty] + (can > dayNeed[w.duty] - dayShort[w.duty] ? ' (others needed for other duties)' : ''); }
       var hrsD = rcHoursFor(d.day);
+      if (w.type === 'coverAnyTime' && on.length) { var lowT = rcLowCover(on, hrsD, +v, function () { return true; }); if (lowT.length) { bad = true; detail = lowT.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to) + ' (' + g.n + ')'; }).join(', ') + (lowT.length > 3 ? '…' : ''); } }
+      if (w.type === 'mgrCover' && on.length) { var lowM = rcLowCover(on, hrsD, +v, function (x) { return rcIsManagerRow(x.st); }); if (lowM.length) { bad = true; detail = lowM.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', ') + (lowM.length > 3 ? '…' : ''); } }
+      if (w.type === 'dutyBreak' && w.duty && rcDutyHasPeople(w.duty)) {
+        // a stretch where exactly one person who can do the duty is on, for longer than v hours
+        var alone = rcLowCover(on, hrsD, 2, function (x) { return rcHasDuty(x.st, w.duty); }).filter(function (g) { return g.n === 1 && (g.to - g.from) > (+v) * 60; });
+        if (alone.length) { bad = true; detail = rcDutyName(w.duty) + ' alone ' + alone.map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', '); }
+      }
       if (w.type === 'dutyClose' && w.duty && rcDutyHasPeople(w.duty) && on.length && !on.some(function (x) { return x.p.end >= hrsD.close && rcHasDuty(x.st, w.duty); })) { bad = true; detail = rcDutyName(w.duty) + ' at ' + rcHmText(hrsD.close); }
       if (w.type === 'dutyOpen' && w.duty && rcDutyHasPeople(w.duty) && on.length && !on.some(function (x) { return x.p.start <= hrsD.open && rcHasDuty(x.st, w.duty); })) { bad = true; detail = rcDutyName(w.duty) + ' at ' + rcHmText(hrsD.open); }
       if (w.type === 'dayHoursOver') { var t = on.filter(function (x) { return !isHiddenStaffRow(x.st); }).reduce(function (a, x) { return a + x.h; }, 0); if (t > +v) { bad = true; detail = t.toFixed(1) + 'h'; } }
@@ -3637,7 +3664,15 @@ function rcRenderWarningsPage() {
   h += '</div><div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NEVER WARN ABOUT</div><button class="rc-b rc-white" onclick="rcWarnIgnore(-1)">CHOOSE PEOPLE…</button></div>'
     + '<div class="rc-small">' + (ign.length ? ign.map(function (k) { return rcEsc(people[k] || k); }).join(', ') : 'Nobody - everyone is checked.') + ' Each warning above can also ignore people with its IGNORE… button. Whole-day cover warnings always count everyone.</div>';
   h += '</div><div class="card"><div class="rc-h">ADD A WARNING</div>'
-    + '<div class="rc-small">Quick add: ' + RC_WARN_PRESETS.map(function (p, k) { return '<button class="rc-b rc-white" style="margin:3px 4px 0 0" onclick="rcWarnPreset(' + k + ')">' + rcEsc(p[2]) + '</button>'; }).join('') + '</div>'
+    + (function () {
+        var have = rcAsArray(safeGetJSON('retail_roster_warnings_v1', []));
+        var on = function (p) { return have.some(function (x) { return x && x.type === p[0] && String(x.value) === String(p[1]) && (x.duty || '') === (p[4] || '') && (x.who || 'all') === p[3]; }); };
+        var grp = function (title, test) { var list = RC_WARN_PRESETS.map(function (p, k) { return { p: p, k: k }; }).filter(function (x) { return test(x.p); }); return '<div class="wq-g"><div class="wq-h">' + title + '</div>' + list.map(function (x) { return '<button class="rc-b rc-white wq-b' + (on(x.p) ? ' on' : '') + '" onclick="rcWarnPreset(' + x.k + ')"' + (on(x.p) ? ' title="Already on"' : '') + '>' + (on(x.p) ? '✓ ' : '+ ') + rcEsc(x.p[2]) + '</button>'; }).join('') + '</div>'; };
+        return '<div class="rc-small">Quick add (✓ = already on):</div>'
+          + grp('EACH PERSON', function (p) { return !RC_WARN_TYPES[p[0]].day; })
+          + grp('EACH DAY - COVER', function (p) { return RC_WARN_TYPES[p[0]].day && !RC_WARN_TYPES[p[0]].duty; })
+          + grp('EACH DAY - DUTIES', function (p) { return RC_WARN_TYPES[p[0]].duty; });
+      })()
     + '<div class="tm-row" style="border:none;padding:10px 0 0"><select id="wn-type" class="rc-to-in" style="margin:0;flex:2" onchange="rcWarnTypeUI()">'
     + '<optgroup label="Each person">' + Object.keys(RC_WARN_TYPES).filter(function (k) { return !RC_WARN_TYPES[k].day; }).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</optgroup>'
     + '<optgroup label="Each day (cover)">' + Object.keys(RC_WARN_TYPES).filter(function (k) { return RC_WARN_TYPES[k].day; }).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</optgroup></select>'
@@ -4491,6 +4526,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '#rc-warn-chip{background:#F59E0B !important;color:#111 !important;border-color:#b77400 !important;min-width:0 !important;font-weight:900}#rc-warn-chip.on{box-shadow:inset 0 0 0 2px #111}'
     + 'body:not(.rc-warn-open) #roster-mount td.rc-warn-cell{outline:none}body:not(.rc-warn-open) #roster-mount th.rc-warn-th{box-shadow:none}body:not(.rc-warn-open) .rc-warn-d{display:none}'
     + 'body.rc-mobile .r-controls.rc-tidy{gap:6px}body.rc-mobile .r-controls.rc-tidy select#fortnight-select{flex:1 1 150px;min-width:0 !important;max-width:none !important}body.rc-mobile .r-controls.rc-tidy #rc-current{flex-basis:100%;order:0 !important;text-align:center}body.rc-mobile .r-controls.rc-tidy .rc-right{margin-left:0 !important}body.rc-mobile #rc-tools-wrap{margin-left:auto}body.rc-mobile #rc-tools-menu{position:fixed;left:8px;right:8px;top:auto;bottom:84px;min-width:0}'
+    + '.wq-g{margin-top:8px}.wq-h{font-size:10px;font-weight:900;color:#777;letter-spacing:.5px;margin-bottom:2px}.wq-b{margin:3px 4px 0 0 !important;font-size:11px !important}.wq-b.on{background:#E8F5EC !important;border-color:#1a7f37 !important;color:#1a7f37 !important}'
     + '.duty-t td,.duty-t th{text-align:center !important;white-space:nowrap}.duty-t td:first-child,.duty-t th:first-child{text-align:left !important}.dov-reg{margin:6px 0;padding:6px 10px;background:#f4f4f4;border-radius:10px;font-size:13px}'
     + '#rc-warn-bar{margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#FFF4DB;border:2px solid #F59E0B;font-size:12px}body.rc-mobile #rc-warn-bar{margin:8px 8px 0}.rc-warn-head{cursor:pointer}.rc-warn-row{padding:4px 0;border-top:1px solid #f3d9a4;margin-top:4px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
