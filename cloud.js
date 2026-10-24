@@ -3316,7 +3316,7 @@ function rcDayMatch(w, d) {
 }
 function rcWarnDaysLabel(f) { return !f || f === 'all' ? 'every day' : f === 'weekdays' ? 'weekdays' : f === 'weekends' ? 'weekends' : f; }
 var RC_WARN_PRESETS = [['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'], ['daysInRow', 6, 'More than 6 days in a row', 'all'],
-  ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['openBy', '07:30', 'No one starting by 7:30', 'all']];
+  ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all']];
 function rcWarnRules() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).filter(function (w) { return w && RC_WARN_TYPES[w.type]; }); }
 /* People never warned about (stored as a special entry in the same list) */
 function rcWarnIgnoreAll() { var e = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_ignore'; }); return rcAsArray(e && e.people); }
@@ -3406,8 +3406,9 @@ function rcDayWarnings(fn, rules) {
       var v = w.value, bad = false, detail = '';
       if (w.type === 'minStaff' && on.length < +v) { bad = true; detail = on.length + ' working'; }
       if (w.type === 'maxStaff' && on.length > +v) { bad = true; detail = on.length + ' working'; }
-      if (w.type === 'openBy' && on.length && !on.some(function (x) { return x.p.start <= rcHm(v); })) { bad = true; detail = 'first start ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return a.start - b.start; })[0].raw).split('-')[0]; }
-      if (w.type === 'closeFrom' && on.length && !on.some(function (x) { return x.p.end >= rcHm(v); })) { bad = true; detail = 'last finish ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return b.end - a.end; })[0].raw).split('-')[1]; }
+      var sh1 = rcHoursFor(d.day), vOpen = v === 'store' ? sh1.open : rcHm(v), vClose = v === 'store' ? sh1.close : rcHm(v);
+      if (w.type === 'openBy' && on.length && !on.some(function (x) { return x.p.start <= vOpen; })) { bad = true; detail = 'first start ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return a.start - b.start; })[0].raw).split('-')[0]; }
+      if (w.type === 'closeFrom' && on.length && !on.some(function (x) { return x.p.end >= vClose; })) { bad = true; detail = 'last finish ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return b.end - a.end; })[0].raw).split('-')[1]; }
       if (w.type === 'dayHoursOver') { var t = on.filter(function (x) { return !isHiddenStaffRow(x.st); }).reduce(function (a, x) { return a + x.h; }, 0); if (t > +v) { bad = true; detail = t.toFixed(1) + 'h'; } }
       if (bad) out.push({ rule: w, i: i, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail });
     });
@@ -3501,11 +3502,14 @@ function rcRenderWarningsPage() {
   var shown = rules.map(function (w, k) { return { w: w, k: k }; }).filter(function (x) { return x.w && RC_WARN_TYPES[x.w.type]; });
   h += shown.length ? shown.map(function (x) {
     var w = x.w, k = x.k, t = RC_WARN_TYPES[w.type];
-    var desc = t.label + (t.unit === 'none' ? '' : ' ' + w.value + (/^(time|weekday)$/.test(t.unit) ? '' : ' ' + t.unit)) + ' • ' + (t.day ? rcWarnDaysLabel(w.days) : rcWarnWho(w))
+    var desc = t.label + (t.unit === 'none' ? '' : ' ' + (w.value === 'store' ? 'store opening/closing time' : w.value) + (/^(time|weekday)$/.test(t.unit) || w.value === 'store' ? '' : ' ' + t.unit)) + ' • ' + (t.day ? rcWarnDaysLabel(w.days) : rcWarnWho(w))
       + (rcAsArray(w.skip).length ? ' • ignores ' + rcAsArray(w.skip).map(function (k) { return people[k] || k; }).join(', ') : '');
     return '<div class="rc-row"><div><b>' + rcEsc(w.msg || t.msg) + '</b><br><span class="rc-small">' + rcEsc(desc) + '</span></div><div class="rc-btns">'
       + '<label class="rc-small"><input type="checkbox"' + (w.off ? '' : ' checked') + ' onchange="rcWarnToggle(' + k + ',this.checked)"> on</label>' + (t.day ? '' : '<button class="rc-b rc-white" onclick="rcWarnIgnore(' + k + ')">IGNORE…</button>') + '<button class="rc-b rc-white" onclick="rcWarnDelete(' + k + ')">DELETE</button></div></div>';
   }).join('') : '<div class="rc-small" style="margin-top:6px"><i>None yet. Add one below or use a quick one.</i></div>';
+  h += '</div><div class="card"><div class="rc-h">STORE HOURS</div><div class="rc-small">Used by the day overview (opening = starts by opening time, closing = works until closing time) and the "Nobody in for opening / until closing" warnings.</div>'
+    + RC_WEEKDAYS.map(function (k) { var x = rcHoursFor(k); return '<div class="tm-row"><b style="width:44px">' + k + '</b><label class="rc-small">Open <input type="time" id="sh-o-' + k + '" value="' + x.openS + '"></label><label class="rc-small">Close <input type="time" id="sh-c-' + k + '" value="' + x.closeS + '"></label></div>'; }).join('')
+    + '<button class="rc-b rc-red" style="margin-top:8px" onclick="rcSaveStoreHours()">SAVE STORE HOURS</button>';
   var ign = rcWarnIgnoreAll();
   h += '</div><div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NEVER WARN ABOUT</div><button class="rc-b rc-white" onclick="rcWarnIgnore(-1)">CHOOSE PEOPLE…</button></div>'
     + '<div class="rc-small">' + (ign.length ? ign.map(function (k) { return rcEsc(people[k] || k); }).join(', ') : 'Nobody - everyone is checked.') + ' Each warning above can also ignore people with its IGNORE… button. Whole-day cover warnings always count everyone.</div>';
@@ -3572,7 +3576,13 @@ function rcWarnToggle(k, on) { var l = rcAsArray(safeGetJSON('retail_roster_warn
 function rcWarnDelete(k) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); l.splice(k, 1); rcWarnSave(l, 'Deleted'); }
 
 /* ---------- Day overview (managers and masters): click a date ---------- */
+/* Store hours per weekday (saved per team; these are the defaults) */
+var RC_DEFAULT_HOURS = { MON: ['08:00', '17:30'], TUE: ['08:00', '17:30'], WED: ['08:00', '17:30'], THU: ['08:00', '20:00'], FRI: ['08:00', '17:30'], SAT: ['08:00', '17:00'], SUN: ['08:00', '17:00'] };
 function rcStoreHours() { var e = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_hours'; }); return e || {}; }
+function rcHoursFor(day) {
+  var k = String(day || '').toUpperCase().slice(0, 3), e = rcStoreHours(), d = (e.days && e.days[k]) || RC_DEFAULT_HOURS[k] || ['08:00', '17:30'];
+  return { open: rcHm(d[0]), close: rcHm(d[1]), openS: d[0], closeS: d[1] };
+}
 function rcDayOverview(i) {
   var fn = getSelectedFortnight(); if (!fn || !fn.dates[i] || !rcIsMgr()) return;
   var d = fn.dates[i], on = [], off = [], ua = [], ab = [];
@@ -3585,17 +3595,20 @@ function rcDayOverview(i) {
     else off.push(nm);
   });
   on.sort(function (a, b) { return a.p.start - b.p.start || a.p.end - b.p.end; });
-  var hrs = rcStoreHours();
-  var openT = rcHm(hrs.open);
+  var sh0 = rcHoursFor(d.day), oT = sh0.open, cT = sh0.close;
   var first = on.length ? on[0].p.start : null, last = on.length ? Math.max.apply(null, on.map(function (x) { return x.p.end; })) : null;
-  // Two groups only. With an opening time set: opening = starts by it, everyone else closing.
-  // Without one: each person goes to whichever end of the day their shift is nearer (start vs first start, finish vs last finish).
-  var split = openT;
-  var opening = on.filter(function (x) { return openT !== null ? x.p.start <= openT : (x.p.start - first) <= (last - x.p.end); });
-  var closing = on.filter(function (x) { return opening.indexOf(x) === -1; });
-  on.forEach(function (x) { x.allDay = x.p.start <= first && x.p.end >= last && on.length > 1; });
+  // Two groups only: opening = starts by opening time (managers' 7:00/7:30 starts included); closing = works until closing time.
+  // Anyone who does neither goes to the end of the day their shift is nearer.
+  on.forEach(function (x) {
+    var opens = x.p.start <= oT, closes = x.p.end >= cT;
+    x.allDay = opens && closes;
+    x.grp = opens ? 'open' : closes ? 'close' : ((x.p.start - oT) <= (cT - x.p.end) ? 'open' : 'close');
+  });
+  var opening = on.filter(function (x) { return x.grp === 'open'; });
+  var closing = on.filter(function (x) { return x.grp === 'close'; });
+  var noOpen = on.length && !on.some(function (x) { return x.p.start <= oT; }), noClose = on.length && !on.some(function (x) { return x.p.end >= cT; });
   var t = function (m) { return fmt(String(Math.floor((m % 1440) / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0') + '-00:00').split('-')[0]; };
-  var person = function (x) { return '<div class="dov-p"><span>' + rcEsc(x.nm) + (x.hid ? ' <span class="ms-tag" style="background:#555">HIDDEN</span>' : '') + (x.allDay ? ' <span class="ms-tag" style="background:#111">ALL DAY</span>' : '') + '</span><b>' + rcEsc(fmt(x.sh)) + '</b></div>'; };
+  var person = function (x) { var part = !x.allDay && !(x.grp === 'open' ? x.p.start <= oT : x.p.end >= cT); return '<div class="dov-p"><span>' + rcEsc(x.nm) + (x.hid ? ' <span class="ms-tag" style="background:#555">HIDDEN</span>' : '') + (x.allDay ? ' <span class="ms-tag" style="background:#111">ALL DAY</span>' : '') + (part ? ' <span class="ms-tag" style="background:#888">PART</span>' : '') + '</span><b>' + rcEsc(fmt(x.sh)) + '</b></div>'; };
   var group = function (title, list, cls) { return '<div class="dov-g ' + cls + '"><div class="dov-gh">' + title + ' <span>' + list.length + '</span></div>' + (list.length ? list.map(person).join('') : '<div class="rc-small">Nobody</div>') + '</div>'; };
   // people on, hour by hour
   var bars = '';
@@ -3606,15 +3619,17 @@ function rcDayOverview(i) {
   }
   var total = on.filter(function (x) { return !x.hid; }).reduce(function (a, x) { return a + x.h; }, 0);
   var dws = rcDayWarnings(fn).filter(function (w) { return w.i === i; });
-  var h = '<div class="dov-head"><div><div class="dov-day">' + rcEsc(d.day + ' ' + d.date) + '</div><div class="rc-small">' + rcEsc(rcFnRange(fn)) + '</div></div><button class="rc-x" style="font-size:22px" onclick="rcCloseDayOverview()">✕</button></div>'
+  var h = '<div class="dov-head"><div><div class="dov-day">' + rcEsc(d.day + ' ' + d.date) + '</div><div class="rc-small">Shop open ' + rcEsc(t(oT)) + ' – ' + rcEsc(t(cT)) + ' • ' + rcEsc(rcFnRange(fn)) + '</div></div><button class="rc-x" style="font-size:22px" onclick="rcCloseDayOverview()">✕</button></div>'
     + '<div class="dov-stats"><div><b>' + on.length + '</b><small>working</small></div><div><b>' + opening.length + '</b><small>opening</small></div><div><b>' + closing.length + '</b><small>closing</small></div><div><b>' + total.toFixed(1) + 'h</b><small>hours</small></div></div>'
+    + (noOpen ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ Nobody starts by opening (' + rcEsc(t(oT)) + ')</div>' : '')
+    + (noClose ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ Nobody works until closing (' + rcEsc(t(cT)) + ')</div>' : '')
     + (dws.length ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ ' + dws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>' : '')
     + bars
-    + group('OPENING' + (split !== null ? ' <small>starts by ' + rcEsc(t(split)) + '</small>' : on.length ? ' <small>nearer the ' + rcEsc(t(first)) + ' start</small>' : ''), opening, 'dov-open')
-    + group('CLOSING' + (split !== null ? ' <small>starts after ' + rcEsc(t(split)) + '</small>' : on.length ? ' <small>nearer the ' + rcEsc(t(last)) + ' finish</small>' : ''), closing, 'dov-close')
+    + group('OPENING <small>starts by ' + rcEsc(t(oT)) + '</small>', opening, 'dov-open')
+    + group('CLOSING <small>works until ' + rcEsc(t(cT)) + '</small>', closing, 'dov-close')
     + (ua.length || ab.length || off.length ? '<div class="dov-g"><div class="dov-gh">NOT WORKING <span>' + (ua.length + ab.length + off.length) + '</span></div><div class="rc-small">'
       + (ab.length ? '<b>Absent:</b> ' + rcEsc(ab.join(', ')) + '<br>' : '') + (ua.length ? '<b>Unavailable:</b> ' + rcEsc(ua.join(', ')) + '<br>' : '') + (off.length ? '<b>Off:</b> ' + rcEsc(off.join(', ')) : '') + '</div></div>' : '')
-    + '<div class="dov-set rc-small">Opening shift = starts by <input type="time" id="dov-open" value="' + rcEsc(hrs.open || '') + '"> <button class="rc-b rc-white" onclick="rcSaveStoreHours(' + i + ')">SAVE</button><br>Everyone else is closing. Leave blank and each person goes to the end of the day their shift is nearer.</div>'
+    + '<div class="dov-set rc-small">Store hours are set in Options → ROSTER WARNINGS → STORE HOURS. <span class="ms-tag" style="background:#888">PART</span> = doesn\'t start by opening or work until closing, so they\'re put with the nearer end.</div>'
     + '<div class="dov-nav"><button class="rc-b rc-white"' + (i > 0 ? ' onclick="rcDayOverview(' + (i - 1) + ')"' : ' disabled') + '>‹ PREVIOUS DAY</button><button class="rc-b rc-white"' + (i < fn.dates.length - 1 ? ' onclick="rcDayOverview(' + (i + 1) + ')"' : ' disabled') + '>NEXT DAY ›</button></div>';
   var ov = document.getElementById('rc-day-ov');
   if (!ov) { ov = document.createElement('div'); ov.id = 'rc-day-ov'; ov.onclick = function (e) { if (e.target === ov) rcCloseDayOverview(); }; document.body.appendChild(ov); }
@@ -3622,12 +3637,17 @@ function rcDayOverview(i) {
   ov.classList.add('show');
 }
 function rcCloseDayOverview() { var ov = document.getElementById('rc-day-ov'); if (ov) ov.classList.remove('show'); }
-function rcSaveStoreHours(i) {
-  var o = document.getElementById('dov-open').value;
+function rcSaveStoreHours() {
   var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])), e = l.find(function (w) { return w && w.type === '_hours'; });
   if (!e) { e = { id: 'hours', type: '_hours' }; l.push(e); }
-  if (o) e.open = o; else delete e.open; delete e.close;
-  safeSetJSON('retail_roster_warnings_v1', l); toast(o ? 'Opening shifts start by ' + o : 'Opening and closing worked out from each day'); rcDayOverview(i);
+  var days = {}, bad = '';
+  RC_WEEKDAYS.forEach(function (k) {
+    var o = (document.getElementById('sh-o-' + k) || {}).value, c = (document.getElementById('sh-c-' + k) || {}).value;
+    if (!o || !c || rcHm(c) <= rcHm(o)) bad = k; days[k] = [o, c];
+  });
+  if (bad) { toast('Check ' + bad + ': closing must be after opening'); return; }
+  e.days = days; delete e.open; delete e.close;
+  safeSetJSON('retail_roster_warnings_v1', l); toast('Store hours saved'); rcRenderWarningsPage();
 }
 function rcDayHeaders() {
   if (!rcIsMgr() || RC.pdfMode) return;
