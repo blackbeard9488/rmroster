@@ -3636,8 +3636,8 @@ function rcRosterWarnings() {
   document.body.classList.toggle('rc-warn-open', !!RC.warnOpen);
   if (!n || !RC.warnOpen) { if (bar) bar.remove(); return; }
   var h = '<div class="rc-warn-head" onclick="RC.warnOpen=false;rcRosterWarnings()"><b>⚠ ' + n + ' warning' + (n === 1 ? '' : 's') + '</b> on this roster <span class="rc-small">(hide)</span></div>';
-  if (RC.warnOpen) h += dayWs.map(function (w) { var d = fn.dates[w.i]; return '<div class="rc-warn-row"><b>' + rcEsc(d.day + ' ' + d.date) + '</b>: ' + rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : '') + '</div>'; }).join('');
-  if (RC.warnOpen) h += all.map(function (x) { return '<div class="rc-warn-row"><b>' + rcEsc(String(x.st.lastName).toUpperCase() + ', ' + x.st.firstName) + '</b>: ' + x.ws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : ''); }).join(' • ') + '</div>'; }).join('');
+  if (RC.warnOpen) { RC.sg = {}; h += dayWs.map(function (w) { var d = fn.dates[w.i]; return '<div class="rc-warn-row"><b>' + rcEsc(d.day + ' ' + d.date) + '</b>: ' + rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : '') + rcSuggestHtml(rcSuggestDay(fn, w)) + '</div>'; }).join(''); }
+  if (RC.warnOpen) h += all.map(function (x) { return '<div class="rc-warn-row"><b>' + rcEsc(String(x.st.lastName).toUpperCase() + ', ' + x.st.firstName) + '</b>: ' + x.ws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : ''); }).join(' • ') + rcSuggestHtml([].concat.apply([], x.ws.map(function (w) { return rcSuggestPerson(fn, x.r, w); })).slice(0, 3)) + '</div>'; }).join('');
   if (!bar) { bar = document.createElement('div'); bar.id = 'rc-warn-bar'; var mount = document.getElementById('roster-mount'); mount.parentNode.insertBefore(bar, mount); }
   bar.innerHTML = h;
 }
@@ -3887,7 +3887,7 @@ function rcDayOverview(i) {
           + (!(du.id in need) ? ' <span class="rc-small">• not checked for cover</span>' : gp.length ? '<br><span class="rc-warn-dv">⚠ No ' + rcEsc(du.name.toLowerCase()) + ' cover ' + rcEsc(gp.map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', ')) + '</span>' : on.length ? ' <span class="rc-small">• covered all day</span>' : '') + '</div>';
       }).join('') + (on.some(function (x) { return rcPersonDuties(x.st).length > 1; }) ? '<div class="rc-small" style="margin:-2px 0 6px">⇄ can do more than one duty, but only one at a time.</div>' : '');
       })()
-    + (dws.length ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ ' + dws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>' : '')
+    + (dws.length ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ ' + dws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>' + (function () { RC.sg = RC.sg || {}; var seen = {}, all = []; dws.forEach(function (w) { rcSuggestDay(fn, w).forEach(function (sg) { var k = sg.r + '|' + sg.shift; if (!seen[k]) { seen[k] = 1; all.push(sg); } }); }); return all.length ? '<div class="dov-sg"><b>SUGGESTIONS</b>' + rcSuggestHtml(all.slice(0, 5)) + '</div>' : ''; })() : '')
     + bars
     + group('OPENING <small>starts by ' + rcEsc(t(oT)) + '</small>', opening, 'dov-open')
     + group('CLOSING <small>works until ' + rcEsc(t(cT)) + '</small>', closing, 'dov-close')
@@ -4157,6 +4157,140 @@ function rcIsKnownPerson(raw, fns) {
     var f = String(p[0] || '').toLowerCase().trim(), l = String(p[1] || '').toLowerCase().trim();
     return f && l && words.indexOf(f.split(/\s+/)[0]) !== -1 && l.split(/\s+/).every(function (x) { return words.indexOf(x) !== -1; });
   });
+}
+
+/* ---------- Suggestions: concrete changes that fix a warning (tried on a copy first) ---------- */
+function rcHmStr(m) { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+function rcShiftStr(a, b) { return rcHmStr(a) + '-' + rcHmStr(b); }
+function rcCloneFn(fn) { return JSON.parse(JSON.stringify(fn)); }
+function rcRowHrs(fn, st) { return rcRowHours(fn, st).h; }
+function rcAskedOff(st, d) {
+  var u = rcUserForStaff(st), un = u && String(u.username || '').toLowerCase(); if (!un) return false;
+  return rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).some(function (q) { return q.type === 'unavailability' && (q.status === 'pending' || q.status === 'approved') && String(q.username || '').toLowerCase() === un && rcAsArray(q.dates).some(function (x) { return rcDateKey(x) === d.date; }); });
+}
+/* the shift this person usually does (most common in the fortnight), as {start, end} minutes */
+function rcUsualShift(fn, st) {
+  var c = {}; (st.shifts || []).forEach(function (v) { var p = parseShiftRange(String(v || '')); if (p) { var k = p.start + '-' + p.end; c[k] = (c[k] || 0) + 1; } });
+  var best = Object.keys(c).sort(function (a, b) { return c[b] - c[a]; })[0]; if (!best) return null;
+  var x = best.split('-'); return { start: +x[0], end: +x[1] };
+}
+/* does a change fix this warning? change = {r, i, shift}; key matches the warning (rule id + day or person) */
+function rcFixes(fn, w, change, isDay) {
+  var f2 = rcCloneFn(fn), st = f2.staff[change.r]; st.shifts[change.i] = change.shift;
+  if (st.unavailable) st.unavailable[change.i] = false; if (st.absentApproved) st.absentApproved[change.i] = false;
+  var rules = [w.rule];
+  if (isDay) return !rcDayWarnings(f2, rules).some(function (x) { return x.i === w.i; });
+  return !rcRowWarnings(f2, f2.staff[change.r], rules).length;
+}
+/* new person warnings a change would cause (names only) */
+function rcSideEffects(fn, change) {
+  var before = rcRowWarnings(fn, fn.staff[change.r]).map(function (x) { return x.text; });
+  var f2 = rcCloneFn(fn); f2.staff[change.r].shifts[change.i] = change.shift;
+  return rcRowWarnings(f2, f2.staff[change.r]).map(function (x) { return x.text; }).filter(function (t) { return before.indexOf(t) === -1; });
+}
+function rcSuggestDay(fn, w) {
+  var i = w.i, d = fn.dates[i], hrs = rcHoursFor(d.day), t = w.rule.type, duty = w.rule.duty, out = [], seen = {};
+  var nm = function (st) { return st.firstName + ' ' + String(st.lastName || '').charAt(0) + String(st.lastName || '').slice(1).toLowerCase(); };
+  var fits = function (st) { return (!duty || rcHasDuty(st, duty)) && (t !== 'mgrCover' || rcIsManagerRow(st)); };
+  var tried = [];
+  var add = function (r, shift, text) {
+    var k = r + '|' + shift; if (seen[k] || out.length >= 3) return; seen[k] = 1;
+    var ch = { r: r, i: i, shift: shift };
+    tried.push({ r: r, i: i, shift: shift, text: text });
+    if (!rcFixes(fn, w, ch, true)) return;
+    var side = rcSideEffects(fn, ch);
+    out.push({ r: r, i: i, shift: shift, text: text, warn: side });
+  };
+  var wantOpen = /^(openCount|dutyOpen|openBy)$/.test(t), wantClose = /^(closeCount|dutyClose|closeFrom)$/.test(t);
+  // 1) stretch someone already working that day
+  (fn.staff || []).forEach(function (st, r) {
+    if (!fits(st) || isHiddenStaffRow(st)) return;
+    var p = parseShiftRange(String(st.shifts[i] || '')); if (!p || (st.unavailable && st.unavailable[i]) || (st.absentApproved && st.absentApproved[i])) return;
+    if ((wantOpen || !wantClose) && p.start > hrs.open) add(r, rcShiftStr(hrs.open, p.end), 'Start ' + nm(st) + ' at ' + rcHmText(hrs.open) + ' (now ' + fmt(st.shifts[i]) + ')');
+    if ((wantClose || !wantOpen) && p.end < hrs.close) add(r, rcShiftStr(p.start, hrs.close), 'Keep ' + nm(st) + ' until ' + rcHmText(hrs.close) + ' (now ' + fmt(st.shifts[i]) + ')');
+    if (!wantOpen && !wantClose && p.start > hrs.open && p.end < hrs.close) add(r, rcShiftStr(hrs.open, hrs.close), 'Have ' + nm(st) + ' work ' + rcShiftStr(hrs.open, hrs.close) + ' (now ' + fmt(st.shifts[i]) + ')');
+  });
+  // 2) bring in someone who is off (fewest hours first; not if they asked for the day off)
+  var off = (fn.staff || []).map(function (st, r) { return { st: st, r: r }; }).filter(function (x) {
+    var st = x.st; return fits(st) && !isHiddenStaffRow(st) && !parseShiftRange(String(st.shifts[i] || '')) && !(st.unavailable && st.unavailable[i]) && !(st.absentApproved && st.absentApproved[i]) && !rcAskedOff(st, d);
+  }).sort(function (a, b) { return rcRowHrs(fn, a.st) - rcRowHrs(fn, b.st); });
+  off.forEach(function (x) {
+    var u = rcUsualShift(fn, x.st), len = u ? Math.min(u.end - u.start, hrs.close - hrs.open) : 8 * 60;
+    var a = wantClose ? hrs.close - len : hrs.open, b = wantClose ? hrs.close : hrs.open + len;
+    if (!wantOpen && !wantClose && u && u.start >= hrs.open - 60 && u.end <= hrs.close + 60) { a = u.start; b = u.end; }
+    add(x.r, rcShiftStr(Math.max(a, 0), b), 'Roster ' + nm(x.st) + ' ' + rcShiftStr(Math.max(a, 0), b) + ' (off that day, ' + rcRowHrs(fn, x.st).toFixed(1) + 'h this fortnight)');
+  });
+  if (!out.length) {
+    // no single change is enough (e.g. gaps at both ends of the day): try two together
+    for (var a1 = 0; a1 < tried.length && out.length < 2; a1++) for (var b1 = a1 + 1; b1 < tried.length && out.length < 2; b1++) {
+      var A = tried[a1], B = tried[b1]; if (A.r === B.r) continue;
+      var f2 = rcCloneFn(fn); [A, B].forEach(function (c) { f2.staff[c.r].shifts[c.i] = c.shift; });
+      if (!rcDayWarnings(f2, [w.rule]).some(function (x) { return x.i === i; })) out.push({ changes: [A, B], text: A.text.split(' (')[0] + ' + ' + B.text.split(' (')[0].replace(/^./, function (c) { return c.toLowerCase(); }), warn: [] });
+    }
+  }
+  return out;
+}
+function rcSuggestPerson(fn, r, w) {
+  var st = fn.staff[r], t = w.rule.type, out = [], v = +w.rule.value;
+  var nm = st.firstName;
+  var tryOff = function (i, why) {
+    if (out.length >= 2) return;
+    var ch = { r: r, i: i, shift: 'OFF' }; if (!rcFixes(fn, w, ch, false)) return;
+    var d = fn.dates[i], others = (fn.staff || []).filter(function (x, k) { return k !== r && !isHiddenStaffRow(x) && parseShiftRange(String(x.shifts[i] || '')); }).length;
+    out.push({ r: r, i: i, shift: 'OFF', text: 'Make ' + nm + ' OFF on ' + d.day + ' ' + d.date + (why || '') + ' (' + others + ' others working)', warn: [] });
+  };
+  var working = (st.shifts || []).map(function (v, i) { return parseShiftRange(String(v || '')) ? i : -1; }).filter(function (i) { return i !== -1; });
+  if (t === 'requestedOff') w.days.forEach(function (i) { tryOff(i, ' (they asked for it off)'); });
+  else if (/^(hoursOver|weekHoursOver|daysInRow|restRunUnder|daysOffUnder|shiftsOver|weekendsOver|notOnDay)$/.test(t)) {
+    // drop the day with the most other people on, so cover suffers least
+    var order = (w.days.length ? w.days : working).slice().sort(function (a, b) {
+      var c = function (i) { return (fn.staff || []).filter(function (x, k) { return k !== r && parseShiftRange(String(x.shifts[i] || '')); }).length; };
+      return c(b) - c(a);
+    });
+    order.forEach(function (i) { tryOff(i); });
+    if (!out.length) {
+      // one day isn't enough: two days together (e.g. 2 rest days in a row), then as many as it takes
+      var cover = function (i) { return (fn.staff || []).filter(function (x, k) { return k !== r && parseShiftRange(String(x.shifts[i] || '')); }).length; };
+      var multi = function (days) {
+        var f2 = rcCloneFn(fn); days.forEach(function (i) { f2.staff[r].shifts[i] = 'OFF'; });
+        return !rcRowWarnings(f2, f2.staff[r], [w.rule]).length;
+      };
+      for (var a = 0; a < working.length - 1 && out.length < 2; a++) if (working[a + 1] === working[a] + 1 && multi([working[a], working[a + 1]])) {
+        var dA = fn.dates[working[a]], dB = fn.dates[working[a + 1]];
+        out.push({ r: r, changes: [{ r: r, i: working[a], shift: 'OFF' }, { r: r, i: working[a + 1], shift: 'OFF' }], text: 'Make ' + nm + ' OFF on ' + dA.day + ' ' + dA.date + ' and ' + dB.day + ' ' + dB.date, warn: [] });
+      }
+      if (!out.length) {
+        var pick = [], pool = working.slice().sort(function (x, y) { return cover(y) - cover(x); });
+        while (pool.length && !multi(pick) && pick.length < 8) pick.push(pool.shift());
+        if (multi(pick)) out.push({ r: r, changes: pick.map(function (i) { return { r: r, i: i, shift: 'OFF' }; }), text: 'Make ' + nm + ' OFF on ' + pick.sort(function (x, y) { return x - y; }).map(function (i) { return fn.dates[i].day + ' ' + fn.dates[i].date; }).join(', ') + ' (' + pick.length + ' days)', warn: [] });
+      }
+    }
+  } else if (t === 'shiftOver') {
+    w.days.forEach(function (i) { var p = parseShiftRange(String(st.shifts[i])); if (!p || out.length >= 2) return; var sh = rcShiftStr(p.start, p.start + Math.floor(v * 60 / 15) * 15); var ch = { r: r, i: i, shift: sh }; if (rcFixes(fn, w, ch, false)) out.push({ r: r, i: i, shift: sh, text: 'Shorten ' + nm + ' on ' + fn.dates[i].day + ' ' + fn.dates[i].date + ' to ' + sh, warn: [] }); });
+  } else if (t === 'outsideHours' || t === 'startBefore' || t === 'endAfter') {
+    w.days.forEach(function (i) { var p = parseShiftRange(String(st.shifts[i])), h = rcHoursFor(fn.dates[i].day); if (!p || out.length >= 2) return; var sh = rcShiftStr(t === 'endAfter' ? p.start : Math.max(p.start, t === 'startBefore' ? rcHm(w.rule.value) : h.open - 60), t === 'startBefore' ? p.end : Math.min(p.end, t === 'endAfter' ? rcHm(w.rule.value) : h.close + 60)); var ch = { r: r, i: i, shift: sh }; if (sh !== String(st.shifts[i]) && rcFixes(fn, w, ch, false)) out.push({ r: r, i: i, shift: sh, text: 'Change ' + nm + ' on ' + fn.dates[i].day + ' ' + fn.dates[i].date + ' to ' + sh, warn: [] }); });
+  } else if (t === 'restUnder') {
+    for (var k = 0; k < w.days.length - 1 && out.length < 2; k++) {
+      var i = w.days[k + 1], prev = parseShiftRange(String(st.shifts[w.days[k]])), p = parseShiftRange(String(st.shifts[i])); if (!prev || !p) continue;
+      var start = prev.end - 1440 + v * 60; start = Math.ceil(start / 15) * 15; if (start >= p.end) continue;
+      var sh = rcShiftStr(start, p.end), ch = { r: r, i: i, shift: sh };
+      if (rcFixes(fn, w, ch, false)) out.push({ r: r, i: i, shift: sh, text: 'Start ' + nm + ' later on ' + fn.dates[i].day + ' ' + fn.dates[i].date + ': ' + sh, warn: [] });
+    }
+  }
+  return out;
+}
+function rcSuggestHtml(list) {
+  if (!list.length) return '';
+  return '<div class="sg-list">' + list.map(function (sg) {
+    RC.sg = RC.sg || {}; var id = 's' + Math.random().toString(36).slice(2, 8); RC.sg[id] = sg;
+    return '<div class="sg-row"><span>💡 ' + rcEsc(sg.text) + (sg.warn && sg.warn.length ? ' <span class="rc-small" style="color:#b45309">(would add: ' + rcEsc(sg.warn.join(', ')) + ')</span>' : '') + '</span><button class="rc-b rc-green sg-apply" onclick="rcApplySuggestion(\'' + id + '\')">APPLY</button></div>';
+  }).join('') + '</div>';
+}
+function rcApplySuggestion(id) {
+  var sg = RC.sg && RC.sg[id], fn = getSelectedFortnight(); if (!sg || !fn) return;
+  (sg.changes || [sg]).forEach(function (c) { rcSaveCell(fn.id, c.r, c.i, c.shift); });
+  toast('Done: ' + sg.text.split(' (')[0]);
+  setTimeout(function () { renderRosterSafe(); var ov = document.getElementById('rc-day-ov'); if (ov && ov.classList.contains('show')) rcDayOverview(sg.i != null ? sg.i : sg.changes[0].i); }, 400);
 }
 
 /* ---------- Access log page (masters) ---------- */
@@ -4588,6 +4722,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '#rc-warn-chip{background:#F59E0B !important;color:#111 !important;border-color:#b77400 !important;min-width:0 !important;font-weight:900}#rc-warn-chip.on{box-shadow:inset 0 0 0 2px #111}'
     + 'body:not(.rc-warn-open) #roster-mount td.rc-warn-cell{outline:none}body:not(.rc-warn-open) #roster-mount th.rc-warn-th{box-shadow:none}body:not(.rc-warn-open) .rc-warn-d{display:none}'
     + 'body.rc-mobile .r-controls.rc-tidy{gap:6px}body.rc-mobile .r-controls.rc-tidy select#fortnight-select{flex:1 1 150px;min-width:0 !important;max-width:none !important}body.rc-mobile .r-controls.rc-tidy #rc-current{flex-basis:100%;order:0 !important;text-align:center}body.rc-mobile .r-controls.rc-tidy .rc-right{margin-left:0 !important}body.rc-mobile #rc-tools-wrap{margin-left:auto}body.rc-mobile #rc-tools-menu{position:fixed;left:8px;right:8px;top:auto;bottom:84px;min-width:0}'
+    + '.sg-list{margin-top:4px}.sg-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 4px 8px;border-left:3px solid #1a7f37;margin:4px 0;font-size:12px}.sg-apply{padding:4px 12px !important;font-size:11px !important;white-space:nowrap}.dov-sg{margin:6px 0;padding:6px 10px;border:2px solid #1a7f37;border-radius:10px;background:#F2FBF5;font-size:12px}'
     + '.wq-g{margin-top:8px}.wq-h{font-size:10px;font-weight:900;color:#777;letter-spacing:.5px;margin-bottom:2px}.wq-b{margin:3px 4px 0 0 !important;font-size:11px !important}.wq-b.on{background:#E8F5EC !important;border-color:#1a7f37 !important;color:#1a7f37 !important}'
     + '.duty-t td,.duty-t th{text-align:center !important;white-space:nowrap}.duty-t td:first-child,.duty-t th:first-child{text-align:left !important}.dov-reg{margin:6px 0;padding:6px 10px;background:#f4f4f4;border-radius:10px;font-size:13px}'
     + '#rc-setup-reminder{position:fixed;right:16px;bottom:16px;z-index:9990;max-width:440px;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#111;color:#fff;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.35);font-size:13px;font-weight:700}#rc-setup-reminder .rsr-t{flex:1}#rc-setup-reminder .rc-x{color:#bbb}#rc-setup-reminder .rc-b{white-space:nowrap}body.rc-mobile #rc-setup-reminder{left:8px;right:8px;bottom:150px;max-width:none;font-size:12px}@media print{#rc-setup-reminder{display:none !important}}'
