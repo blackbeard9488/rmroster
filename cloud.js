@@ -3394,6 +3394,8 @@ var RC_WARN_TYPES = {
   dutyClose:     { label: 'Nobody on a duty working until closing', unit: 'none', def: '', msg: 'No one on duty at closing', day: true, duty: true },
   dutyOpen:      { label: 'Nobody on a duty starting by opening', unit: 'none', def: '', msg: 'No one on duty at opening', day: true, duty: true },
   dutyBreak:     { label: 'Someone alone on a duty for longer than, with nobody to cover their break', unit: 'hours', def: 5, msg: 'No break cover', day: true, duty: true },
+  openCount:     { label: 'People starting by opening fewer than', unit: 'people', def: 2, msg: 'Too few at opening', day: true, duty: true, dutyOpt: true },
+  closeCount:    { label: 'People working until closing fewer than', unit: 'people', def: 2, msg: 'Too few at closing', day: true, duty: true, dutyOpt: true },
   mgrCover:      { label: 'Managers on at any time (store hours) fewer than', unit: 'people', def: 1, msg: 'No manager on', day: true },
   coverAnyTime:  { label: 'People in the store at any time (store hours) fewer than', unit: 'people', def: 2, msg: 'Too few people in the store', day: true },
   outsideHours:  { label: 'Shift starts or finishes outside store hours by more than', unit: 'hours', def: 1, msg: 'Shift outside store hours' }
@@ -3471,7 +3473,7 @@ function rcWarnDaysLabel(f) { return !f || f === 'all' ? 'every day' : f === 'we
 var RC_WARN_PRESETS = [
   ['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'],
   ['daysInRow', 6, 'More than 6 days in a row', 'all'], ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['outsideHours', 1, 'Shift outside store hours', 'all'],
-  ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['coverAnyTime', 2, 'Fewer than 2 people in the store', 'all'], ['mgrCover', 1, 'No manager on', 'all'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all'],
+  ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['coverAnyTime', 2, 'Fewer than 2 people in the store', 'all'], ['openCount', 2, 'Fewer than 2 people at opening (8:00)', 'all'], ['closeCount', 2, 'Fewer than 2 people at closing', 'all'], ['mgrCover', 1, 'No manager on', 'all'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all'],
   ['dutyCover', 1, 'Register not covered', 'all', 'register'], ['dutyOpen', '', 'No register worker at opening', 'all', 'register'], ['dutyClose', '', 'No register worker at closing', 'all', 'register'], ['dutyBreak', 5, 'Register worker has no break cover', 'all', 'register'],
   ['dutyCover', 1, 'Spares/Parts not covered', 'all', 'parts'], ['dutyOpen', '', 'No spares/parts at opening', 'all', 'parts'], ['dutyClose', '', 'No spares/parts at closing', 'all', 'parts']];
 function rcWarnRules() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).filter(function (w) { return w && RC_WARN_TYPES[w.type]; }); }
@@ -3578,6 +3580,11 @@ function rcDayWarnings(fn, rules) {
       if (w.type === 'dutyCover' && coverGaps && coverGaps[w.duty]) { var gp = coverGaps[w.duty]; if (gp.length) { bad = true; detail = rcDutyName(w.duty) + ' ' + gp.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to) + ' (' + g.n + ')'; }).join(', ') + (gp.length > 3 ? '…' : ''); } }
       if (w.type === 'dutyMin' && dayShort && w.duty in dayNeed && dayShort[w.duty]) { var can = on.filter(function (x) { return rcHasDuty(x.st, w.duty); }).length; bad = true; detail = rcDutyName(w.duty) + ': ' + (dayNeed[w.duty] - dayShort[w.duty]) + ' of ' + dayNeed[w.duty] + (can > dayNeed[w.duty] - dayShort[w.duty] ? ' (others needed for other duties)' : ''); }
       var hrsD = rcHoursFor(d.day);
+      if ((w.type === 'openCount' || w.type === 'closeCount') && on.length) {
+        var fit = function (x) { return !w.duty || rcHasDuty(x.st, w.duty); };
+        var cnt = on.filter(function (x) { return fit(x) && (w.type === 'openCount' ? x.p.start <= hrsD.open : x.p.end >= hrsD.close); }).length;
+        if (cnt < +v) { bad = true; detail = (w.duty ? rcDutyName(w.duty) + ': ' : '') + cnt + ' ' + (w.type === 'openCount' ? 'in by ' + rcHmText(hrsD.open) : 'until ' + rcHmText(hrsD.close)); }
+      }
       if (w.type === 'coverAnyTime' && on.length) { var lowT = rcLowCover(on, hrsD, +v, function () { return true; }); if (lowT.length) { bad = true; detail = lowT.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to) + ' (' + g.n + ')'; }).join(', ') + (lowT.length > 3 ? '…' : ''); } }
       if (w.type === 'mgrCover' && on.length) { var lowM = rcLowCover(on, hrsD, +v, function (x) { return rcIsManagerRow(x.st); }); if (lowM.length) { bad = true; detail = lowM.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', ') + (lowM.length > 3 ? '…' : ''); } }
       if (w.type === 'dutyBreak' && w.duty && rcDutyHasPeople(w.duty)) {
@@ -3685,7 +3692,7 @@ function rcRenderWarningsPage() {
   var shown = rules.map(function (w, k) { return { w: w, k: k }; }).filter(function (x) { return x.w && RC_WARN_TYPES[x.w.type]; });
   h += shown.length ? shown.map(function (x) {
     var w = x.w, k = x.k, t = RC_WARN_TYPES[w.type];
-    var desc = (t.duty && w.duty ? rcDutyName(w.duty) + ': ' : '') + t.label + (t.unit === 'none' ? '' : ' ' + (w.value === 'store' ? 'store opening/closing time' : w.value) + (/^(time|weekday)$/.test(t.unit) || w.value === 'store' ? '' : ' ' + t.unit)) + ' • ' + (t.day ? rcWarnDaysLabel(w.days) : rcWarnWho(w))
+    var desc = (t.duty && w.duty ? rcDutyName(w.duty) + ': ' : t.dutyOpt ? 'Anyone: ' : '') + t.label + (t.unit === 'none' ? '' : ' ' + (w.value === 'store' ? 'store opening/closing time' : w.value) + (/^(time|weekday)$/.test(t.unit) || w.value === 'store' ? '' : ' ' + t.unit)) + ' • ' + (t.day ? rcWarnDaysLabel(w.days) : rcWarnWho(w))
       + (rcAsArray(w.skip).length ? ' • ignores ' + rcAsArray(w.skip).map(function (k) { return people[k] || k; }).join(', ') : '');
     return '<div class="rc-row"><div><b>' + rcEsc(w.msg || t.msg) + '</b><br><span class="rc-small">' + rcEsc(desc) + '</span></div><div class="rc-btns">'
       + '<label class="rc-small"><input type="checkbox"' + (w.off ? '' : ' checked') + ' onchange="rcWarnToggle(' + k + ',this.checked)"> on</label>' + (t.day ? '' : '<button class="rc-b rc-white" onclick="rcWarnIgnore(' + k + ')">IGNORE…</button>') + '<button class="rc-b rc-white" onclick="rcWarnDelete(' + k + ')">DELETE</button></div></div>';
@@ -3711,8 +3718,8 @@ function rcRenderWarningsPage() {
         var grp = function (title, test) { var list = RC_WARN_PRESETS.map(function (p, k) { return { p: p, k: k }; }).filter(function (x) { return test(x.p); }); return '<div class="wq-g"><div class="wq-h">' + title + '</div>' + list.map(function (x) { return '<button class="rc-b rc-white wq-b' + (on(x.p) ? ' on' : '') + '" onclick="rcWarnPreset(' + x.k + ')"' + (on(x.p) ? ' title="Already on"' : '') + '>' + (on(x.p) ? '✓ ' : '+ ') + rcEsc(x.p[2]) + '</button>'; }).join('') + '</div>'; };
         return '<div class="rc-small">Quick add (✓ = already on):</div>'
           + grp('EACH PERSON', function (p) { return !RC_WARN_TYPES[p[0]].day; })
-          + grp('EACH DAY - COVER', function (p) { return RC_WARN_TYPES[p[0]].day && !RC_WARN_TYPES[p[0]].duty; })
-          + grp('EACH DAY - DUTIES', function (p) { return RC_WARN_TYPES[p[0]].duty; });
+          + grp('EACH DAY - COVER', function (p) { return RC_WARN_TYPES[p[0]].day && (!RC_WARN_TYPES[p[0]].duty || (RC_WARN_TYPES[p[0]].dutyOpt && !p[4])); })
+          + grp('EACH DAY - DUTIES', function (p) { return RC_WARN_TYPES[p[0]].duty && !(RC_WARN_TYPES[p[0]].dutyOpt && !p[4]); });
       })()
     + '<div class="tm-row" style="border:none;padding:10px 0 0"><select id="wn-type" class="rc-to-in" style="margin:0;flex:2" onchange="rcWarnTypeUI()">'
     + '<optgroup label="Each person">' + Object.keys(RC_WARN_TYPES).filter(function (k) { return !RC_WARN_TYPES[k].day; }).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</optgroup>'
@@ -3734,7 +3741,10 @@ function rcWarnTypeUI() {
   if (!/^(none|weekday)$/.test(t.unit)) { v.type = t.unit === 'time' ? 'time' : 'number'; v.step = t.unit === 'hours' ? '0.5' : '1'; v.value = t.def; }
   document.getElementById('wn-unit').textContent = /^(time|none|weekday)$/.test(t.unit) ? '' : t.unit;
   document.getElementById('wn-days').style.display = t.day ? '' : 'none';
-  document.getElementById('wn-duty').style.display = t.duty ? '' : 'none';
+  var dsel = document.getElementById('wn-duty'); dsel.style.display = t.duty ? '' : 'none';
+  var anyOpt = dsel.querySelector('option[value=""]');
+  if (t.dutyOpt && !anyOpt) { anyOpt = document.createElement('option'); anyOpt.value = ''; anyOpt.textContent = 'Anyone'; dsel.insertBefore(anyOpt, dsel.firstChild); dsel.value = ''; }
+  if (!t.dutyOpt && anyOpt) { anyOpt.remove(); dsel.selectedIndex = 0; }
   document.getElementById('wn-who').style.display = t.day ? 'none' : '';
   document.getElementById('wn-msg').placeholder = 'Message, e.g. ' + t.msg;
 }
@@ -3746,7 +3756,8 @@ function rcWarnAdd() {
   var whoSel = document.getElementById('wn-who'), who = whoSel.value;
   var w = { id: 'w' + Date.now().toString(36), type: type, value: value, who: t.day ? 'all' : who, msg: document.getElementById('wn-msg').value.trim() || t.msg };
   if (t.day) w.days = document.getElementById('wn-days').value;
-  if (t.duty) { w.duty = document.getElementById('wn-duty').value; if (!document.getElementById('wn-msg').value.trim()) w.msg = { dutyCover: rcDutyName(w.duty) + ' not covered', dutyMin: 'Not enough ' + rcDutyName(w.duty), dutyClose: 'No ' + rcDutyName(w.duty).toLowerCase() + ' at closing', dutyOpen: 'No ' + rcDutyName(w.duty).toLowerCase() + ' at opening' }[type]; }
+  if (t.duty && t.dutyOpt) { w.duty = document.getElementById('wn-duty').value || undefined; if (!w.duty) delete w.duty; if (!document.getElementById('wn-msg').value.trim()) w.msg = 'Too few' + (w.duty ? ' ' + rcDutyName(w.duty).toLowerCase() : '') + (type === 'openCount' ? ' at opening' : ' at closing'); }
+  else if (t.duty) { w.duty = document.getElementById('wn-duty').value; if (!document.getElementById('wn-msg').value.trim()) w.msg = { dutyCover: rcDutyName(w.duty) + ' not covered', dutyMin: 'Not enough ' + rcDutyName(w.duty), dutyClose: 'No ' + rcDutyName(w.duty).toLowerCase() + ' at closing', dutyOpen: 'No ' + rcDutyName(w.duty).toLowerCase() + ' at opening' }[type]; }
   if (who.indexOf('p:') === 0) w.whoName = whoSel.options[whoSel.selectedIndex].text;
   rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([w]), 'Warning added');
 }
