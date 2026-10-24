@@ -1598,7 +1598,7 @@ function rcMyPendingOffers(otherOnly) {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); rcApprovedTicks(); rcStaffBtn(); rcRosterWarnings(); rcDayHeaders(); document.body.classList.toggle('rc-can-edit', rcIsMgr()); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); rcApprovedTicks(); rcStaffBtn(); rcRosterWarnings(); rcDayHeaders(); rcTidyControls(); document.body.classList.toggle('rc-can-edit', rcIsMgr()); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
 /* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
 function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
@@ -2058,8 +2058,8 @@ function rcApplyMobile() {
   document.body.classList.toggle('rc-in', !!RC.session);
   if (m && RC.session) rcBuildNav();
   var prev = document.querySelector('.r-controls button[onclick="prevFortnight()"]'), next = document.querySelector('.r-controls button[onclick="nextFortnight()"]');
-  if (prev) { prev.textContent = m ? '‹' : 'PREV'; prev.title = 'Previous fortnight'; }
-  if (next) { next.textContent = m ? '›' : 'NEXT'; next.title = 'Next fortnight'; }
+  if (prev) { prev.textContent = '‹'; prev.title = 'Previous fortnight'; }
+  if (next) { next.textContent = '›'; next.title = 'Next fortnight'; }
   var tf = document.querySelector('.r-controls button[onclick="toggleTimeFormat()"]'); if (tf) tf.textContent = m ? '12/24H' : '12H/24H';
   var del = document.getElementById('delete-roster-btn'); if (del) del.textContent = m ? 'DELETE' : 'DELETE ROSTER';
   var v65 = document.getElementById('repco-v65');
@@ -2400,6 +2400,8 @@ function rcStartSchedTicker() {
 /* ---------- Today's / Tomorrow's Buddies ---------- */
 /* Live countdown for one shift: starts in / time left / finished */
 function rcBuddyLeft(iso, sh) {
+  return '';   // countdowns removed from the Buddies pages
+
   var t = rcShiftTimes(iso, sh); if (!t) return '';
   return '<span class="bd-left" data-s="' + t.start.getTime() + '" data-e="' + t.end.getTime() + '">' + rcBuddyLeftText(t.start.getTime(), t.end.getTime()) + '</span>';
 }
@@ -2681,10 +2683,7 @@ function rcDraftBar() {
   if (fn.draft) {
     bar.className = 'rc-draft on';
     bar.innerHTML = '<span><b>DRAFT</b> - staff can\'t see this fortnight yet</span><button class="rc-b rc-green" onclick="rcPublishFn(true)">PUBLISH TO STAFF</button>';
-  } else {
-    bar.className = 'rc-draft';
-    bar.innerHTML = '<span>Published - staff can see this fortnight</span><button class="rc-b rc-white" onclick="rcPublishFn(false)">MAKE DRAFT</button>';
-  }
+  } else return;   // published: nothing to show (MAKE DRAFT is in the TOOLS menu)
   mount.parentNode.insertBefore(bar, mount);
 }
 function rcPublishFn(publish) {
@@ -2998,7 +2997,7 @@ function rcFreshButton() {
   if (!rcIsMgr() || RC.pdfMode) { if (b) b.remove(); return; }
   if (b) return;
   b = document.createElement('button'); b.id = 'rc-fresh-btn'; b.textContent = '+ NEW / DUPLICATE'; b.title = 'Start the next fortnight: empty, or a copy of the one on screen'; b.onclick = rcFreshRoster;
-  var del = document.getElementById('delete-roster-btn'); ctl.insertBefore(b, del || null);
+  var del = document.getElementById('delete-roster-btn'); ctl.insertBefore(b, del && del.parentNode === ctl ? del : null);
 }
 renderImportExportPage = (function (orig) {
   return function () {
@@ -3109,7 +3108,7 @@ function rcApplyRowSize() {
   document.body.classList.toggle('rc-rh-s', v === 's'); document.body.classList.toggle('rc-rh-l', v === 'l');
   var ctl = document.querySelector('#repco-v65 .r-controls') || document.querySelector('.r-controls'); if (!ctl || !RC.session) return;
   var b = document.getElementById('rc-rows-btn');
-  if (!b) { b = document.createElement('button'); b.id = 'rc-rows-btn'; b.title = 'Row size'; b.onclick = rcCycleRowSize; var tf = ctl.querySelector('button[onclick="toggleTimeFormat()"]'); ctl.insertBefore(b, tf ? tf.nextSibling : null); }
+  if (!b) { b = document.createElement('button'); b.id = 'rc-rows-btn'; b.title = 'Row size'; b.onclick = rcCycleRowSize; var tf = ctl.querySelector('button[onclick="toggleTimeFormat()"]'); ctl.insertBefore(b, tf && tf.parentNode === ctl ? tf.nextSibling : null); }
   b.textContent = 'ROWS: ' + RC_ROW_SIZES.find(function (x) { return x[0] === v; })[1];
 }
 function rcCycleRowSize() {
@@ -3208,7 +3207,7 @@ function rcStaffBtn() {
   var ctl = document.querySelector('#repco-v65 .r-controls') || document.querySelector('.r-controls'); if (!ctl) return;
   var b = document.getElementById('rc-staff-btn');
   if (!rcIsMgr() || RC.pdfMode || !getSelectedFortnight()) { if (b) b.remove(); var pn = document.getElementById('rc-staff-panel'); if (pn) pn.remove(); return; }
-  if (!b) { b = document.createElement('button'); b.id = 'rc-staff-btn'; b.onclick = function () { RC.staffPanelOpen = !RC.staffPanelOpen; rcStaffPanel(true); }; var fr = document.getElementById('rc-fresh-btn'); ctl.insertBefore(b, fr || null); }
+  if (!b) { b = document.createElement('button'); b.id = 'rc-staff-btn'; b.onclick = function () { RC.staffPanelOpen = !RC.staffPanelOpen; rcStaffPanel(true); }; var fr = document.getElementById('rc-fresh-btn'); ctl.insertBefore(b, fr && fr.parentNode === ctl ? fr : null); }
   b.textContent = RC.staffPanelOpen ? 'CLOSE STAFF' : 'STAFF + / −';
   rcStaffPanel(false);
 }
@@ -3424,7 +3423,7 @@ function rcDayWarnings(fn, rules) {
   return out;
 }
 function rcRosterWarnings() {
-  if (!rcIsMgr() || RC.pdfMode) { var o = document.getElementById('rc-warn-bar'); if (o) o.remove(); return; }
+  if (!rcIsMgr() || RC.pdfMode) { var o = document.getElementById('rc-warn-bar'); if (o) o.remove(); RC.warnCount = 0; rcWarnChip(); return; }
   var fn = getSelectedFortnight(), rules = rcWarnRules(), all = [];
   if (fn && rules.length) (fn.staff || []).forEach(function (st, r) {
     var ws = rcRowWarnings(fn, st, rules); if (!ws.length) return;
@@ -3451,9 +3450,11 @@ function rcRosterWarnings() {
     if (mineDay.length) dvHead.insertAdjacentHTML('beforeend', '<div class="rc-warn-dv">⚠ ' + mineDay.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>');
   }
   var bar = document.getElementById('rc-warn-bar');
-  if (!all.length && !dayWs.length) { if (bar) bar.remove(); return; }
   var n = all.reduce(function (t, x) { return t + x.ws.length; }, 0) + dayWs.length;
-  var h = '<div class="rc-warn-head" onclick="RC.warnOpen=!RC.warnOpen;rcRosterWarnings()"><b>⚠ ' + n + ' warning' + (n === 1 ? '' : 's') + '</b> on this roster <span class="rc-small">(' + (RC.warnOpen ? 'hide' : 'show') + ')</span></div>';
+  RC.warnCount = n; rcWarnChip();
+  document.body.classList.toggle('rc-warn-open', !!RC.warnOpen);
+  if (!n || !RC.warnOpen) { if (bar) bar.remove(); return; }
+  var h = '<div class="rc-warn-head" onclick="RC.warnOpen=false;rcRosterWarnings()"><b>⚠ ' + n + ' warning' + (n === 1 ? '' : 's') + '</b> on this roster <span class="rc-small">(hide)</span></div>';
   if (RC.warnOpen) h += dayWs.map(function (w) { var d = fn.dates[w.i]; return '<div class="rc-warn-row"><b>' + rcEsc(d.day + ' ' + d.date) + '</b>: ' + rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : '') + '</div>'; }).join('');
   if (RC.warnOpen) h += all.map(function (x) { return '<div class="rc-warn-row"><b>' + rcEsc(String(x.st.lastName).toUpperCase() + ', ' + x.st.firstName) + '</b>: ' + x.ws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : ''); }).join(' • ') + '</div>'; }).join('');
   if (!bar) { bar = document.createElement('div'); bar.id = 'rc-warn-bar'; var mount = document.getElementById('roster-mount'); mount.parentNode.insertBefore(bar, mount); }
@@ -3815,6 +3816,76 @@ openPage = (function (orig) {
   };
 })(openPage);
 
+/* ---------- Tidy roster controls: one row plus a TOOLS menu ---------- */
+function rcWarnChip() {
+  var ctl = document.querySelector('#repco-v65 .r-controls'); if (!ctl) return;
+  var c = document.getElementById('rc-warn-chip');
+  if (!RC.warnCount) { if (c) c.remove(); return; }
+  if (!c) { c = document.createElement('button'); c.id = 'rc-warn-chip'; c.onclick = function () { RC.warnOpen = !RC.warnOpen; rcRosterWarnings(); }; var st = document.getElementById('rc-sync-status'); ctl.insertBefore(c, st && st.parentNode === ctl ? st : null); }
+  c.textContent = '⚠ ' + RC.warnCount; c.title = RC.warnCount + ' warning' + (RC.warnCount === 1 ? '' : 's') + ' - tap to ' + (RC.warnOpen ? 'hide' : 'show');
+  c.classList.toggle('on', !!RC.warnOpen);
+}
+function rcToolsOpen(on) {
+  var m = document.getElementById('rc-tools-menu'); if (!m) return;
+  RC.toolsOpen = on === undefined ? !RC.toolsOpen : !!on;
+  m.classList.toggle('show', RC.toolsOpen);
+}
+document.addEventListener('click', function (e) {
+  if (!RC.toolsOpen) return;
+  var m = document.getElementById('rc-tools-menu'), b = document.getElementById('rc-tools-btn');
+  if (m && !m.contains(e.target) && b && !b.contains(e.target)) rcToolsOpen(false);
+}, true);
+function rcTidyControls() {
+  var ctl = document.querySelector('#repco-v65 .r-controls'); if (!ctl || !RC.session) return;
+  ctl.classList.add('rc-tidy');
+  var prev = ctl.querySelector('button[onclick="prevFortnight()"]'), next = ctl.querySelector('button[onclick="nextFortnight()"]');
+  if (prev) { prev.textContent = '‹'; prev.title = 'Previous fortnight'; }
+  if (next) { next.textContent = '›'; next.title = 'Next fortnight'; }
+  var sel = document.getElementById('fortnight-select');
+  if (prev && sel && prev.nextSibling !== sel) ctl.insertBefore(prev, sel);
+  if (next && sel && sel.nextSibling !== next) ctl.insertBefore(next, sel.nextSibling);
+  var cur = document.getElementById('rc-current'); if (cur && next && next.nextSibling !== cur) ctl.insertBefore(cur, next.nextSibling);
+  var team = document.getElementById('rc-team-btn'); if (team && cur && cur.nextSibling !== team) ctl.insertBefore(team, cur.nextSibling);
+  // the menu
+  var btn = document.getElementById('rc-tools-btn'), menu = document.getElementById('rc-tools-menu');
+  if (!btn) {
+    btn = document.createElement('button'); btn.id = 'rc-tools-btn'; btn.textContent = '⋯ TOOLS'; btn.onclick = function () { rcToolsOpen(); };
+    menu = document.createElement('div'); menu.id = 'rc-tools-menu';
+    var wrap = document.createElement('span'); wrap.id = 'rc-tools-wrap'; wrap.appendChild(btn); wrap.appendChild(menu); ctl.appendChild(wrap);
+  }
+  if (btn.parentNode !== ctl.lastElementChild && btn.parentNode.parentNode === ctl && ctl.lastElementChild !== btn.parentNode) ctl.appendChild(btn.parentNode);
+  var mgr = rcIsMgr(), fn = getSelectedFortnight();
+  var move = function (el) { if (el && el.parentNode !== menu) menu.appendChild(el); };
+  // roster actions first, then view settings, then the risky one last
+  move(document.getElementById('rc-staff-btn'));
+  move(document.getElementById('rc-fresh-btn'));
+  var extra = [];
+  if (mgr && fn) extra.push(['rc-tb-draft', fn.draft ? 'PUBLISH TO STAFF' : 'MAKE DRAFT (hide from staff)', function () { rcToolsOpen(false); rcPublishFn(!!fn.draft); }]);
+  if (rcIsManagerUp()) extra.push(['rc-tb-compare', 'COMPARE ROSTERS', function () { rcToolsOpen(false); RC.cmpA = null; RC.cmpB = null; openPage('compare-page'); }]);
+  if (mgr && fn) extra.push(['rc-tb-day', 'DAY OVERVIEW (today)', function () { rcToolsOpen(false); var k = fn.dates.findIndex(function (d) { return d.iso === getISO(); }); rcDayOverview(k >= 0 ? k : 0); }]);
+  extra.push(['rc-tb-pdf', 'EXPORT PDF', function () { rcToolsOpen(false); exportPDF(); }]);
+  if (mgr) extra.push(['rc-tb-xlsx', 'EXPORT EXCEL', function () { rcToolsOpen(false); rcExportExcel(); }]);
+  extra.forEach(function (x) {
+    var b = document.getElementById(x[0]);
+    if (!b) { b = document.createElement('button'); b.id = x[0]; menu.appendChild(b); }
+    b.textContent = x[1]; b.onclick = x[2];
+  });
+  ['rc-tb-draft', 'rc-tb-compare', 'rc-tb-day', 'rc-tb-xlsx'].forEach(function (id) { if (!extra.some(function (x) { return x[0] === id; })) { var o = document.getElementById(id); if (o) o.remove(); } });
+  var sep = document.getElementById('rc-tb-sep'); if (!sep) { sep = document.createElement('div'); sep.id = 'rc-tb-sep'; sep.className = 'rc-tb-sep'; sep.textContent = 'VIEW'; }
+  var del = document.getElementById('delete-roster-btn'); if (del) del.textContent = 'DELETE THIS ROSTER';
+  // fixed order every time
+  [document.getElementById('rc-staff-btn'), document.getElementById('rc-fresh-btn')].concat(extra.map(function (x) { return document.getElementById(x[0]); }))
+    .concat([sep, document.getElementById('rc-rows-btn'), ctl.querySelector('button[onclick="toggleTimeFormat()"]') || menu.querySelector('button[onclick="toggleTimeFormat()"]'), del])
+    .forEach(function (el) { if (el) menu.appendChild(el); });
+  // menu items close the menu
+  [].forEach.call(menu.querySelectorAll('button'), function (b) { if (!b.dataset.closes) { b.dataset.closes = '1'; b.addEventListener('click', function () { if (b.id !== 'rc-rows-btn' && !/toggleTimeFormat/.test(b.getAttribute('onclick') || '')) rcToolsOpen(false); }); } });
+  menu.classList.toggle('show', !!RC.toolsOpen);
+  // total, warnings and LIVE sit together on the right
+  var tot = document.getElementById('admin-total-badge'), live = document.getElementById('rc-sync-status');
+  [tot, document.getElementById('rc-warn-chip'), live].forEach(function (el) { if (el && el.parentNode === ctl) ctl.insertBefore(el, btn.parentNode); });
+  if (tot && !tot.classList.contains('rc-right')) tot.classList.add('rc-right');
+}
+
 /* ---------- Access log page (masters) ---------- */
 renderOptions = (function (orig) {
   return function () {
@@ -3860,7 +3931,18 @@ function rcLoadAccessLog() {
 /* When the database refuses a page the app thinks you can open, say what role the database has for you */
 function rcPermHint() {
   var raw = String(((RC.allUsers[RC.session.uid] || {}).role) || '');
-  return '<div class="rc-small" style="margin-top:8px">Your login\'s role in the database is <b>"' + rcEsc(raw) + '"</b>. If the database rules in Firebase are older than this version of the app, paste the latest <b>database.rules.json</b> (Realtime Database → Rules → Publish).</div>';
+  setTimeout(rcProbeRules, 50);
+  return '<div class="rc-small" style="margin-top:8px">Your login\'s role in the database is <b>"' + rcEsc(raw) + '"</b>. If the database rules in Firebase are older than this version of the app, paste the latest <b>database.rules.json</b> (Realtime Database → Rules → Publish).</div><div class="rc-small rc-probe" style="margin-top:8px">Checking the live database rules…</div>';
+}
+/* Which parts of the live rules let this login in (shows whether the latest rules are really published) */
+function rcProbeRules() {
+  var tries = [['teamInfo', 'Teams (rules from V226)'], [rcTP('history'), 'Change history (V225)'], ['accesslog', 'Access log (V229)'], ['shared', 'Linked staff (V229)']];
+  Promise.all(tries.map(function (t) { return RC.db.ref(t[0]).limitToLast(1).once('value').then(function () { return true; }, function () { return false; }); })).then(function (ok) {
+    var allOk = ok.every(Boolean), none = !ok.some(Boolean);
+    var html = '<b>Live rules check for this login:</b><br>' + tries.map(function (t, i) { return (ok[i] ? '✅ ' : '❌ ') + t[1]; }).join('<br>')
+      + '<br><b>' + (allOk ? 'The live rules are up to date - try reloading the page.' : none ? 'The rules in Firebase are older than V225, so the new rules haven\'t been published. In Firebase open Realtime Database (not Firestore) → Rules, paste database.rules.json, and press Publish until "Unpublished changes" is gone.' : 'Some parts are refused - publish the latest database.rules.json again.') + '</b>';
+    document.querySelectorAll('.rc-probe').forEach(function (el) { el.innerHTML = html; });
+  });
 }
 function rcAccessName(e) {
   var u = RC.allUsers[e.uid];
@@ -4223,6 +4305,16 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.cmp-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.cmp-sum div{background:#111;color:#fff;border-radius:12px;padding:8px 6px;text-align:center}.cmp-sum small{display:block;font-size:10px;opacity:.8;font-weight:700}.cmp-sum b{font-size:18px}'
     + '.cmp-up{color:#1a7f37}.cmp-sum .cmp-up{color:#7ee2a0}.cmp-down{color:#E30613}.cmp-sum .cmp-down{color:#ff8a94}.cmp-h{font-size:13px;white-space:nowrap}.cmp-h b{margin-left:6px}'
     + '.cmp-t{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}.cmp-t th,.cmp-t td{border:none !important;border-bottom:1px solid #eee !important;padding:4px 6px !important;text-align:left;width:auto !important;min-width:0 !important;max-width:none !important;background:transparent !important;color:#111 !important;font-size:12px !important}.cmp-t th{font-size:10px !important;color:#777 !important}'
+    + '.r-controls.rc-tidy{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.r-controls.rc-tidy #user-badge,.r-controls.rc-tidy #brisbane-time-v141{display:none !important}'
+    + '.r-controls.rc-tidy button[onclick="prevFortnight()"],.r-controls.rc-tidy button[onclick="nextFortnight()"]{min-width:0 !important;width:40px;padding:6px 0 !important;font-size:18px;line-height:1}'
+    + '.r-controls.rc-tidy{position:relative;z-index:60}.r-controls.rc-tidy>*{order:0 !important}.r-controls.rc-tidy .rc-right{margin-left:auto !important}#rc-tools-wrap{position:relative;z-index:1000}#rc-tools-btn{background:#111 !important;color:#fff !important;border-color:#111 !important}'
+    + '#rc-tools-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:50;background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;padding:6px;min-width:240px}#rc-tools-menu.show{display:block}'
+    + '#rc-tools-menu button{display:block;width:100%;text-align:left;margin:0 !important;border:none !important;border-radius:9px !important;padding:10px 12px !important;background:#fff !important;color:#111 !important;font-weight:900;font-size:12px;min-width:0 !important;order:0 !important}#rc-tools-menu button:hover{background:#f1f1f1 !important}'
+    + '#rc-tools-menu #delete-roster-btn{color:#E30613 !important;border-top:2px solid #eee !important;border-radius:0 0 9px 9px !important;margin-top:4px !important}.rc-tb-sep{font-size:10px;font-weight:900;color:#999;letter-spacing:.6px;padding:8px 12px 2px;border-top:2px solid #eee;margin-top:4px}'
+    + '.r-controls.rc-tidy #rc-current.on{display:none !important}'
+    + '#rc-warn-chip{background:#F59E0B !important;color:#111 !important;border-color:#b77400 !important;min-width:0 !important;font-weight:900}#rc-warn-chip.on{box-shadow:inset 0 0 0 2px #111}'
+    + 'body:not(.rc-warn-open) #roster-mount td.rc-warn-cell{outline:none}body:not(.rc-warn-open) #roster-mount th.rc-warn-th{box-shadow:none}body:not(.rc-warn-open) .rc-warn-d{display:none}'
+    + 'body.rc-mobile .r-controls.rc-tidy{gap:6px}body.rc-mobile .r-controls.rc-tidy select#fortnight-select{flex:1 1 150px;min-width:0 !important;max-width:none !important}body.rc-mobile .r-controls.rc-tidy #rc-current{flex-basis:100%;order:0 !important;text-align:center}body.rc-mobile .r-controls.rc-tidy .rc-right{margin-left:0 !important}body.rc-mobile #rc-tools-wrap{margin-left:auto}body.rc-mobile #rc-tools-menu{position:fixed;left:8px;right:8px;top:auto;bottom:84px;min-width:0}'
     + '#rc-warn-bar{margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#FFF4DB;border:2px solid #F59E0B;font-size:12px}body.rc-mobile #rc-warn-bar{margin:8px 8px 0}.rc-warn-head{cursor:pointer}.rc-warn-row{padding:4px 0;border-top:1px solid #f3d9a4;margin-top:4px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
