@@ -2338,8 +2338,8 @@ renderMySchedule = function () {
     var byFn = {}, order = [];
     rows.forEach(function (r) { if (!byFn[r.fn.id]) { byFn[r.fn.id] = []; order.push(r.fn); } byFn[r.fn.id].push(r); });
     order.filter(function (fn) { var last = fn.dates[fn.dates.length - 1]; return last && last.iso >= today; }).slice(0, 2).forEach(function (fn) {
-      var list = byFn[fn.id], hrs = 0, n = 0;
-      list.forEach(function (r) { if (r.t) { hrs += netH(r.sh); n++; } });
+      var list = byFn[fn.id], hrs = 0, n = 0, meRow = findMyStaff(fn), fullT = !!meRow && meRow.employmentType !== 'casual';
+      list.forEach(function (r) { if (r.t) { hrs += netH(r.sh); n++; } else if (fullT && (r.ab || r.na) && r.orig) hrs += netH(r.orig); });   // full time: leave days keep their hours, like the roster
       var isCur = fn.dates.some(function (d) { return d.iso === today; });
       h += '<div class="ms-fn"><div class="ms-fn-head"><span>' + (isCur ? 'THIS FORTNIGHT' : 'NEXT FORTNIGHT') + ' • ' + rcEsc(rcFnRange(fn)) + '</span><span>' + n + ' shifts • ' + hrs.toFixed(1) + 'h</span></div>';
       list.forEach(function (r) {
@@ -3596,18 +3596,22 @@ function rcMyHoursCard(rows, today) {
   var idx = order.findIndex(function (fn) { return fn.dates.some(function (d) { return d.iso === today; }); });
   if (idx === -1) idx = order.findIndex(function (fn) { return fn.dates[0] && fn.dates[0].iso > today; }) - 0.5;
   var pick = function (k) { return Number.isInteger(k) && k >= 0 && k < order.length ? order[k] : null; };
+  // Same as the roster: full-time staff keep the rostered shift's hours on approved absence (AB) and UA days; casuals don't
   var sum = function (fn, onlyPast) {
-    var h = 0, n = 0;
-    (byFn[fn.id] || []).forEach(function (r) { if (!r.t) return; if (onlyPast && r.t.end.getTime() > Date.now()) return; h += netH(r.sh); n++; });
-    return { h: h, n: n };
+    var h = 0, n = 0, leave = 0, me = findMyStaff(fn), full = !!me && me.employmentType !== 'casual';
+    (byFn[fn.id] || []).forEach(function (r) {
+      if (r.t) { if (onlyPast && r.t.end.getTime() > Date.now()) return; h += netH(r.sh); n++; return; }
+      if (full && (r.ab || r.na) && r.orig) { if (onlyPast && r.d.iso >= today) return; var l = netH(r.orig); h += l; leave += l; }
+    });
+    return { h: h, n: n, leave: leave };
   };
-  var line = function (label, fn, extra) { if (!fn) return ''; var a = sum(fn); return '<div class="hrs-row"><span><b>' + label + '</b><br><span class="rc-small">' + rcEsc(rcFnRange(fn)) + '</span></span><span class="hrs-v">' + a.h.toFixed(1) + 'h<small>' + a.n + ' shifts' + (extra ? ' • ' + extra : '') + '</small></span></div>'; };
+  var line = function (label, fn, extra) { if (!fn) return ''; var a = sum(fn); return '<div class="hrs-row"><span><b>' + label + '</b><br><span class="rc-small">' + rcEsc(rcFnRange(fn)) + '</span></span><span class="hrs-v">' + a.h.toFixed(1) + 'h<small>' + (a.leave ? 'incl. ' + a.leave.toFixed(1) + 'h leave • ' : '') + a.n + ' shifts' + (extra ? ' • ' + extra : '') + '</small></span></div>'; };
   var cur = pick(Math.round(idx)), prev = pick(Math.round(idx) - 1), next = pick(Math.round(idx) + 1);
   if (!Number.isInteger(idx)) { cur = null; prev = pick(Math.floor(idx)); next = pick(Math.ceil(idx)); }
   var done = cur ? sum(cur, true).h.toFixed(1) + 'h done so far' : '';
   var h = line('LAST FORTNIGHT', prev) + line('THIS FORTNIGHT', cur, done) + line('NEXT FORTNIGHT', next);
   if (!h) return '';
-  return '<div class="card"><div class="rc-h">MY HOURS</div>' + h + '<div class="rc-small" style="margin-top:6px;color:#777">Rostered hours after a 30-minute break on shifts over 5 hours. Absent and unavailable days aren\'t counted.</div></div>';
+  return '<div class="card"><div class="rc-h">MY HOURS</div>' + h + '<div class="rc-small" style="margin-top:6px;color:#777">Rostered hours, less a 30-minute break on shifts of 5 hours or more. Full-time: approved absence and UA days count the rostered shift. Casual: they count 0.</div></div>';
 }
 
 /* ---------- PDF export: a picture of the roster tables exactly as they look on screen ---------- */
