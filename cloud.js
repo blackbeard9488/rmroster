@@ -2795,7 +2795,7 @@ function rcRenderTeamsPage() {
   h += '<div class="tm-row" style="margin-top:10px"><input id="tm-new" class="rc-to-in" style="margin:0;flex:1" placeholder="New team name"><button class="rc-b rc-red" onclick="rcAddTeam()">ADD TEAM</button></div>';
   h += '<div class="rc-small" style="margin-top:8px">To set up a new team: ADD TEAM, OPEN it, then add its managers, admins and staff in Account Management. Then upload its Excel or press + NEW / DUPLICATE on the roster.</div></div>';
   // people: masters see every team; everyone else belongs to one team
-  h += '<div class="card"><div class="rc-h">PEOPLE IN EACH TEAM</div><div class="rc-small">Masters see and run every team. Everyone else sees only their own team (plus any team that has borrowed them, as staff). To give someone both teams, make them a master in Account Management.</div>';
+  h += '<div class="card"><div class="rc-h">PEOPLE IN EACH TEAM</div><div class="rc-small">Masters see and run every team. Tick <b>Also on</b> to put someone on another team\'s roster too: their shifts from both teams merge on their My Schedule, both teams\' managers see the other team\'s shifts in their cells, and they get offers and alerts from both. To let someone <i>run</i> both teams, make them a master.</div>';
   var users = Object.keys(all).map(function (k) { return Object.assign({ uid: k }, all[k]); });
   var rank = { master: 0, manager: 1, admin: 2 };
   ids.forEach(function (home) {
@@ -2805,6 +2805,10 @@ function rcRenderTeamsPage() {
     list.forEach(function (u) {
       h += '<div class="tm-user"><div><b>' + rcEsc(u.username) + '</b> <span class="rc-pill">' + rcEsc(u.role) + '</span><br><span class="rc-small">' + rcEsc(((u.firstName || '') + ' ' + (u.lastName || '')).trim()) + '</span></div><div class="tm-acc">';
       if (rcRoleOf(u) === 'master') h += '<span class="rc-small"><b>Master</b> - every team</span>';
+      else ids.forEach(function (t) {
+        if (t === home) return;
+        h += '<label class="tm-chk" title="On this team\'s roster too: shifts, offers and alerts from both teams, merged on their My Schedule"><input type="checkbox"' + ((RC.guests[t] || {})[u.uid] === true ? ' checked' : '') + ' onchange="rcSetGuest(\'' + u.uid + '\',\'' + t + '\',this.checked,this)"> Also on ' + rcEsc(rcTeamName(t)) + '</label>';
+      });
       h += '<select class="tm-move" onchange="rcMoveUser(\'' + u.uid + '\',this.value,this)">' + ids.map(function (t) { return '<option value="' + rcEsc(t) + '"' + (t === home ? ' selected' : '') + '>' + (t === home ? 'In ' : 'Move to ') + rcEsc(rcTeamName(t)) + '</option>'; }).join('') + '</select>';
       h += '</div></div>';
     });
@@ -2823,6 +2827,28 @@ function rcAddTeam() {
 function rcRenameTeam(t) {
   var n = String((document.getElementById('tm-name-' + t) || {}).value || '').trim(); if (!n) { toast('Name can\'t be empty'); return; }
   RC.db.ref('teamInfo/' + t + '/name').set(n).then(function () { toast('Saved'); }).catch(function (e) { toast('Not saved: ' + rcErrMsg(e)); });
+}
+/* Masters: put someone on another team's roster too (or take them off) - same as borrowing, from any team */
+function rcSetGuest(uid, t, on, box) {
+  var u = RC.allUsers[uid]; if (!u) return;
+  var key = rcEncodeKey(String(u.lastName || '').trim().toUpperCase() + '_' + String(u.firstName || '').trim()), today = getISO(), path = rcTPx(t, 'data/roster');
+  RC.db.ref(path).once('value').then(function (snap) {
+    var fns = snap.val() || {}, upd = {}, n = 0;
+    upd['guests/' + t + '/' + uid] = on ? true : null;
+    Object.keys(fns).forEach(function (fk) {
+      var f = fns[fk], dates = rcAsArray(f.dates), last = dates[dates.length - 1]; if (!last || last.iso < today) return;
+      var row = (f.staff || {})[key];
+      if (on && !row) {
+        var len = dates.length, sh = {}, ua = {}; for (var i = 0; i < len; i++) { sh[i] = 'OFF'; ua[i] = false; }
+        upd[path + '/' + fk + '/staff/' + key] = { firstName: u.firstName, lastName: u.lastName, role: 'staff', employmentType: u.employmentType || 'casual', shifts: sh, unavailable: ua, guestFrom: rcHomeTeam(u) }; n++;
+      }
+      if (!on && row && row.guestFrom && dates[0].iso > today && rcAsArray(row.shifts).every(function (v) { return rcIsEmptyVal(v); })) { upd[path + '/' + fk + '/staff/' + key] = null; n++; }
+    });
+    return RC.db.ref().update(upd).then(function () {
+      toast(on ? u.firstName + ' is now on ' + rcTeamName(t) + ' too' + (n ? ' (' + n + ' roster' + (n === 1 ? '' : 's') + ')' : '') : u.firstName + ' taken off ' + rcTeamName(t));
+      if (on) rcNotify([uid], { type: 'borrowed', title: 'Added to ' + rcTeamName(t), body: 'You are now on the ' + rcTeamName(t) + ' roster as well. Shifts from both teams show on My Schedule.' });
+    });
+  }).catch(function (e) { toast('Not changed: ' + rcErrMsg(e)); if (box) box.checked = !on; });
 }
 function rcMoveUser(uid, t, sel) {
   var u = RC.allUsers[uid]; if (!u) return;
@@ -3886,6 +3912,17 @@ function rcTidyControls() {
   var tot = document.getElementById('admin-total-badge'), live = document.getElementById('rc-sync-status');
   [tot, document.getElementById('rc-warn-chip'), live].forEach(function (el) { if (el && el.parentNode === ctl) ctl.insertBefore(el, btn.parentNode); });
   if (tot && !tot.classList.contains('rc-right')) tot.classList.add('rc-right');
+}
+
+/* Does this Excel name cell name a real person (a login or someone already on a roster)? Both first and last name must appear. */
+function rcIsKnownPerson(raw, fns) {
+  var words = String(raw || '').toLowerCase().replace(/[^a-z' -]/g, ' ').split(/[\s,]+/).filter(Boolean); if (words.length < 2) return false;
+  var people = rcTeamPeople().map(function (u) { return [u.firstName, u.lastName]; });
+  rcAsArray(fns).forEach(function (f) { (f.staff || []).forEach(function (st) { people.push([st.firstName, st.lastName]); }); });
+  return people.some(function (p) {
+    var f = String(p[0] || '').toLowerCase().trim(), l = String(p[1] || '').toLowerCase().trim();
+    return f && l && words.indexOf(f.split(/\s+/)[0]) !== -1 && l.split(/\s+/).every(function (x) { return words.indexOf(x) !== -1; });
+  });
 }
 
 /* ---------- Access log page (masters) ---------- */

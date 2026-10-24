@@ -68,8 +68,9 @@ team can't see another team; masters see every team.
    one on screen (copies always start as a draft).
 4. To give someone both teams, make them a master.
 
-To put someone from another team on a team's roster, open that team and go to **Account Management →
-BORROWED FROM OTHER TEAMS**. Pick the person and press **ADD TO ROSTER**. They get a row on that team's roster
+To put someone on both teams' rosters (for example Saturdays in one team, weekdays in the other), a master
+ticks **Also on <team>** next to them on the **TEAMS** page. A team's managers can do the same for their own
+team from **Account Management → BORROWED FROM OTHER TEAMS**. Pick the person and press **ADD TO ROSTER**. They get a row on that team's roster
 from the current fortnight on, along with that team's shift offers and alerts. Their shifts in both teams show
 live on their My Schedule. In the other team they only have staff access.
 
@@ -78,7 +79,8 @@ other), the app links them by name. Managers and admins see that person's shifts
 cells, with a red ⚠ if both teams have them working the same day. The person sees both teams' shifts on
 My Schedule, whichever login they use. Staff don't see any of this.
 
-The Kate notes row and the Luke/Chris green cells only apply to the first team.
+The Kate notes row (any Excel row mentioning Kate, unless its name column is a real staff member such as
+Kate Phillips) and the Luke/Chris green cells only apply to the first team.
 
 ## How things work now
 
