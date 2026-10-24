@@ -72,7 +72,7 @@ try {
 } catch (e) { console.error('Firebase failed to start', e); }
 
 /* ---------- small helpers ---------- */
-function rcIsMgrRole(r) { return RC_MANAGER_ROLES.indexOf(String(r || '').toLowerCase()) !== -1; }
+function rcIsMgrRole(r) { return RC_MANAGER_ROLES.indexOf(String(r || '').toLowerCase().replace(/\s+/g, '')) !== -1; }
 function rcIsMgr() { return !!(RC.session && rcIsMgrRole(RC.session.profile.role)); }
 /* ---------- teams: each team's data lives apart; the first team keeps the original paths ---------- */
 function rcTP(p) { return rcTPx(RC.team, p); }
@@ -87,7 +87,7 @@ function rcTeamPeople() {
 function rcHomeTeam(u) { return (u && u.team) || 'main'; }
 /* Roles: master (both teams, accounts) > manager (own team: rosters, requests, staff, settings)
    > admin (own team: roster changes, logged) > staff */
-function rcRoleOf(u) { return String((u && u.role) || 'staff').toLowerCase(); }
+function rcRoleOf(u) { return String((u && u.role) || 'staff').toLowerCase().replace(/\s+/g, '') || 'staff'; }
 function rcMyRole() { return RC.session ? rcRoleOf(RC.session.profile) : 'staff'; }
 function rcIsOwner() { return !!RC.session && rcRoleOf(RC.allUsers[RC.session.uid] || RC.session.profile) === 'master'; }   // a master: every team
 function rcIsManagerUp() { var r = rcMyRole(); return r === 'manager' || r === 'master'; }
@@ -485,7 +485,7 @@ function rcAttach() {
     var roleChanged = rcIsMgrRole(mine.role) !== rcIsMgrRole(RC.session.profile.role);
     RC.session.profile = mine;
     safeSet('repco_username', mine.username);
-    safeSet('repco_currentRole', String(mine.role || 'staff').toLowerCase());
+    safeSet('repco_currentRole', rcRoleOf(mine));
     rcSetLocal('retail_roster_users_v1', rcUserList().map(function (u) { return { username: u.username, firstName: u.firstName || '', lastName: u.lastName || '', role: u.role, employmentType: u.employmentType || 'casual', isHidden: !!u.isHidden, uid: u.uid }; }));
     RC.ready.users = true;
     if (roleChanged) { toast('Your access level changed - reloading'); setTimeout(function () { location.reload(); }, 1500); return; }
@@ -669,7 +669,7 @@ async function rcStartSession(user) {
   rcStampLogin(user.uid, profile);
   RC.sessionStart = Date.now();
   safeSet('repco_username', profile.username);
-  safeSet('repco_currentRole', String(profile.role || 'staff').toLowerCase());
+  safeSet('repco_currentRole', rcRoleOf(profile));
   safeSetJSON('retail_roster_session_v1', { username: profile.username, firstName: profile.firstName || '', lastName: profile.lastName || '', role: profile.role });
   safeSet('repco_last_activity', String(Date.now()));
   try { lastActivityTs = Date.now(); } catch (e) {}
@@ -3700,7 +3700,12 @@ function rcLoadAccessLog() {
       + '<div id="al-summary" style="margin-top:8px"></div>'
       + '<button class="rc-b rc-white" style="margin-top:8px" onclick="rcPruneAccessLog()">DELETE ENTRIES OLDER THAN 90 DAYS</button></div><div id="al-list"></div>';
     rcRenderAccessLog();
-  }).catch(function (e) { el.innerHTML = '<div class="card">Could not load: ' + rcEsc(rcErrMsg(e)) + '</div>'; });
+  }).catch(function (e) { el.innerHTML = '<div class="card">Could not load: ' + rcEsc(rcErrMsg(e)) + rcPermHint() + '</div>'; });
+}
+/* When the database refuses a page the app thinks you can open, say what role the database has for you */
+function rcPermHint() {
+  var raw = String(((RC.allUsers[RC.session.uid] || {}).role) || '');
+  return '<div class="rc-small" style="margin-top:8px">Your login\'s role in the database is <b>"' + rcEsc(raw) + '"</b>. If the database rules in Firebase are older than this version of the app, paste the latest <b>database.rules.json</b> (Realtime Database → Rules → Publish).</div>';
 }
 function rcAccessName(e) {
   var u = RC.allUsers[e.uid];
@@ -3788,7 +3793,7 @@ function rcLoadHistory() {
     RC.history = Object.keys(v).map(function (k) { return v[k]; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
     el.innerHTML = '<div class="card"><input id="hist-q" class="rc-to-in" style="margin:0" placeholder="Search name, day or who made the change" oninput="rcRenderHistory()"><div class="rc-small" style="margin-top:6px">Latest 500 changes. Entries can\'t be edited or deleted.</div></div><div id="hist-list"></div>';
     rcRenderHistory();
-  }).catch(function (e) { el.innerHTML = '<div class="card">Could not load: ' + rcEsc(rcErrMsg(e)) + '</div>'; });
+  }).catch(function (e) { el.innerHTML = '<div class="card">Could not load: ' + rcEsc(rcErrMsg(e)) + rcPermHint() + '</div>'; });
 }
 function rcRenderHistory() {
   var list = document.getElementById('hist-list'); if (!list) return;
