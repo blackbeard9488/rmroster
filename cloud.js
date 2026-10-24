@@ -1983,7 +1983,7 @@ function rcShiftTimes(iso, sh) {
 function rcDur(ms) {
   var m = Math.max(0, Math.ceil(ms / 60000)), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
   if (d) return d + 'd ' + h + 'h';
-  if (h) return h + 'h ' + mm + 'm';
+  if (h) return h + 'h' + (mm ? ' ' + mm + 'm' : '');
   return mm + 'm';
 }
 function rcMyRows() {
@@ -2156,6 +2156,26 @@ function rcStartSchedTicker() {
 }
 
 /* ---------- Today's / Tomorrow's Buddies ---------- */
+/* Live countdown for one shift: starts in / time left / finished */
+function rcBuddyLeft(iso, sh) {
+  var t = rcShiftTimes(iso, sh); if (!t) return '';
+  return '<span class="bd-left" data-s="' + t.start.getTime() + '" data-e="' + t.end.getTime() + '">' + rcBuddyLeftText(t.start.getTime(), t.end.getTime()) + '</span>';
+}
+function rcBuddyLeftText(s, e) {
+  var now = Date.now();
+  if (now < s) return 'starts in ' + rcDur(s - now);
+  if (now < e) return '<b>' + rcDur(e - now) + ' left</b>';
+  return 'finished';
+}
+var _rcBudTimer = null;
+function rcBuddyTicker() {
+  if (_rcBudTimer) return;
+  _rcBudTimer = setInterval(function () {
+    var open = document.querySelector('#buddies-today-page-v141.show, #buddies-tomorrow-page-v141.show');
+    if (!open) { clearInterval(_rcBudTimer); _rcBudTimer = null; return; }
+    open.querySelectorAll('.bd-left').forEach(function (el) { el.innerHTML = rcBuddyLeftText(+el.dataset.s, +el.dataset.e); });
+  }, 30000);
+}
 renderBuddies = function (which) {
   var el = document.getElementById(which === 'tomorrow' ? 'buddies-tomorrow-list' : 'buddies-today-list'); if (!el) return;
   try {
@@ -2187,18 +2207,19 @@ renderBuddies = function (which) {
     var dur = function (m) { return Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + (m % 60) + 'm' : ''); };
     var band = mine ? '<div class="bd-me-band" style="left:' + pct(mine.start) + ';width:calc(' + pct(mine.end) + ' - ' + pct(mine.start) + ')"></div>' : '';
     var h = tabs + '<div class="bd-hero"><div class="ms-kicker">' + (which === 'tomorrow' ? 'TOMORROW' : 'TODAY') + '</div><div class="bd-day">' + rcEsc(day.day + ' ' + day.date) + '</div>'
-      + '<div class="bd-you">' + (mine ? 'You: <b>' + rcEsc(fmt(mineSh)) + '</b>' : meOut && me && (rcIsUAVal(mineSh) || rcIsAbsentVal(mineSh) || (me.unavailable && me.unavailable[i]) || (me.absentApproved && me.absentApproved[i])) ? 'You are not working this day' : "You're OFF") + '</div>'
+      + '<div class="bd-you">' + (mine ? 'You: <b>' + rcEsc(fmt(mineSh)) + '</b> ' + rcBuddyLeft(day.iso, mineSh) : meOut && me && (rcIsUAVal(mineSh) || rcIsAbsentVal(mineSh) || (me.unavailable && me.unavailable[i]) || (me.absentApproved && me.absentApproved[i])) ? 'You are not working this day' : "You're OFF") + '</div>'
       + '<div class="bd-count">' + (mine ? people.length + (people.length === 1 ? ' buddy' : ' buddies') + ' on with you' : people.length + ' working') + '</div></div>';
     if (!people.length) h += '<div class="card">' + (mine ? 'Nobody else overlaps with your shift.' : 'Nobody is rostered this day.') + '</div>';
     else {
       var ticks = ''; for (var m = lo; m <= hi; m += 120) ticks += '<span style="left:' + pct(m) + '">' + hm(m) + '</span>';
       h += '<div class="bd-list"><div class="bd-axis">' + ticks + '</div>' + people.map(function (x) {
-        return '<div class="bd-row"><div class="bd-name"><b>' + rcEsc(x.st.firstName) + '</b> ' + rcEsc(String(x.st.lastName || '').charAt(0).toUpperCase() + String(x.st.lastName || '').slice(1).toLowerCase()) + (x.mgr ? ' <span class="ms-tag" style="background:#1a7f37">MANAGER</span>' : '') + '<span class="bd-time">' + rcEsc(fmt(x.st.shifts[i])) + (mine ? ' • ' + dur(x.ov) + ' together' : '') + '</span></div>'
+        return '<div class="bd-row"><div class="bd-name"><b>' + rcEsc(x.st.firstName) + '</b> ' + rcEsc(String(x.st.lastName || '').charAt(0).toUpperCase() + String(x.st.lastName || '').slice(1).toLowerCase()) + (x.mgr ? ' <span class="ms-tag" style="background:#1a7f37">MANAGER</span>' : '') + '<span class="bd-time">' + rcEsc(fmt(x.st.shifts[i])) + ' ' + rcBuddyLeft(day.iso, x.st.shifts[i]) + '</span></div>'
           + '<div class="bd-track">' + band + '<div class="bd-bar' + (x.mgr ? ' mgr' : '') + '" style="left:' + pct(x.p.start) + ';width:calc(' + pct(x.p.end) + ' - ' + pct(x.p.start) + ')"></div></div></div>';
       }).join('') + (mine ? '<div class="bd-legend"><span class="bd-key me"></span>your shift <span class="bd-key"></span>their shift</div>' : '') + '</div>';
     }
     h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">BACK TO ROSTER</button></div>';
     el.innerHTML = h;
+    rcBuddyTicker();
   } catch (e) { console.error('buddies', e); el.innerHTML = '<div class="card">Could not show buddies: ' + rcEsc(e.message) + '</div>'; }
 };
 
@@ -2603,6 +2624,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-mobile .full-page .page-inner{padding:10px !important}'
     + 'body.rc-mobile .full-page .card:has(> button[onclick^="showMain"]:only-child){display:none}'
     + 'body.rc-mobile #options-inner button[onclick="showMain()"]{display:none}'
+    + '.bd-left{font-size:11px;font-weight:700;color:#555;white-space:nowrap}.bd-left b{color:#E30613}.bd-you .bd-left{color:#ddd;margin-left:6px}.bd-you .bd-left b{color:#ff6b74}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
