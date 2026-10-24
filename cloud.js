@@ -48,12 +48,12 @@ var RC = {
   setupDone: null,
   byKey: {},
   team: 'main',         // the team whose roster this page shows (switching reloads the page)
-  ownerUid: null,       // the main admin: sees and runs every team
   teamInfo: {},         // team id -> {name}
   access: {},           // uid -> {team id: true} extra teams someone may see
   allUsers: {},         // every login in every team (RC.users is only this team's)
   guests: {},           // team id -> {uid: true} people borrowed from other teams
   otherRosters: {},     // team id -> fortnights, for people rostered in more than one team
+  shared: {},           // person key -> team id -> {days: {iso: shift}} for people on more than one team's roster
   xOffers: {}           // team id -> my offers from teams other than the open one
 };
 RC_SYNC.forEach(function (s) { s.base = s.path; RC.byKey[s.key] = s; });
@@ -84,26 +84,33 @@ function rcTeamPeople() {
     .map(function (k) { return Object.assign({ uid: k }, RC.allUsers[k]); });
 }
 function rcHomeTeam(u) { return (u && u.team) || 'main'; }
-function rcIsOwner() { return !!(RC.session && RC.ownerUid && RC.ownerUid === RC.session.uid); }
+/* Roles: master (both teams, accounts) > manager (own team: rosters, requests, staff, settings)
+   > admin (own team: roster changes, logged) > staff */
+function rcRoleOf(u) { return String((u && u.role) || 'staff').toLowerCase(); }
+function rcMyRole() { return RC.session ? rcRoleOf(RC.session.profile) : 'staff'; }
+function rcIsOwner() { return !!RC.session && rcRoleOf(RC.allUsers[RC.session.uid] || RC.session.profile) === 'master'; }   // a master: every team
+function rcIsManagerUp() { var r = rcMyRole(); return r === 'manager' || r === 'master'; }
+function rcIsAdminOnly() { return rcMyRole() === 'admin'; }
 function rcTeamName(t) { var i = RC.teamInfo[t]; return (i && i.name) || (t === 'main' ? 'Main team' : t); }
 function rcTeamIds() { return ['main'].concat(Object.keys(RC.teamInfo).filter(function (t) { return t !== 'main'; })); }
-/* Teams a login may open: the main admin sees all, everyone else their own team plus any they were given */
+/* Teams a login may open: masters see all, everyone else their own team plus any that borrowed them */
 function rcTeamsFor(uid, prof) {
-  if (uid === RC.ownerUid) return rcTeamIds();
-  var home = rcHomeTeam(prof), acc = RC.access[uid] || {}, guest = rcGuestTeams(uid);
-  return [home].concat(rcTeamIds().filter(function (t) { return t !== home && (acc[t] === true || guest.indexOf(t) !== -1); }));
+  if (rcRoleOf(prof) === 'master') return rcTeamIds();
+  var home = rcHomeTeam(prof), guest = rcGuestTeams(uid);
+  return [home].concat(rcTeamIds().filter(function (t) { return t !== home && guest.indexOf(t) !== -1; }));
 }
-/* Someone viewing another team keeps their own role there; the main admin is an admin everywhere */
+/* Masters keep their role everywhere; someone borrowed into another team is staff there */
 function rcEffProfile(uid, prof) {
-  if (uid === RC.ownerUid) return Object.assign({}, prof, { role: 'admin' });
+  if (rcRoleOf(prof) === 'master') return prof;
   // borrowed into another team: staff there, whatever their role at home
-  if (RC.team !== rcHomeTeam(prof) && (RC.access[uid] || {})[RC.team] !== true && rcIsGuestHere(uid)) return Object.assign({}, prof, { role: 'staff' });
+  if (RC.team !== rcHomeTeam(prof) && rcIsGuestHere(uid)) return Object.assign({}, prof, { role: 'staff' });
   return prof;
 }
-function rcCanManageAccounts() { return rcIsOwner() || (rcIsMgr() && rcHomeTeam(RC.allUsers[RC.session.uid] || RC.session.profile) === RC.team); }
+function rcCanManageAccounts() { return rcIsOwner() || (rcMyRole() === 'manager' && rcHomeTeam(RC.allUsers[RC.session.uid] || RC.session.profile) === RC.team); }
 function rcSyncKeys() { return RC_SYNC.map(function (s) { return s.key; }).concat(['retail_roster_currentFortnightId']); }
 function rcSwitchTeam(t) {
   if (t === RC.team) return;
+  try { sessionStorage.setItem('rc_switched', '1'); } catch (e) {}
   safeSet('repco_team', t);
   rcSyncKeys().forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
   safeSet('repco_last_activity', String(Date.now()));
@@ -111,8 +118,8 @@ function rcSwitchTeam(t) {
 }
 async function rcLoadTeamContext(uid, prof) {
   var get = function (p) { return RC.db.ref(p).once('value').then(function (s) { return s.val(); }).catch(function () { return null; }); };
-  var r = await Promise.all([get('meta/owner'), get('teamInfo'), get('access'), get('guests')]);
-  RC.ownerUid = r[0] || null; RC.teamInfo = r[1] || {}; RC.access = r[2] || {}; RC.guests = r[3] || {};
+  var r = await Promise.all([get('teamInfo'), get('guests')]);
+  RC.teamInfo = r[0] || {}; RC.guests = r[1] || {};
   var allowed = rcTeamsFor(uid, prof), want = safeGet('repco_team', '') || rcHomeTeam(prof);
   RC.team = allowed.indexOf(want) !== -1 ? want : rcHomeTeam(prof);
   if (allowed.indexOf(RC.team) === -1) RC.team = allowed[0] || 'main';
@@ -427,8 +434,8 @@ function rcManagerUids(team) {
   team = team || RC.team;
   return Object.keys(RC.allUsers).filter(function (uid) {
     var u = RC.allUsers[uid];
-    if (uid === RC.ownerUid) return true;
-    return rcIsMgrRole(u.role) && (rcHomeTeam(u) === team || (RC.access[uid] || {})[team] === true);
+    var r = rcRoleOf(u);   // requests and alerts for managers: that team's managers and every master (not admins)
+    return r === 'master' || (r === 'manager' && rcHomeTeam(u) === team);
   });
 }
 function rcUserByUsername(name) { var l = String(name || '').toLowerCase(); return rcUserList().find(function (u) { return u.usernameLower === l; }) || null; }
@@ -437,7 +444,15 @@ function rcUsersForStaff(st) {
   if (!st) return [];
   var f = String(st.firstName || '').toLowerCase().trim(), l = String(st.lastName || '').toLowerCase().trim();
   if (!f) return [];
-  return rcTeamPeople().filter(function (u) { return String(u.firstName || '').toLowerCase().trim() === f && String(u.lastName || '').toLowerCase().trim() === l; });
+  var same = function (u) { return String(u.firstName || '').toLowerCase().trim() === f && String(u.lastName || '').toLowerCase().trim() === l; };
+  var out = rcTeamPeople().filter(same);
+  // the same person on another team's roster (e.g. hidden here, normal staff there): their other login hears too
+  var linked = RC.shared[rcPersonKey(st)];
+  if (linked) Object.keys(RC.allUsers).forEach(function (k) {
+    var u = RC.allUsers[k]; if (!same(u) || out.some(function (x) { return x.uid === k; }) || !linked[rcHomeTeam(u)]) return;
+    out.push(Object.assign({ uid: k }, u));
+  });
+  return out;
 }
 /* The one login that receives shift offers for a row: their staff login if they have one */
 function rcUserForStaff(st) {
@@ -503,14 +518,13 @@ function rcAttach() {
     var mine = RC.allUsers[uid]; if (!mine || !RC.ready.users) return;
     if (rcTeamsFor(uid, mine).indexOf(RC.team) === -1) { toast('You no longer have access to ' + rcTeamName(RC.team)); setTimeout(function () { rcSwitchTeam(rcHomeTeam(mine)); }, 1200); }
   };
-  rcListen(RC.db.ref('access'), 'value', function (s) { RC.access = s.val() || {}; reTeam(); rcScheduleRender('access'); });
+  if (mgr) rcListen(RC.db.ref('shared'), 'value', function (s) { RC.shared = s.val() || {}; rcScheduleRender('shared'); rcQueueShared(); });
+  else {
+    var mk = rcPersonKey(RC.session.profile);
+    if (mk) rcListen(RC.db.ref('shared/' + mk), 'value', function (s) { RC.shared = {}; RC.shared[mk] = s.val() || {}; rcScheduleRender('shared'); });
+  }
   rcListen(RC.db.ref('guests'), 'value', function (s) { RC.guests = s.val() || {}; reTeam(); rcWatchOtherTeams(); rcScheduleRender('guests'); });
   rcListen(RC.db.ref('teamInfo'), 'value', function (s) { RC.teamInfo = s.val() || {}; reTeam(); rcScheduleRender('teams'); });
-  rcListen(RC.db.ref('meta/owner'), 'value', function (s) {
-    var was = RC.ownerUid; RC.ownerUid = s.val() || null;
-    if (was !== RC.ownerUid && (was === uid || RC.ownerUid === uid)) { toast('Main admin changed - reloading'); setTimeout(function () { location.reload(); }, 1200); return; }
-    rcScheduleRender('owner');
-  });
   var conn = RC.db.ref('.info/connected');
   rcListen(conn, 'value', function (s) { rcSetStatus(s.val() ? 'live' : 'offline'); });
 }
@@ -691,11 +705,13 @@ if (RC.auth) RC.auth.onAuthStateChanged(function (user) {
     var last = parseInt(safeGet('repco_last_activity', '') || '0', 10);
     if (!staysSignedIn() && (!last || Date.now() - last > INACTIVITY_LIMIT_MS)) {
       rcClearLocal();
-      RC.auth.signOut();
+      if (last) rcAccessLog('Timed out (30 min idle)', user.uid).then(function () { RC.auth.signOut(); }); else RC.auth.signOut();
       rcShowLogin(last ? 'Session timed out after 30 minutes of inactivity. Please log in again.' : '');
       return;
     }
   }
+  var sw = null; try { sw = sessionStorage.getItem('rc_switched'); sessionStorage.removeItem('rc_switched'); } catch (e) {}
+  RC.startKind = RC.freshLogin ? 'Signed in' : sw ? 'Switched team' : 'Opened (still signed in)';
   RC.freshLogin = false;
   rcLoginBusy(true);
   rcStartSession(user).catch(function (e) { console.error('session', e); rcShowLogin('Could not load: ' + rcErrMsg(e)); RC.auth.signOut(); });
@@ -708,6 +724,7 @@ doLogout = function () {
 };
 function rcEndSession() {
   var leaving = RC.session && RC.session.uid;
+  var logged = leaving ? rcAccessLog('Signed out') : Promise.resolve();
   RC.session = null;
   rcDetach();
   rcClearLocal();
@@ -715,7 +732,7 @@ function rcEndSession() {
   // Stop this phone getting the leaving person's alerts, then sign out
   var done = false, out = function () { if (done) return; done = true; if (RC.auth.currentUser) RC.auth.signOut(); };
   setTimeout(out, 2500);
-  rcThisDeviceSubId().then(function (sid) { return sid && leaving ? RC.db.ref('push/' + leaving + '/' + sid).remove() : null; }).catch(function () {}).then(out);
+  logged.then(function () { return rcThisDeviceSubId(); }).then(function (sid) { return sid && leaving ? RC.db.ref('push/' + leaving + '/' + sid).remove() : null; }).catch(function () {}).then(out);
 }
 function rcThisDeviceSubId() {
   if (!('serviceWorker' in navigator)) return Promise.resolve(null);
@@ -740,6 +757,22 @@ function rcStampLogin(uid, profile) {
   upd[p + 'lastDevice'] = rcDeviceKind();
   if (rcIsStandalone()) upd[p + 'appInstalled'] = true;
   RC.db.ref().update(upd).catch(function (e) { console.warn('login stamp', e); });
+  rcAccessLog(RC.startKind || 'Opened');
+}
+/* Access log: every sign-in, app open, team switch and sign-out (masters can read it) */
+function rcAccessLog(kind, uid) {
+  if (!RC.db) return Promise.resolve();
+  uid = uid || (RC.session && RC.session.uid); if (!uid) return Promise.resolve();
+  var prof = (RC.session && RC.session.uid === uid && (RC.allUsers[uid] || RC.session.profile)) || {};
+  var e = { uid: uid, ts: firebase.database.ServerValue.TIMESTAMP, kind: kind, device: rcDeviceKind() + (rcIsStandalone() ? ' (app)' : ' (browser)') };
+  if (prof.username) e.username = prof.username;
+  if (RC.team && RC.session) e.team = RC.team;
+  return RC.db.ref('accesslog').push(e).then(function () {}, function (err) { console.warn('access log', err && err.code); });
+}
+function rcCanSeeAccessLog() {
+  if (!RC.session) return false;
+  var me = RC.allUsers[RC.session.uid] || {};
+  return rcIsOwner();
 }
 
 /* Data the old version kept on this device, saved once so it can be imported later */
@@ -769,10 +802,10 @@ function rcCheckSetup() {
     box = document.createElement('div');
     box.id = 'rc-setup';
     box.className = 'rc-setup';
-    box.innerHTML = '<div class="rc-h">FIRST-TIME SETUP</div><div class="rc-small">No accounts exist yet. Create the main admin account. After this, add everyone else from ACCOUNT MANAGEMENT, or import them from the old database.</div>'
+    box.innerHTML = '<div class="rc-h">FIRST-TIME SETUP</div><div class="rc-small">No accounts exist yet. Create the master account (masters run every team and look after logins). After this, add everyone else from ACCOUNT MANAGEMENT, or import them from the old database.</div>'
       + '<input id="rc-su-user" placeholder="Admin username" autocomplete="off"><input id="rc-su-first" placeholder="First name"><input id="rc-su-last" placeholder="Last name">'
       + '<input id="rc-su-pass" type="password" placeholder="Password (min 6)"><input id="rc-su-pass2" type="password" placeholder="Confirm password">'
-      + '<button type="button" onclick="rcBootstrap()">CREATE ADMIN ACCOUNT</button><div id="rc-su-err" class="rc-err"></div>';
+      + '<button type="button" onclick="rcBootstrap()">CREATE MASTER ACCOUNT</button><div id="rc-su-err" class="rc-err"></div>';
     form.appendChild(box);
   }).catch(function (e) {
     // Say why instead of silently showing nothing
@@ -796,7 +829,7 @@ async function rcBootstrap() {
     var email = rcMakeEmail(u);
     var cred = await RC.auth.createUserWithEmailAndPassword(email, rcAuthPassword(p));
     var uid = cred.user.uid, upd = {};
-    upd['users/' + uid] = { username: u, usernameLower: u.toLowerCase(), firstName: first, lastName: last, role: 'admin', employmentType: 'fulltime', createdTs: Date.now() };
+    upd['users/' + uid] = { username: u, usernameLower: u.toLowerCase(), firstName: first, lastName: last, role: 'master', employmentType: 'fulltime', createdTs: Date.now() };
     upd['logins/' + rcLoginKey(u)] = { email: email, uid: uid };
     upd['meta/setupDone'] = true;
     await RC.db.ref().update(upd);
@@ -1227,6 +1260,7 @@ function rcDeleteReq(id) {
 var _rcOrigRenderRequests = renderRequests;
 renderRequests = function () {
   if (!rcIsMgr()) { rcRenderTimeOffForm(); return; }
+  if (rcIsAdminOnly()) { rcRenderAdminRequestForm(); return; }
   var el = document.getElementById('requests-list'); if (!el) return;
   var reqs = rcAsArray(safeGetJSON('retail_roster_requests_v2', []));
   var pending = reqs.filter(function (r) { return !r.status || r.status === 'pending'; });
@@ -1239,9 +1273,27 @@ renderRequests = function () {
         : '<div class="rc-btns" style="margin-top:6px">' + (r.status === 'approved' ? '<button class="rc-b rc-red" onclick="rcReverseReq(\'' + id + '\')">REVERSE</button>' : '') + '<button class="rc-b rc-white" onclick="rcDeleteReq(\'' + id + '\')">REMOVE FROM LIST</button></div>') + '</div>';
   };
   el.innerHTML = '<div class="rc-h" style="margin:4px 0 8px">PENDING (' + pending.length + ')</div>' + (pending.length ? pending.map(function (r) { return card(r, true); }).join('') : '<div class="card">No pending requests</div>')
-    + (done.length ? '<div class="rc-h" style="margin:14px 0 8px">RECENT DECISIONS</div>' + done.map(function (r) { return card(r, false); }).join('') : '')
+    + (done.length ? '<div class="rc-row" style="border:none;margin:14px 0 8px"><div class="rc-h">RECENT DECISIONS</div><button class="rc-b rc-white" onclick="rcClearDecided()">CLEAR DECIDED</button></div>' + done.map(function (r) { return card(r, false); }).join('') : '')
     + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK</button></div>';
 };
+/* A request date ('2026-10-31' or '31/10') as an ISO date, or '' if unknown */
+function rcDateIso(d) {
+  d = rcDateKey(d);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  var m = d.match(/^(\d{1,2})\/(\d{1,2})$/); if (!m) return '';
+  var t = getISO(), y = +t.slice(0, 4), mo = +m[2], now = +t.slice(5, 7);
+  if (mo - now > 6) y--; else if (now - mo > 6) y++;   // dates have no year: pick the nearest one
+  return y + '-' + String(mo).padStart(2, '0') + '-' + m[1].padStart(2, '0');
+}
+function rcClearDecided() {
+  showCustomConfirm('Clear decided requests?', 'Removes denied and reversed requests, and approved ones whose dates have passed. Approved time off that is still to come stays, so it keeps applying to new rosters.', function (ok) {
+    if (!ok) return;
+    var today = getISO();
+    var future = function (r) { return r.status === 'approved' && r.type === 'unavailability' && rcAsArray(r.dates).some(function (d) { var k = rcDateIso(d); return !k || k >= today; }); };
+    var all = rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).filter(function (r) { return !r.status || r.status === 'pending' || future(r); });
+    safeSetJSON('retail_roster_requests_v2', all); toast('Cleared'); renderRequests();
+  });
+}
 /* Staff: one simple time-off form (shift changes are made from My Schedule) */
 function rcRenderTimeOffForm() {
   var el = document.getElementById('requests-list'); if (!el) return;
@@ -1273,6 +1325,12 @@ function rcSubmitTimeOff() {
 }
 
 /* Staff: replace the "my requests" box with one that shows live status and can withdraw pending ones */
+function rcHideMyReqs() {
+  var hidden = {}; try { hidden = JSON.parse(localStorage.getItem('repco_hidden_reqs') || '{}'); } catch (e) {}
+  rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).forEach(function (r) { if (r.status && r.status !== 'pending') hidden[rcReqId(r)] = 1; });
+  try { localStorage.setItem('repco_hidden_reqs', JSON.stringify(hidden)); } catch (e) {}
+  rcRenderMyRequestsList();
+}
 function rcRenderMyRequestsList() {
   var el = document.getElementById('requests-list'); if (!el || !RC.session) return;
   var box = document.getElementById('rc-my-reqs');
@@ -1282,8 +1340,10 @@ function rcRenderMyRequestsList() {
     var back = el.lastElementChild; el.insertBefore(box, back);
   }
   var me = RC.session.profile.usernameLower;
-  var mine = rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).filter(function (r) { return String(r.username || '').toLowerCase() === me; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
-  box.innerHTML = mine.length ? '<div class="card"><div class="rc-h">MY REQUESTS (' + mine.length + ')</div>' + mine.map(function (r) {
+  var hidden = {}; try { hidden = JSON.parse(localStorage.getItem('repco_hidden_reqs') || '{}'); } catch (e) {}
+  var mine = rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).filter(function (r) { return String(r.username || '').toLowerCase() === me && !hidden[rcReqId(r)]; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  var decided = mine.filter(function (r) { return r.status && r.status !== 'pending'; });
+  box.innerHTML = mine.length ? '<div class="card"><div class="rc-row" style="border:none"><div class="rc-h">MY REQUESTS (' + mine.length + ')</div>' + (decided.length ? '<button class="rc-b rc-white" onclick="rcHideMyReqs()">HIDE DECIDED</button>' : '') + '</div>' + mine.map(function (r) {
     var st = r.status || 'pending';
     return '<div class="rc-row"><div><span class="rc-pill rc-st-' + rcEsc(st) + '">' + rcEsc(st) + '</span> <span class="rc-small">' + rcEsc(rcReqSummary(r)) + '</span></div>' + (st === 'pending' ? '<button class="rc-b rc-white" onclick="rcDeleteReq(\'' + rcReqId(r) + '\')">WITHDRAW</button>' : '') + '</div>';
   }).join('') + '</div>' : '';
@@ -1536,7 +1596,7 @@ function rcMyPendingOffers(otherOnly) {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
 /* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
 function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
@@ -1748,7 +1808,7 @@ function rcRenderBell() {
 }
 openPage = (function (orig) {
   return function (id) {
-    if (id === 'hidden-staff-page' && !rcIsMgr()) { toast('Admin only'); return; }
+    if (id === 'hidden-staff-page' && !rcIsManagerUp()) { toast('Managers only'); return; }
     orig.apply(this, arguments);
     if (id === 'hidden-staff-page') renderHiddenStaffPage();
     if (id === 'notif-page') rcRenderNotifPage(true);
@@ -1757,6 +1817,11 @@ openPage = (function (orig) {
     if (id === 'notif-page') setTimeout(rcRenderBell, 300);
   };
 })(openPage);
+function rcRemoveOffers(ids) {
+  var upd = {}; (ids || []).forEach(function (id) { var o = RC.offers[id]; if (o && (o.status !== 'pending' || rcOfferExpired(o))) upd[rcTP('offers/' + id)] = null; });
+  if (!Object.keys(upd).length) return;
+  RC.db.ref().update(upd).then(function () { toast('Removed'); }).catch(function (e) { toast('Not removed: ' + rcErrMsg(e)); });
+}
 function rcRenderNotifPage(markRead) {
   var el = document.getElementById('notif-inner'); if (!el || !RC.session) return;
   var h = '';
@@ -1771,14 +1836,16 @@ function rcRenderNotifPage(markRead) {
     }).join('') : '<div class="rc-small">No open offers right now.</div>') + '</div>';
   } else {
     var all = Object.keys(RC.offers).map(function (k) { return Object.assign({ id: k }, RC.offers[k]); }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).slice(0, 40);
-    h += '<div class="card"><div class="rc-h">SHIFT OFFERS</div><div class="rc-small">To offer a shift, tap an empty cell on the roster.</div>' + (all.length ? all.map(function (o) {
+    var done = all.filter(function (o) { return o.status !== 'pending' || rcOfferExpired(o); }).map(function (o) { return o.id; });
+    RC.finishedOffers = done;
+    h += '<div class="card"><div class="rc-row" style="border:none"><div class="rc-h">SHIFT OFFERS</div>' + (done.length ? '<button class="rc-b rc-white" onclick="rcRemoveOffers(RC.finishedOffers)">CLEAR FINISHED (' + done.length + ')</button>' : '') + '</div><div class="rc-small">To offer a shift, tap an empty cell on the roster.</div>' + (all.length ? all.map(function (o) {
       var st = o.status === 'pending' && rcOfferExpired(o) ? 'expired' : o.status;
-      return '<div class="rc-row"><div><b>' + rcEsc(o.dateLabel) + '</b> ' + rcEsc(fmt(o.shift)) + ' → ' + rcEsc(o.toUsername) + ' <span class="rc-pill rc-st-' + rcEsc(st) + '">' + rcEsc(st) + '</span><br><span class="rc-small">by ' + rcEsc(o.byName) + ' • ' + new Date(o.ts || 0).toLocaleString() + '</span></div>' + (o.status === 'pending' ? '<button class="rc-b rc-white" onclick="rcCancelOffer(\'' + o.id + '\')">CANCEL</button>' : '') + '</div>';
+      return '<div class="rc-row"><div><b>' + rcEsc(o.dateLabel) + '</b> ' + rcEsc(fmt(o.shift)) + ' → ' + rcEsc(o.toUsername) + ' <span class="rc-pill rc-st-' + rcEsc(st) + '">' + rcEsc(st) + '</span><br><span class="rc-small">by ' + rcEsc(o.byName) + ' • ' + new Date(o.ts || 0).toLocaleString() + '</span></div>' + (o.status === 'pending' && st !== 'expired' ? '<button class="rc-b rc-white" onclick="rcCancelOffer(\'' + o.id + '\')">CANCEL</button>' : '<button class="rc-x" title="Remove" onclick="rcRemoveOffers([\'' + o.id + '\'])">✕</button>') + '</div>';
     }).join('') : '') + '</div>';
   }
   h += rcPushCardHtml();
-  h += '<div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NOTIFICATIONS</div>' + (RC.notifs.length ? '<button class="rc-b rc-white" onclick="rcClearNotifs()">CLEAR ALL</button>' : '') + '</div>' + (RC.notifs.length ? RC.notifs.map(function (n) {
-    return '<div class="rc-notif' + (n.read ? '' : ' rc-unread') + '"><div style="font-weight:900">' + rcEsc(n.title) + '</div><div class="rc-small" style="white-space:pre-line">' + rcEsc(n.body || '') + '</div><div class="rc-small" style="opacity:.6">' + new Date(n.ts || 0).toLocaleString() + (n.from && rcIsMgr() ? ' • ' + rcEsc(n.from) : '') + '</div></div>';
+  h += '<div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NOTIFICATIONS</div>' + (RC.notifs.length ? '<span class="rc-btns">' + (RC.notifs.some(function (n) { return n.read; }) ? '<button class="rc-b rc-white" onclick="rcClearNotifs(true)">CLEAR READ</button>' : '') + '<button class="rc-b rc-white" onclick="rcClearNotifs()">CLEAR ALL</button></span>' : '') + '</div>' + (RC.notifs.length ? RC.notifs.map(function (n) {
+    return '<div class="rc-notif' + (n.read ? '' : ' rc-unread') + '"><div style="font-weight:900">' + rcEsc(n.title) + '</div><div class="rc-small" style="white-space:pre-line">' + rcEsc(n.body || '') + '</div><div class="rc-small" style="opacity:.6">' + new Date(n.ts || 0).toLocaleString() + (n.from && rcIsMgr() ? ' • ' + rcEsc(n.from) : '') + '</div><button class="rc-x" title="Remove" onclick="rcRemoveNotif(\'' + n.id + '\')">✕</button></div>';
   }).join('') : '<div class="rc-small">Nothing yet.</div>') + '</div>';
   h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
   el.innerHTML = h;
@@ -1788,8 +1855,9 @@ function rcRenderNotifPage(markRead) {
     if (Object.keys(upd).length) RC.db.ref().update(upd).catch(function () {});
   }
 }
-function rcClearNotifs() {
-  var upd = {}; RC.notifs.forEach(function (n) { upd['notifications/' + RC.session.uid + '/' + n.id] = null; });
+function rcRemoveNotif(id) { RC.db.ref('notifications/' + RC.session.uid + '/' + id).remove().catch(function (e) { toast(rcErrMsg(e)); }); }
+function rcClearNotifs(readOnly) {
+  var upd = {}; RC.notifs.forEach(function (n) { if (!readOnly || n.read) upd['notifications/' + RC.session.uid + '/' + n.id] = null; });
   RC.db.ref().update(upd).catch(function (e) { toast(rcErrMsg(e)); });
 }
 
@@ -2134,6 +2202,17 @@ function rcOtherRows() {
   var out = [], prof = RC.session && (RC.allUsers[RC.session.uid] || RC.session.profile); if (!prof) return out;
   Object.keys(RC.otherRosters).forEach(function (t) {
     rcMyRows(RC.otherRosters[t], function (fn) { var i = rcStaffForUser(fn, prof); return i === -1 ? null : fn.staff[i]; }).forEach(function (r) { r.team = t; out.push(r); });
+  });
+  // the same person on another team's roster under another login (e.g. hidden staff there)
+  var mine = RC.shared[rcPersonKey(prof)] || {};
+  Object.keys(mine).forEach(function (t) {
+    if (t === RC.team || RC.otherRosters[t]) return;
+    var days = (mine[t] && mine[t].days) || {};
+    Object.keys(days).sort().forEach(function (iso) {
+      var sh = String(days[iso] || 'OFF'), p = iso.split('-'), dt = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+      var ab = /^(AB|ABSENT)$/i.test(sh.trim()), na = rcIsUAVal(sh);
+      out.push({ fn: { id: 'shared-' + t }, i: 0, d: { iso: iso, day: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][dt.getUTCDay()], date: p[2] + '/' + p[1] }, sh: sh, ab: ab, na: na, t: (!ab && !na) ? rcShiftTimes(iso, sh) : null, orig: '', team: t });
+    });
   });
   return out;
 }
@@ -2635,30 +2714,23 @@ importExcelFile = (function (orig) {
   };
 })(importExcelFile);
 
-/* ---------- Teams: switcher, main admin, the TEAMS page ---------- */
+/* ---------- Teams: switcher, the TEAMS page (masters) ---------- */
 rcMigrationCardHtml = (function (orig) { return function () { return RC.team === 'main' ? orig.apply(this, arguments) : ''; }; })(rcMigrationCardHtml);
 renderAccountMgmtPage = (function (orig) {
   return function () {
     var el = document.getElementById('account-mgmt-inner'); if (!el || !RC.session) return orig.apply(this, arguments);
     if (!rcCanManageAccounts()) {
-      el.innerHTML = '<div class="card"><div class="rc-h">' + rcEsc(rcTeamName(RC.team).toUpperCase()) + '</div><div class="rc-small">Logins for this team are looked after by its own admins and the main admin.</div></div>' + rcBorrowCardHtml();
+      el.innerHTML = '<div class="card"><div class="rc-h">' + rcEsc(rcTeamName(RC.team).toUpperCase()) + '</div><div class="rc-small">Logins are looked after by masters and this team\'s managers.</div></div>' + rcBorrowCardHtml();
       return;
     }
     orig.apply(this, arguments);
     if (!document.getElementById('rc-borrow-card')) { var first = el.querySelector('.card'); if (first) first.insertAdjacentHTML('afterend', rcBorrowCardHtml()); }
+    if (!rcIsOwner()) rcLimitAccountsForManager(el);
     var top = '';
-    if (!RC.ownerUid && RC.team === 'main' && String((RC.allUsers[RC.session.uid] || {}).role) === 'admin')
-      top += '<div class="card" style="background:#FFF6CC"><div class="rc-h">MAIN ADMIN</div><div class="rc-small">The main admin can add teams, open every team and choose who sees more than one team. Only one person can be main admin.</div><button class="rc-b rc-red rc-wide" style="margin-top:8px" onclick="rcClaimOwner()">MAKE ME THE MAIN ADMIN</button></div>';
     if (rcTeamIds().length > 1) top += '<div class="card rc-small">Showing logins in <b>' + rcEsc(rcTeamName(RC.team)) + '</b>. New users you add here join this team.</div>';
     if (top) el.insertAdjacentHTML('afterbegin', top);
   };
 })(renderAccountMgmtPage);
-function rcClaimOwner() {
-  showCustomConfirm('Become the main admin?', 'You will be able to add teams, open every team and decide who sees more than one team. This can\'t be handed to someone else from the app.', function (ok) {
-    if (!ok) return;
-    RC.db.ref('meta/owner').set(RC.session.uid).then(function () { toast('You are now the main admin'); }).catch(function (e) { toast('Not changed: ' + rcErrMsg(e)); });
-  });
-}
 function rcPickTeam() {
   var mine = RC.allUsers[RC.session.uid] || RC.session.profile;
   var ids = rcTeamsFor(RC.session.uid, mine); if (ids.length < 2) return;
@@ -2691,7 +2763,7 @@ renderOptions = (function (orig) {
 openPage = (function (orig) {
   return function (id) {
     if (id === 'teams-page') {
-      if (!rcIsOwner()) { toast('Main admin only'); return; }
+      if (!rcIsOwner()) { toast('Masters only'); return; }
       if (!document.getElementById('teams-page')) {
         var p = document.createElement('div'); p.id = 'teams-page'; p.className = 'full-page';
         p.innerHTML = '<div class="page-inner"><div class="page-title">TEAMS</div><div id="teams-inner"></div></div>';
@@ -2714,24 +2786,18 @@ function rcRenderTeamsPage() {
   });
   h += '<div class="tm-row" style="margin-top:10px"><input id="tm-new" class="rc-to-in" style="margin:0;flex:1" placeholder="New team name"><button class="rc-b rc-red" onclick="rcAddTeam()">ADD TEAM</button></div>';
   h += '<div class="rc-small" style="margin-top:8px">To set up a new team: ADD TEAM, OPEN it, then add its admins, managers and staff in Account Management. Then upload its Excel or press + NEW FORTNIGHT on the roster.</div></div>';
-  // who sees which team
-  h += '<div class="card"><div class="rc-h">WHO CAN SEE EACH TEAM</div><div class="rc-small">Everyone sees their own team. Tick a box to also let them see that team, with the same access they have in their own team (managers and admins see all its data and can change it). You see every team.</div>';
+  // people: masters see every team; everyone else belongs to one team
+  h += '<div class="card"><div class="rc-h">PEOPLE IN EACH TEAM</div><div class="rc-small">Masters see and run every team. Everyone else sees only their own team (plus any team that has borrowed them, as staff). To give someone both teams, make them a master in Account Management.</div>';
   var users = Object.keys(all).map(function (k) { return Object.assign({ uid: k }, all[k]); });
+  var rank = { master: 0, manager: 1, admin: 2 };
   ids.forEach(function (home) {
-    var list = users.filter(function (u) { return rcHomeTeam(u) === home; }).sort(function (a, b) { return (rcIsMgrRole(b.role) - rcIsMgrRole(a.role)) || String(a.username).localeCompare(String(b.username)); });
+    var list = users.filter(function (u) { return rcHomeTeam(u) === home; }).sort(function (a, b) { return ((rank[rcRoleOf(a)] === undefined ? 3 : rank[rcRoleOf(a)]) - (rank[rcRoleOf(b)] === undefined ? 3 : rank[rcRoleOf(b)])) || String(a.username).localeCompare(String(b.username)); });
     if (!list.length) return;
     h += '<div class="tm-team">' + rcEsc(rcTeamName(home).toUpperCase()) + '</div>';
     list.forEach(function (u) {
-      var acc = RC.access[u.uid] || {};
       h += '<div class="tm-user"><div><b>' + rcEsc(u.username) + '</b> <span class="rc-pill">' + rcEsc(u.role) + '</span><br><span class="rc-small">' + rcEsc(((u.firstName || '') + ' ' + (u.lastName || '')).trim()) + '</span></div><div class="tm-acc">';
-      if (u.uid === RC.ownerUid) h += '<span class="rc-small"><b>Main admin</b> - every team</span>';
-      else {
-        ids.forEach(function (t) {
-          if (t === home) return;
-          h += '<label class="tm-chk"><input type="checkbox"' + (acc[t] === true ? ' checked' : '') + ' onchange="rcSetAccess(\'' + u.uid + '\',\'' + t + '\',this.checked)"> ' + rcEsc(rcTeamName(t)) + '</label>';
-        });
-        h += '<select class="tm-move" onchange="rcMoveUser(\'' + u.uid + '\',this.value,this)">' + ids.map(function (t) { return '<option value="' + rcEsc(t) + '"' + (t === home ? ' selected' : '') + '>' + (t === home ? 'In ' : 'Move to ') + rcEsc(rcTeamName(t)) + '</option>'; }).join('') + '</select>';
-      }
+      if (rcRoleOf(u) === 'master') h += '<span class="rc-small"><b>Master</b> - every team</span>';
+      h += '<select class="tm-move" onchange="rcMoveUser(\'' + u.uid + '\',this.value,this)">' + ids.map(function (t) { return '<option value="' + rcEsc(t) + '"' + (t === home ? ' selected' : '') + '>' + (t === home ? 'In ' : 'Move to ') + rcEsc(rcTeamName(t)) + '</option>'; }).join('') + '</select>';
       h += '</div></div>';
     });
   });
@@ -2750,14 +2816,11 @@ function rcRenameTeam(t) {
   var n = String((document.getElementById('tm-name-' + t) || {}).value || '').trim(); if (!n) { toast('Name can\'t be empty'); return; }
   RC.db.ref('teamInfo/' + t + '/name').set(n).then(function () { toast('Saved'); }).catch(function (e) { toast('Not saved: ' + rcErrMsg(e)); });
 }
-function rcSetAccess(uid, t, on) {
-  RC.db.ref('access/' + uid + '/' + t).set(on ? true : null).then(function () { toast(on ? 'Access given' : 'Access removed'); }).catch(function (e) { toast('Not changed: ' + rcErrMsg(e)); rcRenderTeamsPage(); });
-}
 function rcMoveUser(uid, t, sel) {
   var u = RC.allUsers[uid]; if (!u) return;
-  showCustomConfirm('Move ' + rcEsc(u.username) + '?', 'They will belong to <b>' + rcEsc(rcTeamName(t)) + '</b> and stop seeing ' + rcEsc(rcTeamName(rcHomeTeam(u))) + ' (unless you tick it for them). Their shifts on old rosters stay where they are.', function (ok) {
+  showCustomConfirm('Move ' + rcEsc(u.username) + '?', 'They will belong to <b>' + rcEsc(rcTeamName(t)) + '</b> and stop seeing ' + rcEsc(rcTeamName(rcHomeTeam(u))) + '. Their shifts on old rosters stay where they are.', function (ok) {
     if (!ok) { rcRenderTeamsPage(); return; }
-    var upd = {}; upd['users/' + uid + '/team'] = t === 'main' ? null : t; upd['access/' + uid + '/' + t] = null;
+    var upd = {}; upd['users/' + uid + '/team'] = t === 'main' ? null : t;
     RC.db.ref().update(upd).then(function () { toast('Moved'); }).catch(function (e) { toast('Not moved: ' + rcErrMsg(e)); rcRenderTeamsPage(); });
   });
 }
@@ -2775,7 +2838,7 @@ function rcOtherTeamsCard(other, today) {
   return h + '<div class="rc-small" style="margin-top:6px">Changes and requests for these shifts go through that team' + (rcTeamsFor(RC.session.uid, RC.allUsers[RC.session.uid] || RC.session.profile).length > 1 ? ' - use the team button on the roster to open it.' : '.') + '</div></div>';
 }
 function rcBorrowCardHtml() {
-  if (!rcIsMgr() || rcTeamIds().length < 2) return '';
+  if (!rcIsManagerUp() || rcTeamIds().length < 2) return '';
   var here = RC.guests[RC.team] || {}, all = RC.allUsers;
   var guests = Object.keys(here).filter(function (k) { return here[k] === true && all[k]; });
   var pool = Object.keys(all).filter(function (k) { return rcHomeTeam(all[k]) !== RC.team && !here[k] && all[k].firstName && all[k].lastName; })
@@ -2785,12 +2848,13 @@ function rcBorrowCardHtml() {
     var u = all[k];
     return '<div class="rc-row"><div><b>' + rcEsc(u.firstName + ' ' + u.lastName) + '</b><br><span class="rc-small">from ' + rcEsc(rcTeamName(rcHomeTeam(u))) + '</span></div><div class="rc-btns"><button class="rc-b" onclick="rcUnborrow(\'' + k + '\')">REMOVE</button></div></div>';
   }).join('') : '<div class="rc-small" style="margin-top:6px"><i>Nobody borrowed.</i></div>';
-  if (pool.length) h += '<div class="tm-row" style="margin-top:8px"><select id="rc-borrow-pick" class="tm-move" style="flex:1;font-size:13px;padding:8px">' + pool.map(function (k) { var u = all[k]; return '<option value="' + k + '">' + rcEsc(u.firstName + ' ' + u.lastName) + ' (' + rcEsc(rcTeamName(rcHomeTeam(u))) + ')</option>'; }).join('') + '</select><button class="rc-b rc-red" onclick="rcBorrow()">ADD TO ROSTER</button></div>';
+  if (pool.length) h += '<div class="tm-row" style="margin-top:8px"><select id="rc-borrow-pick" class="tm-move" style="flex:1;font-size:13px;padding:8px" onchange="RC.borrowPick=this.value">' + pool.map(function (k) { var u = all[k]; return '<option value="' + k + '"' + (k === RC.borrowPick ? ' selected' : '') + '>' + rcEsc(u.firstName + ' ' + u.lastName) + ' (' + rcEsc(rcTeamName(rcHomeTeam(u))) + ')</option>'; }).join('') + '</select><button class="rc-b rc-red" onclick="rcBorrow()">ADD TO ROSTER</button></div>';
   return h + '</div>';
 }
 function rcRowFor(u, len, from) { return { firstName: u.firstName, lastName: u.lastName, role: 'staff', employmentType: u.employmentType || 'casual', shifts: Array(len).fill('OFF'), unavailable: Array(len).fill(false), guestFrom: from || rcHomeTeam(u) }; }
 function rcBorrow() {
   var uid = (document.getElementById('rc-borrow-pick') || {}).value, u = RC.allUsers[uid]; if (!u) return;
+  RC.borrowPick = null;
   var today = getISO(), cur = getCurrentFortnight();
   var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), added = 0;
   var nameOf = function (s) { return (String(s.firstName || '') + ' ' + String(s.lastName || '')).trim().toLowerCase(); }, me = nameOf(u);
@@ -2909,6 +2973,272 @@ renderImportExportPage = (function (orig) {
   };
 })(renderImportExportPage);
 
+/* ---------- What each role sees ---------- */
+/* Managers: add and edit staff logins only; passwords, roles, deleting and access are for masters */
+function rcLimitAccountsForManager(el) {
+  el.querySelectorAll('button').forEach(function (b) {
+    var oc = b.getAttribute('onclick') || '';
+    if (/rcResetUserPassword|rcDeleteUser|adminDelUserMgmt|rcBulk|rcLoadOld|rcRunMigration/.test(oc) || /^(DEL|DELETE)$/.test(b.textContent.trim())) b.remove();
+  });
+  var hid = 0;
+  el.querySelectorAll('.rc-row').forEach(function (row) {
+    var pill = row.querySelector('.rc-pill'), ed = row.querySelector('button[onclick^="rcEditUser"]'), r = pill ? pill.textContent.trim().toLowerCase() : '';
+    if (r === 'master' && ed) { row.remove(); hid++; return; }   // managers don't see master logins
+    if (ed && r !== 'staff') ed.remove();
+  });
+  el.querySelectorAll('.rc-h').forEach(function (h) { var m = h.textContent.match(/^ALL USERS \((\d+)\)$/); if (m) h.textContent = 'ALL USERS (' + (+m[1] - hid) + ')'; });
+  el.querySelectorAll('.card').forEach(function (c) { if (/STAFF PASSWORDS|IMPORT FROM OLD VERSION/.test(c.textContent)) c.remove(); });
+  var sel = document.getElementById('new-user-role');
+  if (sel) { sel.innerHTML = '<option value="staff">staff</option>'; sel.disabled = true; }
+  el.insertAdjacentHTML('afterbegin', '<div class="card rc-small">Managers can add staff and fix their names. Passwords, roles and removing logins are done by a master.</div>');
+}
+rcEditUser = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    if (!rcIsOwner()) { var sel = document.getElementById('rc-eu-role'); if (sel) { sel.innerHTML = '<option value="staff">staff</option>'; sel.disabled = true; } }
+    return r;
+  };
+})(rcEditUser);
+renderOptions = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    if (!rcIsAdminOnly()) return;
+    var inner = document.getElementById('options-inner'); if (!inner) return;
+    inner.querySelectorAll('button').forEach(function (b) { if (/account-mgmt-page|hidden-staff-page/.test(b.getAttribute('onclick') || '')) b.remove(); });
+    inner.querySelectorAll('.card').forEach(function (c) { if (/MAINTENANCE/.test(c.textContent) && c.tagName !== 'BUTTON') c.remove(); });
+  };
+})(renderOptions);
+/* Admins: send a shift change for an employee - a manager approves or denies it */
+function rcRenderAdminRequestForm() {
+  var el = document.getElementById('requests-list'); if (!el) return;
+  // live redraws keep what's been picked and typed
+  var keep = {}; ['ar-who', 'ar-day', 'ar-s', 'ar-e', 'ar-r'].forEach(function (id) { var x = document.getElementById(id); if (x) keep[id] = x.value; });
+  var fn = getSelectedFortnight() || getCurrentFortnight();
+  if (!fn) { el.innerHTML = '<div class="card">No roster yet.</div>'; return; }
+  var people = (fn.staff || []).map(function (st, r) { var u = rcUserForStaff(st); return u ? { r: r, st: st, u: u } : null; }).filter(Boolean);
+  var today = getISO();
+  var h = '<div class="card"><div class="rc-h">SUBMIT A SHIFT CHANGE FOR AN EMPLOYEE</div><div class="rc-small">For ' + rcEsc(rcFnRange(fn)) + ' (the fortnight on the roster screen). A manager approves or denies it, and the employee is told.</div>'
+    + '<select id="ar-who" class="rc-to-in" onchange="rcAdminReqShow()">' + people.map(function (p) { return '<option value="' + p.r + '">' + rcEsc(p.st.firstName + ' ' + p.st.lastName) + '</option>'; }).join('') + '</select>'
+    + '<select id="ar-day" class="rc-to-in" onchange="rcAdminReqShow()">' + fn.dates.map(function (d, i) { return '<option value="' + i + '"' + (d.iso === today ? ' selected' : '') + '>' + rcEsc(d.day + ' ' + d.date) + '</option>'; }).join('') + '</select>'
+    + '<div id="ar-now" class="rc-small" style="margin:6px 0"></div>'
+    + '<div class="ms-edit-row"><label class="rc-to">Start<input type="time" id="ar-s"></label><label class="rc-to">Finish<input type="time" id="ar-e"></label></div>'
+    + '<input id="ar-r" class="rc-to-in" placeholder="Reason (optional)">'
+    + '<div class="rc-btns" style="margin-top:8px"><button class="rc-b rc-red" onclick="rcAdminReqSend(\'times\')">SEND NEW TIMES</button><button class="rc-b" onclick="rcAdminReqSend(\'off\')">MAKE IT OFF</button><button class="rc-b rc-white" onclick="rcAdminReqSend(\'ua\')">UNAVAILABLE</button></div></div>';
+  var mine = rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).filter(function (q) { return q.byUsername === RC.session.profile.username; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); }).slice(0, 20);
+  h += '<div class="card"><div class="rc-h">CHANGES YOU SENT</div>' + (mine.length ? mine.map(function (q) {
+    return '<div class="rc-row"><div><b>' + rcEsc(q.username) + '</b> ' + rcEsc(q.shiftDate || '') + ': ' + rcEsc(q.oldShift || '') + ' → <b>' + rcEsc(q.newShift || '') + '</b></div><span class="rc-pill rc-st-' + rcEsc(q.status || 'pending') + '">' + rcEsc(q.status || 'pending') + '</span></div>';
+  }).join('') : '<div class="rc-small">None yet.</div>') + '</div>';
+  el.innerHTML = h + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK</button></div>';
+  if (!people.length) document.getElementById('ar-now').textContent = 'Nobody on this roster has a login yet.';
+  if (keep['ar-who'] !== undefined) {
+    ['ar-who', 'ar-day'].forEach(function (id) { var x = document.getElementById(id); if (x && [].some.call(x.options, function (o) { return o.value === keep[id]; })) x.value = keep[id]; });
+    rcAdminReqShow();
+    ['ar-s', 'ar-e', 'ar-r'].forEach(function (id) { var x = document.getElementById(id); if (x) x.value = keep[id]; });
+  } else rcAdminReqShow();
+}
+function rcAdminReqShow() {
+  var fn = getSelectedFortnight() || getCurrentFortnight(), r = +(document.getElementById('ar-who') || {}).value, i = +(document.getElementById('ar-day') || {}).value;
+  var st = fn && fn.staff[r], out = document.getElementById('ar-now'); if (!st || !out) return;
+  var cur = (st.shifts && st.shifts[i]) || 'OFF', p = parseShiftRange(cur);
+  out.innerHTML = 'Now: <b>' + rcEsc(fmt(cur)) + '</b>';
+  var pad = function (m) { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  document.getElementById('ar-s').value = p ? pad(p.start) : ''; document.getElementById('ar-e').value = p ? pad(p.end) : '';
+}
+function rcAdminReqSend(mode) {
+  var fn = getSelectedFortnight() || getCurrentFortnight(), r = +(document.getElementById('ar-who') || {}).value, i = +(document.getElementById('ar-day') || {}).value;
+  var st = fn && fn.staff[r], u = st && rcUserForStaff(st); if (!u) { toast('Pick an employee'); return; }
+  var old = (st.shifts && st.shifts[i]) || 'OFF', ns;
+  if (mode === 'off') ns = 'OFF'; else if (mode === 'ua') ns = 'UA';
+  else { var a = document.getElementById('ar-s').value, b = document.getElementById('ar-e').value; if (!a || !b) { toast('Enter a start and finish time'); return; } ns = a + '-' + b; }
+  if (ns === old) { toast('That is what the roster already says'); return; }
+  var reason = (document.getElementById('ar-r').value || '').trim();
+  var all = rcAsArray(safeGetJSON('retail_roster_requests_v2', []));
+  all.push({ username: u.username, type: 'shift-correction', fnId: fn.id, shiftDate: fn.dates[i].date, shiftIdx: i, oldShift: old, newShift: ns, reason: reason, status: 'pending', ts: Date.now(), dates: [fn.dates[i].date], byUsername: RC.session.profile.username });
+  safeSetJSON('retail_roster_requests_v2', all);
+  rcNotify([u.uid], { type: 'req-for-you', title: 'Shift change sent for you', body: fn.dates[i].day + ' ' + fn.dates[i].date + ': ' + old + ' → ' + ns + '. A manager will review it.' });
+  toast('Sent to a manager');
+  rcRenderAdminRequestForm();
+}
+
+/* ---------- Roster row size: small / normal / large (remembered on this device) ---------- */
+var RC_ROW_SIZES = [['s', 'SMALL'], ['m', 'NORMAL'], ['l', 'LARGE']];
+function rcRowSize() { try { var v = localStorage.getItem('repco_row_size'); return /^[sml]$/.test(v || '') ? v : 'm'; } catch (e) { return 'm'; } }
+function rcApplyRowSize() {
+  var v = rcRowSize();
+  document.body.classList.toggle('rc-rh-s', v === 's'); document.body.classList.toggle('rc-rh-l', v === 'l');
+  var ctl = document.querySelector('#repco-v65 .r-controls') || document.querySelector('.r-controls'); if (!ctl || !RC.session) return;
+  var b = document.getElementById('rc-rows-btn');
+  if (!b) { b = document.createElement('button'); b.id = 'rc-rows-btn'; b.title = 'Row size'; b.onclick = rcCycleRowSize; var tf = ctl.querySelector('button[onclick="toggleTimeFormat()"]'); ctl.insertBefore(b, tf ? tf.nextSibling : null); }
+  b.textContent = 'ROWS: ' + RC_ROW_SIZES.find(function (x) { return x[0] === v; })[1];
+}
+function rcCycleRowSize() {
+  var v = rcRowSize(), i = RC_ROW_SIZES.findIndex(function (x) { return x[0] === v; });
+  try { localStorage.setItem('repco_row_size', RC_ROW_SIZES[(i + 1) % 3][0]); } catch (e) {}
+  rcApplyRowSize();
+}
+
+/* ---------- One person on more than one team's roster (hidden here, normal staff there, or borrowed) ----------
+   Each team publishes those people's upcoming shifts to shared/<person>/<team>; the other team's managers and
+   admins see them in that person's cells, and the person sees both teams on My Schedule. */
+function rcPersonKey(p) {
+  var f = String((p && p.firstName) || '').trim(), l = String((p && p.lastName) || '').trim();
+  return f && l ? rcEncodeKey((l + '_' + f).toLowerCase()) : '';
+}
+function rcIsLinkedRow(st, key) {
+  if (st.isHidden || isHiddenStaffRow(st) || (st.guestFrom && st.guestFrom !== RC.team)) return true;
+  var sh = RC.shared[key]; if (sh && Object.keys(sh).some(function (t) { return t !== RC.team; })) return true;
+  return Object.keys(RC.guests).some(function (t) { return t !== RC.team && rcTeamPeople().some(function (u) { return (RC.guests[t] || {})[u.uid] && rcPersonKey(u) === key; }); });
+}
+var _rcSharedTimer = null;
+function rcQueueShared() { if (_rcSharedTimer) clearTimeout(_rcSharedTimer); _rcSharedTimer = setTimeout(rcPublishShared, 1500); }
+function rcPublishShared() {
+  if (!RC.session || !rcIsMgr() || !RC.ready.retail_roster_byFortnight_v1) return;
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), from = rcIsoAdd(getISO(), -14), want = {};
+  fns.forEach(function (fn) {
+    if (fn.draft) return;
+    var last = fn.dates[fn.dates.length - 1]; if (!last || last.iso < from) return;
+    (fn.staff || []).forEach(function (st) {
+      var key = rcPersonKey(st); if (!key || !rcIsLinkedRow(st, key)) return;
+      var w = want[key] = want[key] || { name: st.firstName + ' ' + st.lastName, days: {} };
+      fn.dates.forEach(function (d, i) { if (d.iso >= from) w.days[d.iso] = String((st.shifts && st.shifts[i] != null) ? st.shifts[i] : 'OFF'); });
+    });
+  });
+  var upd = {};
+  Object.keys(want).forEach(function (key) {
+    var cur = (RC.shared[key] || {})[RC.team];
+    if (cur && JSON.stringify(cur.days || {}) === JSON.stringify(rcSortObj(want[key].days)) && cur.name === want[key].name) return;
+    upd['shared/' + key + '/' + RC.team] = { name: want[key].name, days: rcSortObj(want[key].days), ts: firebase.database.ServerValue.TIMESTAMP };
+  });
+  Object.keys(RC.shared).forEach(function (key) { if ((RC.shared[key] || {})[RC.team] && !want[key]) upd['shared/' + key + '/' + RC.team] = null; });
+  if (Object.keys(upd).length) RC.db.ref().update(upd).catch(function (e) { console.warn('shared shifts', e && e.code); });
+}
+function rcDayViewIso(fn) { var i = RC.dayFn === fn.id && RC.dayIdx != null ? RC.dayIdx : -1; return i >= 0 && fn.dates[i] ? fn.dates[i].iso : ''; }
+function rcSortObj(o) { var r = {}; Object.keys(o).sort().forEach(function (k) { r[k] = o[k]; }); return r; }
+/* Show the other team's shifts in that person's cells (managers and admins only) */
+function rcSharedMarks() {
+  if (!rcIsMgr() || RC.pdfMode) return;
+  var fn = getSelectedFortnight(); if (!fn) return;
+  (fn.staff || []).forEach(function (st, r) {
+    var sh = RC.shared[rcPersonKey(st)]; if (!sh) return;
+    fn.dates.forEach(function (d, i) {
+      Object.keys(sh).forEach(function (t) {
+        if (t === RC.team) return;
+        var v = ((sh[t] || {}).days || {})[d.iso]; if (!v || rcIsEmptyVal(v)) return;
+        var label = /^(AB|ABSENT)$/i.test(v) ? 'AB' : rcIsUAVal(v) ? 'UA' : fmt(v);
+        var td = document.querySelector('#roster-mount td[data-r="' + r + '"][data-i="' + i + '"]');
+        if (td && !td.querySelector('.rc-else')) {
+          var mine = (st.shifts && st.shifts[i] != null) ? String(st.shifts[i]) : 'OFF', clash = !!parseShiftRange(mine) && !!parseShiftRange(v);
+          td.insertAdjacentHTML('beforeend', '<span class="rc-else' + (clash ? ' rc-clash' : '') + '" title="Rostered at ' + rcEsc(rcTeamName(t)) + '">' + (clash ? '⚠ ' : '') + rcEsc(rcTeamName(t)) + ' ' + rcEsc(label) + '</span>');
+        }
+      });
+    });
+  });
+  // day view: one line under the name for the day shown
+  document.querySelectorAll('.dv-row[data-r]').forEach(function (el) {
+    if (el.querySelector('.rc-else')) return;
+    var st = fn.staff[+el.getAttribute('data-r')], sh = st && RC.shared[rcPersonKey(st)]; if (!sh) return;
+    var iso = rcDayViewIso(fn); if (!iso) return;
+    var bits = Object.keys(sh).filter(function (t) { return t !== RC.team; }).map(function (t) { var v = ((sh[t] || {}).days || {})[iso]; return v && !rcIsEmptyVal(v) ? rcTeamName(t) + ' ' + (rcIsUAVal(v) ? 'UA' : fmt(v)) : ''; }).filter(Boolean);
+    if (bits.length) el.insertAdjacentHTML('beforeend', '<span class="rc-else rc-else-dv">Also: ' + rcEsc(bits.join(' • ')) + '</span>');
+  });
+}
+
+/* ---------- Access log page (masters) ---------- */
+renderOptions = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    if (!rcCanSeeAccessLog()) return;
+    var grid = document.querySelector('#options-inner > div'); if (!grid || document.getElementById('btn-accesslog')) return;
+    var b = document.createElement('button'); b.className = 'card'; b.id = 'btn-accesslog'; b.style.cssText = 'font-weight:900;text-align:left';
+    b.textContent = 'ACCESS LOG'; b.onclick = function () { RC.accessFilter = ''; openPage('accesslog-page'); };
+    grid.insertBefore(b, grid.lastElementChild);
+  };
+})(renderOptions);
+openPage = (function (orig) {
+  return function (id) {
+    if (id === 'accesslog-page') {
+      if (!rcCanSeeAccessLog()) { toast('Masters only'); return; }
+      if (!document.getElementById('accesslog-page')) {
+        var p = document.createElement('div'); p.id = 'accesslog-page'; p.className = 'full-page';
+        p.innerHTML = '<div class="page-inner"><div class="page-title">ACCESS LOG</div><div id="accesslog-inner"></div></div>';
+        document.body.appendChild(p);
+      }
+    }
+    orig.apply(this, arguments);
+    if (id === 'accesslog-page') { rcLoadAccessLog(); setTimeout(rcFitHeader, 0); }
+  };
+})(openPage);
+function rcOpenAccessLogFor(username) { RC.accessFilter = username; openPage('accesslog-page'); }
+function rcLoadAccessLog() {
+  var el = document.getElementById('accesslog-inner'); if (!el) return;
+  el.innerHTML = '<div class="card">Loading...</div>';
+  RC.db.ref('accesslog').orderByChild('ts').limitToLast(2000).once('value').then(function (s) {
+    var v = s.val() || {};
+    RC.accessLog = Object.keys(v).map(function (k) { return v[k]; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    var people = {}; RC.accessLog.forEach(function (e) { var n = rcAccessName(e); people[n] = 1; });
+    el.innerHTML = '<div class="card"><div class="tm-row" style="border:none;padding:0"><select id="al-who" class="tm-move" style="flex:1;font-size:13px;padding:8px" onchange="rcRenderAccessLog()"><option value="">Everyone</option>'
+      + Object.keys(people).sort().map(function (n) { return '<option' + (n === RC.accessFilter ? ' selected' : '') + '>' + rcEsc(n) + '</option>'; }).join('') + '</select>'
+      + '<select id="al-kind" class="tm-move" style="font-size:13px;padding:8px" onchange="rcRenderAccessLog()"><option value="">All events</option><option value="Signed in">Sign-ins only</option><option value="Opened">App opens</option><option value="out">Sign-outs and time-outs</option></select></div>'
+      + '<div class="rc-small" style="margin-top:6px">Every sign-in, app open, team switch and sign-out, newest first (latest 2,000). Wrong-password attempts can\'t be recorded.</div>'
+      + '<div id="al-summary" style="margin-top:8px"></div>'
+      + '<button class="rc-b rc-white" style="margin-top:8px" onclick="rcPruneAccessLog()">DELETE ENTRIES OLDER THAN 90 DAYS</button></div><div id="al-list"></div>';
+    rcRenderAccessLog();
+  }).catch(function (e) { el.innerHTML = '<div class="card">Could not load: ' + rcEsc(rcErrMsg(e)) + '</div>'; });
+}
+function rcAccessName(e) {
+  var u = RC.allUsers[e.uid];
+  return (u && u.username) || e.username || 'deleted login';
+}
+function rcRenderAccessLog() {
+  var list = document.getElementById('al-list'); if (!list) return;
+  var who = (document.getElementById('al-who') || {}).value || '', kind = (document.getElementById('al-kind') || {}).value || '';
+  RC.accessFilter = who;
+  var rows = (RC.accessLog || []).filter(function (e) {
+    if (who && rcAccessName(e) !== who) return false;
+    if (kind === 'out') return /out/i.test(e.kind || '');
+    if (kind) return String(e.kind || '').indexOf(kind) === 0;
+    return true;
+  });
+  var sum = document.getElementById('al-summary');
+  if (sum) {
+    var wk = Date.now() - 7 * 864e5, ins = rows.filter(function (e) { return e.ts > wk; });
+    sum.innerHTML = '<span class="rc-pill">' + rows.length + ' events</span> <span class="rc-pill">' + ins.length + ' in the last 7 days</span>'
+      + (who ? ' <span class="rc-pill">first seen ' + rcEsc(rows.length ? new Date(rows[rows.length - 1].ts).toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane' }) : '-') + '</span>' : '');
+  }
+  if (!rows.length) { list.innerHTML = '<div class="card">Nothing recorded yet.</div>'; return; }
+  var lastDay = '', h = '', multi = rcTeamIds().length > 1;
+  rows.slice(0, 600).forEach(function (e) {
+    var d = new Date(e.ts || 0), dayKey = d.toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (dayKey !== lastDay) { if (lastDay) h += '</div>'; h += '<div class="card"><div class="rc-h">' + rcEsc(dayKey) + '</div>'; lastDay = dayKey; }
+    var u = RC.allUsers[e.uid], real = u ? ((u.firstName || '') + ' ' + (u.lastName || '')).trim() : '';
+    var cls = /out/i.test(e.kind || '') ? ' al-out' : /^Signed in/.test(e.kind || '') ? ' al-in' : '';
+    h += '<div class="hist-row"><span class="hist-t">' + rcEsc(d.toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: 'numeric', minute: '2-digit' })) + '</span><span class="hist-w"><b>' + rcEsc(rcAccessName(e)) + '</b>' + (real ? ' <span class="rc-small">' + rcEsc(real) + '</span>' : '')
+      + ' <span class="rc-pill' + cls + '">' + rcEsc(e.kind || '') + '</span><br><span class="rc-small">' + rcEsc(e.device || '') + (multi && e.team ? ' • ' + rcEsc(rcTeamName(e.team)) : '') + '</span></span></div>';
+  });
+  list.innerHTML = h + '</div>' + (rows.length > 600 ? '<div class="card rc-small">Showing the newest 600. Pick a person to see more of theirs.</div>' : '');
+}
+function rcPruneAccessLog() {
+  showCustomConfirm('Delete old entries?', 'Removes access log entries older than 90 days.', function (ok) {
+    if (!ok) return;
+    RC.db.ref('accesslog').orderByChild('ts').endAt(Date.now() - 90 * 864e5).once('value').then(function (s) {
+      var upd = {}; s.forEach(function (c) { upd['accesslog/' + c.key] = null; });
+      var n = Object.keys(upd).length; if (!n) { toast('Nothing older than 90 days'); return; }
+      return RC.db.ref().update(upd).then(function () { toast('Deleted ' + n); rcLoadAccessLog(); });
+    }).catch(function (e) { toast('Not deleted: ' + rcErrMsg(e)); });
+  });
+}
+renderAccountMgmtPage = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    if (!rcCanSeeAccessLog()) return;
+    document.querySelectorAll('#account-mgmt-inner .rc-row').forEach(function (row) {
+      var b = row.querySelector('.rc-btns'), nm = row.querySelector('b'); if (!b || !nm || b.querySelector('.al-btn') || !row.querySelector('button[onclick^="rcEditUser"]')) return;
+      var x = document.createElement('button'); x.className = 'rc-b rc-white al-btn'; x.textContent = 'ACCESS LOG';
+      x.onclick = function () { rcOpenAccessLogFor(nm.textContent); }; b.appendChild(x);
+    });
+  };
+})(renderAccountMgmtPage);
+
 /* ---------- Change history page (managers) ---------- */
 function rcEnsureHistoryPage() {
   if (document.getElementById('history-page')) return;
@@ -2918,7 +3248,7 @@ function rcEnsureHistoryPage() {
 }
 openPage = (function (orig) {
   return function (id) {
-    if (id === 'history-page') { if (!rcIsMgr()) { toast('Admin only'); return; } rcEnsureHistoryPage(); }
+    if (id === 'history-page') { if (!rcIsManagerUp()) { toast('Managers only'); return; } rcEnsureHistoryPage(); }
     orig.apply(this, arguments);
     if (id === 'history-page') { rcLoadHistory(); setTimeout(rcFitHeader, 0); }
   };
@@ -2926,7 +3256,7 @@ openPage = (function (orig) {
 renderOptions = (function (orig) {
   return function () {
     orig.apply(this, arguments);
-    if (!rcIsMgr()) return;
+    if (!rcIsManagerUp()) return;
     var grid = document.querySelector('#options-inner > div'); if (!grid || document.getElementById('btn-history')) return;
     var b = document.createElement('button'); b.className = 'card'; b.id = 'btn-history'; b.style.cssText = 'font-weight:900;text-align:left';
     b.textContent = 'CHANGE HISTORY'; b.onclick = function () { openPage('history-page'); };
@@ -3097,7 +3427,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.rc-badge{display:inline-block;background:#E30613;color:#fff;border-radius:9999px;min-width:18px;padding:1px 6px;font-size:10px;margin-left:4px}'
     + '#btn-notif{background:#fff;border:2px solid #111}#btn-notif.active{background:#111;color:#fff}'
     + '.rc-tabs{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}.rc-tab{flex:1;min-width:130px;border:3px solid #111;background:#fff;color:#111;border-radius:9999px;padding:10px 12px;font-family:"Arial Black",Impact,sans-serif;font-weight:900;font-size:12px;cursor:pointer}.rc-tab.on{background:#E30613;border-color:#E30613;color:#fff;box-shadow:3px 3px 0 #111}.rc-tab.on .rc-badge{background:#111}'
-    + '.rc-notif{padding:8px 0;border-bottom:1px solid #e3e3e3}.rc-unread{border-left:5px solid #E30613;padding-left:8px}'
+    + '.rc-notif{padding:8px 34px 8px 0;border-bottom:1px solid #e3e3e3;position:relative}.rc-x{border:none;background:transparent;color:#999;font-size:16px;font-weight:900;cursor:pointer;padding:4px 8px;line-height:1}.rc-notif .rc-x{position:absolute;top:6px;right:0}.rc-x:hover{color:#E30613}.rc-unread{border-left:5px solid #E30613;padding-left:8px}'
     + '.rc-offer-box{margin-top:12px;padding:10px;border:3px dashed #E30613;border-radius:12px;background:#fff5f5;display:flex;flex-direction:column;gap:6px}'
     + '.r-table td.rc-cell-offer{background:repeating-linear-gradient(135deg,#fff,#fff 6px,#ffe3e5 6px,#ffe3e5 12px) !important;color:#111 !important;font-weight:900 !important;outline:2px dashed #E30613;outline-offset:-3px;cursor:pointer}'
     + '.rc-offer-tag{display:block;font-size:8px;color:#E30613;letter-spacing:.5px}'
@@ -3184,6 +3514,14 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.rc-guest{display:inline-block;background:#111;color:#fff;border-radius:9999px;padding:1px 7px;font-size:9px;font-weight:900;letter-spacing:.3px;vertical-align:middle;text-transform:uppercase}'
     + '#rc-team-btn{background:#111!important;color:#fff!important}#rc-fresh-btn{background:#fff;border-color:#E30613!important;color:#E30613}'
     + 'body.rc-mobile .r-controls #rc-fresh-btn,body.rc-mobile .r-controls #rc-team-btn{order:4;min-width:0;padding:5px 10px;font-size:10px}'
+    + '.rc-pill.al-in{background:#1a7f37;color:#fff}.rc-pill.al-out{background:#777;color:#fff}'
+    + 'body.rc-rh-s table td,body.rc-rh-s table th{padding:2px 2px !important;font-size:9.5px !important;line-height:1.15}body.rc-rh-s .dv-row{padding:7px 12px;font-size:13px}body.rc-rh-s .dv-shift{font-size:14px}'
+    + 'body.rc-rh-l table td,body.rc-rh-l table th{padding:13px 3px !important;font-size:14px !important;line-height:1.3;min-width:108px !important;width:108px !important;max-width:108px !important;white-space:normal}'
+    + 'body.rc-rh-l table td.staff-cell,body.rc-rh-l table th.staff-col{min-width:180px !important;width:180px !important;max-width:180px !important;font-size:14px !important}'
+    + 'body.rc-mobile.rc-rh-l .r-table td,body.rc-mobile.rc-rh-l table td{min-width:80px !important;width:80px !important;max-width:80px !important;font-size:13px !important}'
+    + 'body.rc-rh-l .dv-row{padding:17px 16px;font-size:18px}body.rc-rh-l .dv-shift{font-size:19px}'
+    + 'body.rc-mobile .r-controls #rc-rows-btn{order:4;min-width:0;padding:5px 10px;font-size:10px}'
+    + '.rc-else{display:block;margin-top:2px;font-size:8.5px;font-weight:800;color:#555 !important;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}td.cell-off .rc-else{color:#fff !important}.rc-else.rc-clash{color:#E30613 !important}.rc-else-dv{flex-basis:100%;font-size:11px;color:#666 !important}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'

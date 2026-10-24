@@ -45,24 +45,37 @@ at the top of `cloud.js`.
 Each person then opens **INBOX → TURN ON NOTIFICATIONS ON THIS DEVICE**.
 On iPhone they must first use **Share → Add to Home Screen**, and open the app from that icon.
 
-## 6. More than one team (optional)
+## 6. Roles
+
+| Role | Can do |
+|------|--------|
+| **Master** | Everything, in every team: logins and passwords, roles, teams, the access log |
+| **Manager** | Their own team: rosters, shift edits, requests, adding staff, hidden staff, settings, change history |
+| **Admin** | Their own team: roster changes (every change is in the change history), and sending a shift change for an employee for a manager to approve. No requests list and no logins. |
+| **Staff** | Their own schedule, offers and requests |
+
+Managers can't see master logins in Account Management. Passwords, roles and removing logins are done by a master.
+
+## 7. More than one team (optional)
 
 Each team has its own staff, managers, admins, rosters, requests, offers and change history. People in one
-team can't see another team.
+team can't see another team; masters see every team.
 
 1. Paste the latest `database.rules.json` into Firebase (Realtime Database → Rules → Publish).
-2. Sign in with your admin login, open **Account Management** and press **MAKE ME THE MAIN ADMIN**. This can be
-   done only once. To hand it to someone else later, change `meta/owner` in the Firebase console.
-3. **Options → TEAMS → ADD TEAM**, then **OPEN** it. Add that team's admins, managers and staff in
-   Account Management. New logins join the team that's open.
-4. Upload the team's Excel, or press **+ NEW FORTNIGHT** on the roster to start an empty one.
-5. To let someone see more than one team, tick that team next to their name on the **TEAMS** page. They get a
-   team button on the roster to switch between teams, with the same role they have in their own team.
+2. Sign in as a master. **Options → TEAMS → ADD TEAM**, then **OPEN** it. Add that team's managers, admins and
+   staff in Account Management. New logins join the team that's open.
+3. Upload the team's Excel, or press **+ NEW FORTNIGHT** on the roster to start an empty one.
+4. To give someone both teams, make them a master.
 
 To put someone from another team on a team's roster, open that team and go to **Account Management →
 BORROWED FROM OTHER TEAMS**. Pick the person and press **ADD TO ROSTER**. They get a row on that team's roster
 from the current fortnight on, along with that team's shift offers and alerts. Their shifts in both teams show
 live on their My Schedule. In the other team they only have staff access.
+
+When the same person is on two teams' rosters (for example hidden staff in one team and normal staff in the
+other), the app links them by name. Managers and admins see that person's shifts from the other team in their
+cells, with a red ⚠ if both teams have them working the same day. The person sees both teams' shifts on
+My Schedule, whichever login they use. Staff don't see any of this.
 
 The Kate notes row and the Luke/Chris green cells only apply to the first team.
 
