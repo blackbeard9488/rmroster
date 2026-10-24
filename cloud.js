@@ -1707,7 +1707,7 @@ function rcDecorateRoster() {
   if (!rcIsMgr()) return;
   var fn = getSelectedFortnight() || getCurrentFortnight(); if (!fn) {
     var m = document.getElementById('roster-mount');
-    if (m && !m.innerHTML.trim()) m.innerHTML = '<div class="card" style="margin:14px">No roster has been uploaded yet.' + (rcIsMgr() ? ' Use OPTIONS → IMPORT ROSTER, or import your old data from ACCOUNT MANAGEMENT.' : '') + '</div>';
+    if (m && !m.innerHTML.trim()) m.innerHTML = '<div class="card" style="margin:14px">No roster has been uploaded yet.' + (rcIsMgr() ? ' Use TOOLS → IMPORT ROSTER (EXCEL) above, or + NEW / DUPLICATE.' : '') + '</div>';
     return;
   }
   var keys = rcStaffKeys(fn), fk = rcEncodeKey(fn.id);
@@ -3036,6 +3036,7 @@ rcEditUser = (function (orig) {
 renderOptions = (function (orig) {
   return function () {
     orig.apply(this, arguments);
+    var opt = document.querySelector('#options-inner button[onclick*="import-export-page"]'); if (opt) opt.remove();   // now in the roster TOOLS menu
     if (!rcIsAdminOnly()) return;
     var inner = document.getElementById('options-inner'); if (!inner) return;
     var grid = inner.querySelector('div');
@@ -3860,6 +3861,7 @@ function rcTidyControls() {
   move(document.getElementById('rc-staff-btn'));
   move(document.getElementById('rc-fresh-btn'));
   var extra = [];
+  if (mgr) extra.push(['rc-tb-import', 'IMPORT ROSTER (EXCEL)', function () { rcToolsOpen(false); openPage('import-export-page'); }]);
   if (mgr && fn) extra.push(['rc-tb-draft', fn.draft ? 'PUBLISH TO STAFF' : 'MAKE DRAFT (hide from staff)', function () { rcToolsOpen(false); rcPublishFn(!!fn.draft); }]);
   if (rcIsManagerUp()) extra.push(['rc-tb-compare', 'COMPARE ROSTERS', function () { rcToolsOpen(false); RC.cmpA = null; RC.cmpB = null; openPage('compare-page'); }]);
   if (mgr && fn) extra.push(['rc-tb-day', 'DAY OVERVIEW (today)', function () { rcToolsOpen(false); var k = fn.dates.findIndex(function (d) { return d.iso === getISO(); }); rcDayOverview(k >= 0 ? k : 0); }]);
@@ -3870,11 +3872,11 @@ function rcTidyControls() {
     if (!b) { b = document.createElement('button'); b.id = x[0]; menu.appendChild(b); }
     b.textContent = x[1]; b.onclick = x[2];
   });
-  ['rc-tb-draft', 'rc-tb-compare', 'rc-tb-day', 'rc-tb-xlsx'].forEach(function (id) { if (!extra.some(function (x) { return x[0] === id; })) { var o = document.getElementById(id); if (o) o.remove(); } });
+  ['rc-tb-import', 'rc-tb-draft', 'rc-tb-compare', 'rc-tb-day', 'rc-tb-xlsx'].forEach(function (id) { if (!extra.some(function (x) { return x[0] === id; })) { var o = document.getElementById(id); if (o) o.remove(); } });
   var sep = document.getElementById('rc-tb-sep'); if (!sep) { sep = document.createElement('div'); sep.id = 'rc-tb-sep'; sep.className = 'rc-tb-sep'; sep.textContent = 'VIEW'; }
   var del = document.getElementById('delete-roster-btn'); if (del) del.textContent = 'DELETE THIS ROSTER';
   // fixed order every time
-  [document.getElementById('rc-staff-btn'), document.getElementById('rc-fresh-btn')].concat(extra.map(function (x) { return document.getElementById(x[0]); }))
+  [document.getElementById('rc-tb-import'), document.getElementById('rc-staff-btn'), document.getElementById('rc-fresh-btn')].concat(extra.filter(function (x) { return x[0] !== 'rc-tb-import'; }).map(function (x) { return document.getElementById(x[0]); }))
     .concat([sep, document.getElementById('rc-rows-btn'), ctl.querySelector('button[onclick="toggleTimeFormat()"]') || menu.querySelector('button[onclick="toggleTimeFormat()"]'), del])
     .forEach(function (el) { if (el) menu.appendChild(el); });
   // menu items close the menu

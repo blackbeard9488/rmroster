@@ -99,7 +99,7 @@ The Kate notes row and the Luke/Chris green cells only apply to the first team.
 - **Requests**: staff send unavailability and shift corrections from **INBOX → REQUESTS**. Managers
   approve or deny them there. Approved unavailability is also applied to rosters uploaded later.
   **REVERSE** undoes an approval and restores the uploaded shifts.
-- **PDF export** (OPTIONS → IMPORT ROSTER / EXPORT) is a picture of the roster table exactly as it
+- **PDF export** (roster ⋯ TOOLS → EXPORT PDF) is a picture of the roster table exactly as it
   looks on screen, colours included.
 - **Backup**: ACCOUNT MANAGEMENT → DOWNLOAD FULL BACKUP. The free Firebase plan has no automatic
   backups, so download one now and then.
