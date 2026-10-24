@@ -2375,7 +2375,7 @@ renderMySchedule = function () {
       h += '<div class="ms-panel ms-on" data-end="' + current.t.end.getTime() + '" data-start="' + current.t.start.getTime() + '"><div class="ms-kicker">ON SHIFT NOW</div>'
         + '<div class="ms-big"><span class="ms-count">' + rcDur(current.t.end - now) + '</span> to go</div>'
         + '<div class="ms-sub">' + rcEsc(current.d.day + ' ' + current.d.date) + ' • ' + rcEsc(fmt(current.sh)) + ' • finishes ' + rcEsc(fmt(current.sh).split('-')[1] || '') + rcEsc(tTag(current)) + '</div>'
-        + '<div class="ms-bar"><div style="width:' + pct.toFixed(1) + '%"></div></div></div>';
+        + '<div class="ms-bar"><div style="width:' + pct.toFixed(1) + '%"></div></div><div class="ms-ring" style="--p:' + pct.toFixed(1) + '"><span>' + Math.round(pct) + '%</span></div></div>';
     } else if (next) {
       var key = (next.team ? next.team + ':' : '') + next.fn.id + '|' + next.i + '|' + next.sh;
       if (!rcSchedDismissed(key)) {
@@ -2388,7 +2388,16 @@ renderMySchedule = function () {
     } else {
       h += '<div class="ms-panel ms-none"><div class="ms-kicker">NO UPCOMING SHIFTS</div><div class="ms-sub">Nothing on the roster for you yet.</div></div>';
     }
+    (function () {
+      var curRows = rows.filter(function (r) { return r.fn.dates.some(function (d) { return d.iso === today; }); });
+      var left = curRows.filter(function (r) { return r.t && r.t.start.getTime() > now; });
+      var hrs = curRows.reduce(function (t, r) { return t + (r.t ? netH(r.sh) : 0); }, 0);
+      var nextOff = rows.filter(function (r) { return r.d.iso > today && !r.t && !other.some(function (o) { return o.t && o.d.iso === r.d.iso; }); })[0];
+      h += '<div class="ms-stats"><div><b>' + hrs.toFixed(1) + 'h</b><small>this fortnight</small></div><div><b>' + left.length + '</b><small>shifts to go</small></div><div><b>' + (nextOff ? rcEsc(nextOff.d.day.slice(0, 3)) + ' ' + rcEsc(nextOff.d.date) : '—') + '</b><small>next day off</small></div></div>';
+    })();
     h += '<div class="ms-hint">Need a change? Tap a shift. Days already worked this fortnight can be corrected too.</div>';
+    var elsewhere = {};                                  // days worked in another team show that shift instead of OFF
+    other.forEach(function (o) { if (o.t && !elsewhere[o.d.iso]) elsewhere[o.d.iso] = o; });
     var byFn = {}, order = [];
     rows.forEach(function (r) { if (!byFn[r.fn.id]) { byFn[r.fn.id] = []; order.push(r.fn); } byFn[r.fn.id].push(r); });
     order.filter(function (fn) { var last = fn.dates[fn.dates.length - 1]; return last && last.iso >= today; }).slice(0, 2).forEach(function (fn) {
@@ -2396,17 +2405,19 @@ renderMySchedule = function () {
       list.forEach(function (r) { if (r.t) { hrs += netH(r.sh); n++; } else if (fullT && (r.ab || r.na) && r.orig) hrs += netH(r.orig); });   // full time: leave days keep their hours, like the roster
       var isCur = fn.dates.some(function (d) { return d.iso === today; });
       h += '<div class="ms-fn"><div class="ms-fn-head"><span>' + (isCur ? 'THIS FORTNIGHT' : 'NEXT FORTNIGHT') + ' • ' + rcEsc(rcFnRange(fn)) + '</span><span>' + n + ' shifts • ' + hrs.toFixed(1) + 'h</span></div>';
+      if (!isCur && !list.some(function (r) { return r.t || r.ab || r.na; })) { h += '<div class="ms-empty">🗓️ Nothing rostered for you yet.<small>Shifts show here once this fortnight is published.</small></div></div>'; return; }
       list.forEach(function (r) {
         var past = r.d.iso < today, isToday = r.d.iso === today, work = !!r.t;
         var cls = 'ms-day' + (isToday ? ' ms-today' : '') + (past ? ' ms-past' : '') + (work ? '' : ' ms-off');
-        var right = r.ab ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ua">UNAVAILABLE</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : '<span class="ms-offtxt">OFF</span>';
+        var right = r.ab ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ab">ABSENT</span>' : r.na ? (r.orig ? '<span class="ms-time ms-struck">' + rcEsc(fmt(r.orig)) + '</span>' : '') + '<span class="ms-tag ms-ua">UNAVAILABLE</span>' : work ? '<span class="ms-time">' + rcEsc(fmt(r.sh)) + '</span>' + (r.mgr ? '<span class="ms-tag">MANAGER</span>' : '') + '<span class="ms-hrs">' + netH(r.sh).toFixed(1) + 'h</span>' : elsewhere[r.d.iso] ? '<span class="rc-pill">' + rcEsc(rcTeamName(elsewhere[r.d.iso].team)) + '</span><span class="ms-time ms-else">' + rcEsc(fmt(elsewhere[r.d.iso].sh)) + '</span>' : '<span class="ms-offtxt">OFF</span>';
         var started = past || (r.t && r.t.start.getTime() <= now);
         var fixPast = isCur && started;                       // worked (or missed) days in this fortnight can be corrected
         var tap = fixPast || (work && !past && (!r.t || r.t.start.getTime() > now));
         var pend = tap ? rcMyPendingChange(r.fn.id, r.i, r.d.date) : null;
         var key = r.fn.id + '|' + r.i, open = tap && RC.schedOpen === key;
         if (pend) right += '<span class="ms-tag ms-req">CHANGE REQUESTED</span>';
-        h += '<div class="' + cls + (tap ? ' ms-tap' + (open ? ' ms-open' : '') + '" onclick="rcSchedToggle(\'' + rcEsc(key) + '\')"' : '"') + '><span class="ms-date"><b>' + rcEsc(r.d.day) + '</b> ' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">' + (open ? '⌄' : '›') + '</span>' : '') + '</span></div>';
+        if (r.i === 0 || r.i === 7) h += '<div class="ms-wk">WEEK ' + (r.i === 0 ? 1 : 2) + '</div>';
+        h += '<div class="' + cls + (tap ? ' ms-tap' + (open ? ' ms-open' : '') + '" onclick="rcSchedToggle(\'' + rcEsc(key) + '\')"' : '"') + '><span class="ms-date"><span class="ms-dblk"><small>' + rcEsc(r.d.day) + '</small><b>' + rcEsc(String(r.d.date).split('/')[0]) + '</b></span><span class="ms-dm">' + rcEsc(r.d.date) + (isToday ? ' <span class="ms-tag ms-tt">TODAY</span>' : '') + '</span></span><span class="ms-right">' + right + (tap ? '<span class="ms-chev">' + (open ? '⌄' : '›') + '</span>' : '') + '</span></div>';
         if (open) h += rcSchedPanel(r, pend, fixPast);
       });
       h += '</div>';
@@ -4723,6 +4734,21 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body:not(.rc-warn-open) #roster-mount td.rc-warn-cell{outline:none}body:not(.rc-warn-open) #roster-mount th.rc-warn-th{box-shadow:none}body:not(.rc-warn-open) .rc-warn-d{display:none}'
     + 'body.rc-mobile .r-controls.rc-tidy{gap:6px}body.rc-mobile .r-controls.rc-tidy select#fortnight-select{flex:1 1 150px;min-width:0 !important;max-width:none !important}body.rc-mobile .r-controls.rc-tidy #rc-current{flex-basis:100%;order:0 !important;text-align:center}body.rc-mobile .r-controls.rc-tidy .rc-right{margin-left:0 !important}body.rc-mobile #rc-tools-wrap{margin-left:auto}body.rc-mobile #rc-tools-menu{position:fixed;left:8px;right:8px;top:auto;bottom:84px;min-width:0}'
     + '.sg-list{margin-top:4px}.sg-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0 4px 8px;border-left:3px solid #1a7f37;margin:4px 0;font-size:12px}.sg-apply{padding:4px 12px !important;font-size:11px !important;white-space:nowrap}.dov-sg{margin:6px 0;padding:6px 10px;border:2px solid #1a7f37;border-radius:10px;background:#F2FBF5;font-size:12px}'
+    + '#mysched-page .ms-panel{border:none;border-radius:20px;box-shadow:0 10px 24px rgba(0,0,0,.18);padding:18px 20px}'
+    + '#mysched-page .ms-on{background:linear-gradient(135deg,#0a0a0a 0%,#2a0003 70%,#7a0008 100%);border-left:none;padding-right:110px}'
+    + '#mysched-page .ms-next{background:linear-gradient(135deg,#fff 0%,#fff 55%,#ffe5e7 100%);border-left:6px solid #E30613}'
+    + '#mysched-page .ms-on .ms-bar{display:none}.ms-ring{position:absolute;right:18px;top:50%;transform:translateY(-50%);width:76px;height:76px;border-radius:50%;background:conic-gradient(#E30613 calc(var(--p)*1%),#3a3a3a 0);display:flex;align-items:center;justify-content:center}'
+    + '.ms-ring span{width:58px;height:58px;border-radius:50%;background:#160002;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px}'
+    + '.ms-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 12px}.ms-stats div{background:#fff;border-radius:14px;padding:10px 8px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.08)}.ms-stats b{display:block;font-family:"Arial Black",Impact,sans-serif;font-size:17px}.ms-stats small{font-size:10px;font-weight:800;color:#777;text-transform:uppercase;letter-spacing:.3px}'
+    + '#mysched-page .ms-fn{border:none;border-radius:20px;box-shadow:0 6px 18px rgba(0,0,0,.10);background:#f7f7f7}'
+    + '#mysched-page .ms-fn-head{background:linear-gradient(90deg,#111,#2b2b2b);padding:12px 16px;font-size:12px;letter-spacing:.3px}'
+    + '.ms-wk{padding:10px 16px 4px;font-size:10px;font-weight:900;color:#999;letter-spacing:1px}'
+    + '#mysched-page .ms-day{margin:6px 10px;border:none;border-radius:14px;background:#fff;padding:8px 12px;box-shadow:0 1px 4px rgba(0,0,0,.06)}'
+    + '#mysched-page .ms-day.ms-off{background:transparent;box-shadow:none;padding:2px 12px;margin:0 10px}#mysched-page .ms-day.ms-off .ms-dblk{background:transparent;color:#aaa;box-shadow:none;width:40px;height:auto}#mysched-page .ms-day.ms-off .ms-dblk b{display:none}#mysched-page .ms-day.ms-off .ms-dblk small{font-size:11px;opacity:1}'
+    + '#mysched-page .ms-time.ms-else{font-size:13px;color:#555}.ms-empty{padding:22px 16px;text-align:center;font-weight:900;color:#555;font-size:14px}.ms-empty small{display:block;margin-top:4px;font-weight:600;color:#999;font-size:12px}'
+    + '#mysched-page .ms-day.ms-off .ms-date{color:#aaa}#mysched-page .ms-today{background:#fff;box-shadow:0 0 0 3px #E30613,0 6px 14px rgba(227,6,19,.18);border-left:none}#mysched-page .ms-past{opacity:.5}'
+    + '.ms-date{display:flex;align-items:center;gap:10px}.ms-dblk{width:44px;height:44px;border-radius:12px;background:#111;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;flex-shrink:0}.ms-dblk small{font-size:9px;font-weight:900;letter-spacing:.5px;opacity:.8}.ms-dblk b{font-family:"Arial Black",Impact,sans-serif;font-size:18px}'
+    + '.ms-today .ms-dblk{background:#E30613}.ms-dm{font-size:12px;font-weight:700;color:#777}#mysched-page .ms-time{font-size:16px}#mysched-page .ms-hrs{background:#f1f1f1;border-radius:9999px;padding:2px 8px;font-weight:800;color:#555}'
     + '.wq-g{margin-top:8px}.wq-h{font-size:10px;font-weight:900;color:#777;letter-spacing:.5px;margin-bottom:2px}.wq-b{margin:3px 4px 0 0 !important;font-size:11px !important}.wq-b.on{background:#E8F5EC !important;border-color:#1a7f37 !important;color:#1a7f37 !important}'
     + '.duty-t td,.duty-t th{text-align:center !important;white-space:nowrap}.duty-t td:first-child,.duty-t th:first-child{text-align:left !important}.dov-reg{margin:6px 0;padding:6px 10px;background:#f4f4f4;border-radius:10px;font-size:13px}'
     + '#rc-setup-reminder{position:fixed;right:16px;bottom:16px;z-index:9990;max-width:440px;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#111;color:#fff;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.35);font-size:13px;font-weight:700}#rc-setup-reminder .rsr-t{flex:1}#rc-setup-reminder .rc-x{color:#bbb}#rc-setup-reminder .rc-b{white-space:nowrap}body.rc-mobile #rc-setup-reminder{left:8px;right:8px;bottom:150px;max-width:none;font-size:12px}@media print{#rc-setup-reminder{display:none !important}}'
