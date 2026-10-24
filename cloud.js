@@ -28,7 +28,8 @@ var RC_SYNC = [
   { key: 'retail_roster_public_holidays_v1', path: 'data/kv/public_holidays', kind: 'value', mgrWrite: true, def: [] },
   { key: 'retail_roster_hidden_shifts_v1', path: 'mgrdata/hidden_shifts', kind: 'value', mgrWrite: true, mgrRead: true, def: {} },
   { key: 'retail_roster_archive_v1', path: 'mgrdata/archive', kind: 'value', mgrWrite: true, mgrRead: true, def: [] },
-  { key: 'retail_roster_uploaded_excels_v1', path: 'mgrdata/uploaded_excels', kind: 'value', mgrWrite: true, mgrRead: true, def: [] }
+  { key: 'retail_roster_uploaded_excels_v1', path: 'mgrdata/uploaded_excels', kind: 'value', mgrWrite: true, mgrRead: true, def: [] },
+  { key: 'retail_roster_warnings_v1', path: 'mgrdata/warnings', kind: 'value', mgrWrite: true, mgrRead: true, def: [] }
 ];
 
 var RC = {
@@ -1596,7 +1597,7 @@ function rcMyPendingOffers(otherOnly) {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); rcApprovedTicks(); rcStaffBtn(); document.body.classList.toggle('rc-can-edit', rcIsMgr()); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); rcApprovedTicks(); rcStaffBtn(); rcRosterWarnings(); document.body.classList.toggle('rc-can-edit', rcIsMgr()); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
 /* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
 function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
@@ -3281,6 +3282,166 @@ function rcRemoveFromRoster(r) {
   });
 }
 
+/* ---------- Custom roster warnings (managers and masters) ---------- */
+var RC_WARN_TYPES = {
+  hoursOver:  { label: 'Fortnight hours over', unit: 'hours', def: 76, msg: 'Exceeds normal hours' },
+  hoursUnder: { label: 'Fortnight hours under', unit: 'hours', def: 20, msg: 'Under minimum hours' },
+  shiftOver:  { label: 'A shift longer than', unit: 'hours', def: 10, msg: 'Shift too long' },
+  shiftUnder: { label: 'A shift shorter than', unit: 'hours', def: 3, msg: 'Shift too short' },
+  daysInRow:  { label: 'More days in a row than', unit: 'days', def: 6, msg: 'Too many days in a row' },
+  restUnder:  { label: 'Rest between shifts under', unit: 'hours', def: 10, msg: 'Not enough rest between shifts' },
+  shiftsOver: { label: 'More shifts in the fortnight than', unit: 'shifts', def: 10, msg: 'Too many shifts' },
+  startBefore:{ label: 'Starts before', unit: 'time', def: '07:00', msg: 'Early start' },
+  endAfter:   { label: 'Finishes after', unit: 'time', def: '21:00', msg: 'Late finish' }
+};
+var RC_WARN_PRESETS = [['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'], ['daysInRow', 6, 'More than 6 days in a row', 'all']];
+function rcWarnRules() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).filter(function (w) { return w && RC_WARN_TYPES[w.type]; }); }
+function rcHm(v) { var m = String(v || '').match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; }
+/* Warnings for one roster row: [{rule, text, days: [i...]}] */
+function rcRowWarnings(fn, st, rules) {
+  rules = rules || rcWarnRules();
+  if (!rules.length || !st || isHiddenStaffRow(st)) return [];
+  var name = (String(st.firstName || '').trim() + ' ' + String(st.lastName || '').trim()).toLowerCase();
+  var work = (fn.dates || []).map(function (d, i) {
+    var sh = st.shifts && st.shifts[i];
+    if ((st.absentApproved && st.absentApproved[i]) || (st.unavailable && st.unavailable[i])) return null;
+    var p = parseShiftRange(sh == null ? '' : String(sh)); return p ? { i: i, p: p, h: netH(String(sh)), len: (p.end - p.start) / 60 } : null;
+  });
+  var days = work.filter(Boolean), total = days.reduce(function (t, x) { return t + x.h; }, 0), out = [];
+  rules.forEach(function (w) {
+    if (w.off) return;
+    if (w.who === 'casual' && st.employmentType !== 'casual') return;
+    if (w.who === 'fulltime' && st.employmentType === 'casual') return;
+    if (w.who && w.who.indexOf('p:') === 0 && w.who.slice(2) !== name) return;
+    var v = w.value, hit = [], detail = '';
+    switch (w.type) {
+      case 'hoursOver': if (total > +v) { detail = total.toFixed(1) + 'h'; } break;
+      case 'hoursUnder': if (days.length && total < +v) { detail = total.toFixed(1) + 'h'; } break;
+      case 'shiftOver': days.forEach(function (x) { if (x.len > +v) hit.push(x.i); }); break;
+      case 'shiftUnder': days.forEach(function (x) { if (x.len < +v) hit.push(x.i); }); break;
+      case 'shiftsOver': if (days.length > +v) { detail = days.length + ' shifts'; } break;
+      case 'startBefore': days.forEach(function (x) { if (x.p.start < rcHm(v)) hit.push(x.i); }); break;
+      case 'endAfter': days.forEach(function (x) { if (x.p.end > rcHm(v)) hit.push(x.i); }); break;
+      case 'daysInRow': var run = [], longest = 0; work.concat([null]).forEach(function (x) { if (x) run.push(x.i); else { if (run.length > +v) { hit = hit.concat(run); longest = Math.max(longest, run.length); } run = []; } }); if (longest) detail = longest + ' days in a row'; break;
+      case 'restUnder':
+        for (var k = 0; k < work.length - 1; k++) {
+          if (!work[k] || !work[k + 1]) continue;
+          var gap = (1440 + work[k + 1].p.start - work[k].p.end) / 60;
+          if (gap < +v) { hit.push(k, k + 1); detail = gap.toFixed(1) + 'h rest'; }
+        }
+        break;
+    }
+    if (hit.length || (detail && (w.type === 'hoursOver' || w.type === 'hoursUnder' || w.type === 'shiftsOver'))) out.push({ rule: w, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail, days: hit.filter(function (x, i, a) { return a.indexOf(x) === i; }) });
+  });
+  return out;
+}
+function rcRosterWarnings() {
+  if (!rcIsMgr() || RC.pdfMode) { var o = document.getElementById('rc-warn-bar'); if (o) o.remove(); return; }
+  var fn = getSelectedFortnight(), rules = rcWarnRules(), all = [];
+  if (fn && rules.length) (fn.staff || []).forEach(function (st, r) {
+    var ws = rcRowWarnings(fn, st, rules); if (!ws.length) return;
+    all.push({ st: st, r: r, ws: ws });
+    var tip = ws.map(function (w) { return '⚠ ' + w.text + (w.detail ? ' (' + w.detail + ')' : ''); }).join('\n');
+    var cell = document.querySelector('#roster-mount td[data-r="' + r + '"]'), name = cell && cell.parentNode.querySelector('td.staff-cell');
+    if (name && !name.querySelector('.rc-warn')) name.insertAdjacentHTML('afterbegin', '<span class="rc-warn" title="' + rcEsc(tip) + '">⚠ ' + ws.length + '</span> ');
+    var hrs = cell && cell.parentNode.querySelector('td.hrs');
+    if (hrs && ws.some(function (w) { return !w.days.length; })) { hrs.classList.add('rc-warn-cell'); hrs.title = tip; }
+    ws.forEach(function (w) { w.days.forEach(function (i) { var td = document.querySelector('#roster-mount td[data-r="' + r + '"][data-i="' + i + '"]'); if (td) { td.classList.add('rc-warn-cell'); td.title = (td.title ? td.title + '\n' : '') + '⚠ ' + w.text; } }); });
+    var dv = document.querySelector('.dv-row[data-r="' + r + '"] .dv-name'); if (dv && !dv.querySelector('.rc-warn')) dv.insertAdjacentHTML('beforeend', ' <span class="rc-warn" title="' + rcEsc(tip) + '">⚠</span>');
+  });
+  var bar = document.getElementById('rc-warn-bar');
+  if (!all.length) { if (bar) bar.remove(); return; }
+  var n = all.reduce(function (t, x) { return t + x.ws.length; }, 0);
+  var h = '<div class="rc-warn-head" onclick="RC.warnOpen=!RC.warnOpen;rcRosterWarnings()"><b>⚠ ' + n + ' warning' + (n === 1 ? '' : 's') + '</b> on this roster <span class="rc-small">(' + (RC.warnOpen ? 'hide' : 'show') + ')</span></div>';
+  if (RC.warnOpen) h += all.map(function (x) { return '<div class="rc-warn-row"><b>' + rcEsc(String(x.st.lastName).toUpperCase() + ', ' + x.st.firstName) + '</b>: ' + x.ws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : ''); }).join(' • ') + '</div>'; }).join('');
+  if (!bar) { bar = document.createElement('div'); bar.id = 'rc-warn-bar'; var mount = document.getElementById('roster-mount'); mount.parentNode.insertBefore(bar, mount); }
+  bar.innerHTML = h;
+}
+/* After a cell is saved, say straight away if it set off a warning */
+rcSaveCell = (function (orig) {
+  return function (fnId, r, i) {
+    var before = [], fn0 = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (f) { return f.id === fnId; });
+    if (fn0 && fn0.staff[r]) before = rcRowWarnings(fn0, fn0.staff[r]).map(function (w) { return w.text; });
+    var res = orig.apply(this, arguments);
+    setTimeout(function () {
+      var fn1 = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (f) { return f.id === fnId; });
+      var st = fn1 && fn1.staff[r]; if (!st) return;
+      var fresh = rcRowWarnings(fn1, st).filter(function (w) { return before.indexOf(w.text) === -1; });
+      if (fresh.length) toast('⚠ ' + st.firstName + ': ' + fresh.map(function (w) { return w.text + (w.detail ? ' (' + w.detail + ')' : ''); }).join(', '));
+    }, 200);
+    return res;
+  };
+})(rcSaveCell);
+/* Options → ROSTER WARNINGS */
+renderOptions = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    if (!rcIsMgr()) return;
+    var grid = document.querySelector('#options-inner > div'); if (!grid || document.getElementById('btn-warnings')) return;
+    var b = document.createElement('button'); b.className = 'card'; b.id = 'btn-warnings'; b.style.cssText = 'font-weight:900;text-align:left';
+    b.textContent = 'ROSTER WARNINGS'; b.onclick = function () { openPage('warnings-page'); };
+    grid.insertBefore(b, grid.lastElementChild);
+  };
+})(renderOptions);
+openPage = (function (orig) {
+  return function (id) {
+    if (id === 'warnings-page') {
+      if (!rcIsMgr()) { toast('Managers only'); return; }
+      if (!document.getElementById('warnings-page')) {
+        var p = document.createElement('div'); p.id = 'warnings-page'; p.className = 'full-page';
+        p.innerHTML = '<div class="page-inner"><div class="page-title">ROSTER WARNINGS</div><div id="warnings-inner"></div></div>';
+        document.body.appendChild(p);
+      }
+    }
+    orig.apply(this, arguments);
+    if (id === 'warnings-page') { rcRenderWarningsPage(); setTimeout(rcFitHeader, 0); }
+  };
+})(openPage);
+function rcWarnWho(w) { return !w.who || w.who === 'all' ? 'everyone' : w.who === 'casual' ? 'casuals' : w.who === 'fulltime' ? 'full time' : (w.whoName || w.who.slice(2)); }
+function rcRenderWarningsPage() {
+  var el = document.getElementById('warnings-inner'); if (!el) return;
+  var rules = rcAsArray(safeGetJSON('retail_roster_warnings_v1', []));
+  var people = {}; rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).forEach(function (f) { (f.staff || []).forEach(function (st) { if (!isHiddenStaffRow(st)) people[(st.firstName + ' ' + st.lastName).toLowerCase()] = st.firstName + ' ' + st.lastName; }); });
+  var h = '<div class="card"><div class="rc-h">YOUR WARNINGS</div><div class="rc-small">Checked live on the roster for managers and masters only (never on printouts). A ⚠ shows next to the name, the cells involved get an orange outline, and saving a cell that sets one off tells you straight away.</div>';
+  h += rules.length ? rules.map(function (w, k) {
+    var t = RC_WARN_TYPES[w.type] || { label: w.type, unit: '' };
+    return '<div class="rc-row"><div><b>' + rcEsc(w.msg || t.msg) + '</b><br><span class="rc-small">' + rcEsc(t.label) + ' ' + rcEsc(String(w.value)) + (t.unit === 'time' ? '' : ' ' + t.unit) + ' • ' + rcEsc(rcWarnWho(w)) + '</span></div><div class="rc-btns">'
+      + '<label class="rc-small"><input type="checkbox"' + (w.off ? '' : ' checked') + ' onchange="rcWarnToggle(' + k + ',this.checked)"> on</label><button class="rc-b rc-white" onclick="rcWarnDelete(' + k + ')">DELETE</button></div></div>';
+  }).join('') : '<div class="rc-small" style="margin-top:6px"><i>None yet. Add one below or use a quick one.</i></div>';
+  h += '</div><div class="card"><div class="rc-h">ADD A WARNING</div>'
+    + '<div class="rc-small">Quick add: ' + RC_WARN_PRESETS.map(function (p, k) { return '<button class="rc-b rc-white" style="margin:3px 4px 0 0" onclick="rcWarnPreset(' + k + ')">' + rcEsc(p[2]) + '</button>'; }).join('') + '</div>'
+    + '<div class="tm-row" style="border:none;padding:10px 0 0"><select id="wn-type" class="rc-to-in" style="margin:0;flex:2" onchange="rcWarnTypeUI()">' + Object.keys(RC_WARN_TYPES).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</select>'
+    + '<input id="wn-value" class="rc-to-in" style="margin:0;flex:1"><span id="wn-unit" class="rc-small"></span></div>'
+    + '<div class="tm-row" style="border:none;padding:6px 0 0"><select id="wn-who" class="rc-to-in" style="margin:0;flex:1"><option value="all">Everyone</option><option value="fulltime">Full time only</option><option value="casual">Casuals only</option>'
+    + Object.keys(people).sort().map(function (k) { return '<option value="p:' + rcEsc(k) + '">' + rcEsc(people[k]) + '</option>'; }).join('') + '</select>'
+    + '<input id="wn-msg" class="rc-to-in" style="margin:0;flex:2" placeholder="Message, e.g. Employee exceeds normal hours"></div>'
+    + '<button class="rc-b rc-red rc-wide" style="margin-top:8px" onclick="rcWarnAdd()">ADD WARNING</button></div>'
+    + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+  el.innerHTML = h; rcWarnTypeUI();
+}
+function rcWarnTypeUI() {
+  var t = RC_WARN_TYPES[(document.getElementById('wn-type') || {}).value]; if (!t) return;
+  var v = document.getElementById('wn-value'); v.type = t.unit === 'time' ? 'time' : 'number'; v.step = t.unit === 'hours' ? '0.5' : '1'; v.value = t.def;
+  document.getElementById('wn-unit').textContent = t.unit === 'time' ? '' : t.unit;
+  document.getElementById('wn-msg').placeholder = 'Message, e.g. ' + t.msg;
+}
+function rcWarnSave(list, msg) { safeSetJSON('retail_roster_warnings_v1', list); if (msg) toast(msg); rcRenderWarningsPage(); }
+function rcWarnAdd() {
+  var type = document.getElementById('wn-type').value, t = RC_WARN_TYPES[type], raw = document.getElementById('wn-value').value;
+  var value = t.unit === 'time' ? raw : parseFloat(raw);
+  if (t.unit === 'time' ? rcHm(value) === null : !(value >= 0)) { toast('Enter a ' + (t.unit === 'time' ? 'time' : 'number')); return; }
+  var whoSel = document.getElementById('wn-who'), who = whoSel.value;
+  var w = { id: 'w' + Date.now().toString(36), type: type, value: value, who: who, msg: document.getElementById('wn-msg').value.trim() || t.msg };
+  if (who.indexOf('p:') === 0) w.whoName = whoSel.options[whoSel.selectedIndex].text;
+  rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([w]), 'Warning added');
+}
+function rcWarnPreset(k) {
+  var p = RC_WARN_PRESETS[k];
+  rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([{ id: 'w' + Date.now().toString(36), type: p[0], value: p[1], who: p[3], msg: p[2] }]), 'Warning added');
+}
+function rcWarnToggle(k, on) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); if (!l[k]) return; if (on) delete l[k].off; else l[k].off = true; rcWarnSave(l); }
+function rcWarnDelete(k) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); l.splice(k, 1); rcWarnSave(l, 'Deleted'); }
+
 /* ---------- Access log page (masters) ---------- */
 renderOptions = (function (orig) {
   return function () {
@@ -3666,6 +3827,9 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-can-edit #roster-mount tr:not(.totals):hover td{box-shadow:inset 0 2px 0 rgba(227,6,19,.55),inset 0 -2px 0 rgba(227,6,19,.55),0 0 12px rgba(227,6,19,.22);filter:brightness(1.04)}'
     + 'body.rc-can-edit #roster-mount tr:not(.totals):hover td.staff-cell{box-shadow:inset 4px 0 0 #E30613,inset 0 2px 0 rgba(227,6,19,.55),inset 0 -2px 0 rgba(227,6,19,.55)}'
     + 'body.rc-can-edit .dv-row.dv-edit:hover{box-shadow:inset 4px 0 0 #E30613,0 0 12px rgba(227,6,19,.18)}'
+    + '.rc-warn{display:inline-block;background:#F59E0B;color:#111;border-radius:9999px;padding:1px 7px;font-size:9px;font-weight:900;vertical-align:middle;cursor:help}'
+    + '#roster-mount td.rc-warn-cell{outline:2px solid #F59E0B;outline-offset:-3px}@media print{.rc-warn,#rc-warn-bar{display:none !important}#roster-mount td.rc-warn-cell{outline:none !important}}'
+    + '#rc-warn-bar{margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#FFF4DB;border:2px solid #F59E0B;font-size:12px}body.rc-mobile #rc-warn-bar{margin:8px 8px 0}.rc-warn-head{cursor:pointer}.rc-warn-row{padding:4px 0;border-top:1px solid #f3d9a4;margin-top:4px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
