@@ -1597,7 +1597,7 @@ function rcMyPendingOffers(otherOnly) {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); rcApprovedTicks(); rcStaffBtn(); rcRosterWarnings(); document.body.classList.toggle('rc-can-edit', rcIsMgr()); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); rcApprovedTicks(); rcStaffBtn(); rcRosterWarnings(); rcDayHeaders(); document.body.classList.toggle('rc-can-edit', rcIsMgr()); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
 /* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
 function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
@@ -3292,16 +3292,42 @@ var RC_WARN_TYPES = {
   restUnder:  { label: 'Rest between shifts under', unit: 'hours', def: 10, msg: 'Not enough rest between shifts' },
   shiftsOver: { label: 'More shifts in the fortnight than', unit: 'shifts', def: 10, msg: 'Too many shifts' },
   startBefore:{ label: 'Starts before', unit: 'time', def: '07:00', msg: 'Early start' },
-  endAfter:   { label: 'Finishes after', unit: 'time', def: '21:00', msg: 'Late finish' }
+  endAfter:   { label: 'Finishes after', unit: 'time', def: '21:00', msg: 'Late finish' },
+  weekHoursOver: { label: 'Hours in one week over', unit: 'hours', def: 38, msg: 'Too many hours in a week' },
+  weekendsOver:  { label: 'Weekend days worked more than', unit: 'days', def: 2, msg: 'Too many weekends' },
+  daysOffUnder:  { label: 'Days off in a week fewer than', unit: 'days', def: 2, msg: 'Not enough days off' },
+  restRunUnder:  { label: 'Rest days in a row (each week) fewer than', unit: 'days', def: 2, msg: 'No 2 rest days in a row' },
+  shiftsUnder:   { label: 'Shifts in the fortnight fewer than', unit: 'shifts', def: 3, msg: 'Not enough shifts' },
+  requestedOff:  { label: 'Rostered on a day they asked off', unit: 'none', def: '', msg: 'Rostered on a requested day off' },
+  notOnDay:      { label: 'Works on a set weekday', unit: 'weekday', def: 'SUN', msg: 'Not available that day' },
+  minStaff:      { label: 'Fewer people working than', unit: 'people', def: 3, msg: 'Understaffed', day: true },
+  maxStaff:      { label: 'More people working than', unit: 'people', def: 8, msg: 'Overstaffed', day: true },
+  openBy:        { label: 'Nobody starting by', unit: 'time', def: '07:30', msg: 'No one to open', day: true },
+  closeFrom:     { label: 'Nobody working until', unit: 'time', def: '17:30', msg: 'No one to close', day: true },
+  dayHoursOver:  { label: 'Total hours on a day over', unit: 'hours', def: 60, msg: 'Too many hours on the day', day: true }
 };
-var RC_WARN_PRESETS = [['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'], ['daysInRow', 6, 'More than 6 days in a row', 'all']];
+var RC_WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+function rcDayMatch(w, d) {
+  var f = w.days || 'all', day = String(d.day || '').toUpperCase().slice(0, 3);
+  if (f === 'all') return true;
+  if (f === 'weekdays') return ['SAT', 'SUN'].indexOf(day) === -1;
+  if (f === 'weekends') return ['SAT', 'SUN'].indexOf(day) !== -1;
+  return f === day;
+}
+function rcWarnDaysLabel(f) { return !f || f === 'all' ? 'every day' : f === 'weekdays' ? 'weekdays' : f === 'weekends' ? 'weekends' : f; }
+var RC_WARN_PRESETS = [['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'], ['daysInRow', 6, 'More than 6 days in a row', 'all'],
+  ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['openBy', '07:30', 'No one starting by 7:30', 'all']];
 function rcWarnRules() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).filter(function (w) { return w && RC_WARN_TYPES[w.type]; }); }
+/* People never warned about (stored as a special entry in the same list) */
+function rcWarnIgnoreAll() { var e = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_ignore'; }); return rcAsArray(e && e.people); }
+function rcPersonName(st) { return (String((st && st.firstName) || '').trim() + ' ' + String((st && st.lastName) || '').trim()).toLowerCase(); }
 function rcHm(v) { var m = String(v || '').match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; }
 /* Warnings for one roster row: [{rule, text, days: [i...]}] */
 function rcRowWarnings(fn, st, rules) {
   rules = rules || rcWarnRules();
   if (!rules.length || !st || isHiddenStaffRow(st)) return [];
-  var name = (String(st.firstName || '').trim() + ' ' + String(st.lastName || '').trim()).toLowerCase();
+  var name = rcPersonName(st);
+  if (rcWarnIgnoreAll().indexOf(name) !== -1) return [];
   var work = (fn.dates || []).map(function (d, i) {
     var sh = st.shifts && st.shifts[i];
     if ((st.absentApproved && st.absentApproved[i]) || (st.unavailable && st.unavailable[i])) return null;
@@ -3313,6 +3339,7 @@ function rcRowWarnings(fn, st, rules) {
     if (w.who === 'casual' && st.employmentType !== 'casual') return;
     if (w.who === 'fulltime' && st.employmentType === 'casual') return;
     if (w.who && w.who.indexOf('p:') === 0 && w.who.slice(2) !== name) return;
+    if (rcAsArray(w.skip).indexOf(name) !== -1) return;
     var v = w.value, hit = [], detail = '';
     switch (w.type) {
       case 'hoursOver': if (total > +v) { detail = total.toFixed(1) + 'h'; } break;
@@ -3323,6 +3350,33 @@ function rcRowWarnings(fn, st, rules) {
       case 'startBefore': days.forEach(function (x) { if (x.p.start < rcHm(v)) hit.push(x.i); }); break;
       case 'endAfter': days.forEach(function (x) { if (x.p.end > rcHm(v)) hit.push(x.i); }); break;
       case 'daysInRow': var run = [], longest = 0; work.concat([null]).forEach(function (x) { if (x) run.push(x.i); else { if (run.length > +v) { hit = hit.concat(run); longest = Math.max(longest, run.length); } run = []; } }); if (longest) detail = longest + ' days in a row'; break;
+      case 'weekHoursOver':
+        [0, 7].forEach(function (s0) { var wk = days.filter(function (x) { return x.i >= s0 && x.i < s0 + 7; }), t = wk.reduce(function (a, x) { return a + x.h; }, 0); if (t > +v) { hit = hit.concat(wk.map(function (x) { return x.i; })); detail = (detail ? detail + ', ' : '') + 'week ' + (s0 ? 2 : 1) + ': ' + t.toFixed(1) + 'h'; } });
+        break;
+      case 'weekendsOver': var we = days.filter(function (x) { return /^(SAT|SUN)/i.test(fn.dates[x.i].day); }); if (we.length > +v) { hit = we.map(function (x) { return x.i; }); detail = we.length + ' weekend days'; } break;
+      case 'daysOffUnder':
+        [0, 7].forEach(function (s0) { var inWk = fn.dates.slice(s0, s0 + 7).length; if (!inWk) return; var worked = days.filter(function (x) { return x.i >= s0 && x.i < s0 + 7; }); var off = inWk - worked.length; if (off < +v) { hit = hit.concat(worked.map(function (x) { return x.i; })); detail = (detail ? detail + ', ' : '') + 'week ' + (s0 ? 2 : 1) + ': ' + off + ' off'; } });
+        break;
+      case 'shiftsUnder': if (days.length < +v) detail = days.length + ' shifts'; break;
+      case 'restRunUnder':
+        // runs of days off across the fortnight (a run may cross from one week into the next)
+        var runs = [], cur = null;
+        work.forEach(function (x, k) { if (!x) { if (!cur) { cur = { a: k, b: k }; runs.push(cur); } else cur.b = k; } else cur = null; });
+        [0, 7].forEach(function (s0) {
+          if (s0 >= work.length) return;
+          var e0 = Math.min(s0 + 6, work.length - 1);
+          var best = runs.filter(function (r0) { return r0.b >= s0 && r0.a <= e0; }).reduce(function (m, r0) { return Math.max(m, r0.b - r0.a + 1); }, 0);
+          if (best < +v) { hit = hit.concat(days.filter(function (x) { return x.i >= s0 && x.i <= e0; }).map(function (x) { return x.i; })); detail = (detail ? detail + ', ' : '') + 'week ' + (s0 ? 2 : 1) + ': ' + (best ? 'longest ' + best : 'no days off'); }
+        });
+        break;
+      case 'notOnDay': days.forEach(function (x) { if (String(fn.dates[x.i].day).toUpperCase().slice(0, 3) === String(v).toUpperCase()) hit.push(x.i); }); break;
+      case 'requestedOff':
+        var u = rcUserForStaff(st), un = u && String(u.username || '').toLowerCase();
+        if (un) rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).forEach(function (q) {
+          if (q.type !== 'unavailability' || (q.status !== 'pending' && q.status !== 'approved') || String(q.username || '').toLowerCase() !== un) return;
+          rcAsArray(q.dates).forEach(function (dd) { var k = fn.dates.findIndex(function (x) { return x.date === rcDateKey(dd); }); if (k !== -1 && work[k]) hit.push(k); });
+        });
+        break;
       case 'restUnder':
         for (var k = 0; k < work.length - 1; k++) {
           if (!work[k] || !work[k + 1]) continue;
@@ -3331,7 +3385,32 @@ function rcRowWarnings(fn, st, rules) {
         }
         break;
     }
-    if (hit.length || (detail && (w.type === 'hoursOver' || w.type === 'hoursUnder' || w.type === 'shiftsOver'))) out.push({ rule: w, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail, days: hit.filter(function (x, i, a) { return a.indexOf(x) === i; }) });
+    if (RC_WARN_TYPES[w.type].day) return;
+    if (hit.length || (detail && /^(hoursOver|hoursUnder|shiftsOver|shiftsUnder)$/.test(w.type))) out.push({ rule: w, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail, days: hit.filter(function (x, i, a) { return a.indexOf(x) === i; }) });
+  });
+  return out;
+}
+/* Whole-day warnings (cover): [{rule, i, text, detail}] */
+function rcDayWarnings(fn, rules) {
+  rules = (rules || rcWarnRules()).filter(function (w) { return !w.off && RC_WARN_TYPES[w.type].day; });
+  if (!rules.length || !fn) return [];
+  var out = [];
+  (fn.dates || []).forEach(function (d, i) {
+    var on = [];
+    (fn.staff || []).forEach(function (st) {
+      if ((st.absentApproved && st.absentApproved[i]) || (st.unavailable && st.unavailable[i])) return;
+      var sh = st.shifts && st.shifts[i], p = parseShiftRange(sh == null ? '' : String(sh)); if (p) on.push({ st: st, p: p, h: netH(String(sh)) });
+    });
+    rules.forEach(function (w) {
+      if (!rcDayMatch(w, d)) return;
+      var v = w.value, bad = false, detail = '';
+      if (w.type === 'minStaff' && on.length < +v) { bad = true; detail = on.length + ' working'; }
+      if (w.type === 'maxStaff' && on.length > +v) { bad = true; detail = on.length + ' working'; }
+      if (w.type === 'openBy' && on.length && !on.some(function (x) { return x.p.start <= rcHm(v); })) { bad = true; detail = 'first start ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return a.start - b.start; })[0].raw).split('-')[0]; }
+      if (w.type === 'closeFrom' && on.length && !on.some(function (x) { return x.p.end >= rcHm(v); })) { bad = true; detail = 'last finish ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return b.end - a.end; })[0].raw).split('-')[1]; }
+      if (w.type === 'dayHoursOver') { var t = on.filter(function (x) { return !isHiddenStaffRow(x.st); }).reduce(function (a, x) { return a + x.h; }, 0); if (t > +v) { bad = true; detail = t.toFixed(1) + 'h'; } }
+      if (bad) out.push({ rule: w, i: i, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail });
+    });
   });
   return out;
 }
@@ -3349,10 +3428,24 @@ function rcRosterWarnings() {
     ws.forEach(function (w) { w.days.forEach(function (i) { var td = document.querySelector('#roster-mount td[data-r="' + r + '"][data-i="' + i + '"]'); if (td) { td.classList.add('rc-warn-cell'); td.title = (td.title ? td.title + '\n' : '') + '⚠ ' + w.text; } }); });
     var dv = document.querySelector('.dv-row[data-r="' + r + '"] .dv-name'); if (dv && !dv.querySelector('.rc-warn')) dv.insertAdjacentHTML('beforeend', ' <span class="rc-warn" title="' + rcEsc(tip) + '">⚠</span>');
   });
+  var dayWs = fn ? rcDayWarnings(fn, rules) : [];
+  dayWs.forEach(function (w) {
+    document.querySelectorAll('#roster-mount table').forEach(function (t) {
+      var th = t.querySelectorAll('thead th')[w.i + 1]; if (!th) return;
+      th.classList.add('rc-warn-th'); th.title = (th.title ? th.title + '\n' : '') + '⚠ ' + w.text + (w.detail ? ' (' + w.detail + ')' : '');
+      if (!th.querySelector('.rc-warn')) th.insertAdjacentHTML('beforeend', '<span class="rc-warn rc-warn-d">⚠</span>');
+    });
+  });
+  var dvIso = fn ? rcDayViewIso(fn) : '', dvHead = document.querySelector('.dv-head');
+  if (dvHead && dvIso && !dvHead.querySelector('.rc-warn-dv')) {
+    var mineDay = dayWs.filter(function (w) { return fn.dates[w.i].iso === dvIso; });
+    if (mineDay.length) dvHead.insertAdjacentHTML('beforeend', '<div class="rc-warn-dv">⚠ ' + mineDay.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>');
+  }
   var bar = document.getElementById('rc-warn-bar');
-  if (!all.length) { if (bar) bar.remove(); return; }
-  var n = all.reduce(function (t, x) { return t + x.ws.length; }, 0);
+  if (!all.length && !dayWs.length) { if (bar) bar.remove(); return; }
+  var n = all.reduce(function (t, x) { return t + x.ws.length; }, 0) + dayWs.length;
   var h = '<div class="rc-warn-head" onclick="RC.warnOpen=!RC.warnOpen;rcRosterWarnings()"><b>⚠ ' + n + ' warning' + (n === 1 ? '' : 's') + '</b> on this roster <span class="rc-small">(' + (RC.warnOpen ? 'hide' : 'show') + ')</span></div>';
+  if (RC.warnOpen) h += dayWs.map(function (w) { var d = fn.dates[w.i]; return '<div class="rc-warn-row"><b>' + rcEsc(d.day + ' ' + d.date) + '</b>: ' + rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : '') + '</div>'; }).join('');
   if (RC.warnOpen) h += all.map(function (x) { return '<div class="rc-warn-row"><b>' + rcEsc(String(x.st.lastName).toUpperCase() + ', ' + x.st.firstName) + '</b>: ' + x.ws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : ''); }).join(' • ') + '</div>'; }).join('');
   if (!bar) { bar = document.createElement('div'); bar.id = 'rc-warn-bar'; var mount = document.getElementById('roster-mount'); mount.parentNode.insertBefore(bar, mount); }
   bar.innerHTML = h;
@@ -3362,12 +3455,14 @@ rcSaveCell = (function (orig) {
   return function (fnId, r, i) {
     var before = [], fn0 = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (f) { return f.id === fnId; });
     if (fn0 && fn0.staff[r]) before = rcRowWarnings(fn0, fn0.staff[r]).map(function (w) { return w.text; });
+    var beforeDay = fn0 ? rcDayWarnings(fn0).filter(function (w) { return w.i === i; }).map(function (w) { return w.text; }) : [];
     var res = orig.apply(this, arguments);
     setTimeout(function () {
       var fn1 = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (f) { return f.id === fnId; });
       var st = fn1 && fn1.staff[r]; if (!st) return;
-      var fresh = rcRowWarnings(fn1, st).filter(function (w) { return before.indexOf(w.text) === -1; });
-      if (fresh.length) toast('⚠ ' + st.firstName + ': ' + fresh.map(function (w) { return w.text + (w.detail ? ' (' + w.detail + ')' : ''); }).join(', '));
+      var fresh = rcRowWarnings(fn1, st).filter(function (w) { return before.indexOf(w.text) === -1; })
+        .concat(rcDayWarnings(fn1).filter(function (w) { return w.i === i && beforeDay.indexOf(w.text) === -1; }));
+      if (fresh.length) toast('⚠ ' + (fresh.every(function (w) { return w.i !== undefined; }) ? fn1.dates[i].day + ' ' + fn1.dates[i].date : st.firstName) + ': ' + fresh.map(function (w) { return w.text + (w.detail ? ' (' + w.detail + ')' : ''); }).join(', '));
     }, 200);
     return res;
   };
@@ -3401,18 +3496,27 @@ function rcWarnWho(w) { return !w.who || w.who === 'all' ? 'everyone' : w.who ==
 function rcRenderWarningsPage() {
   var el = document.getElementById('warnings-inner'); if (!el) return;
   var rules = rcAsArray(safeGetJSON('retail_roster_warnings_v1', []));
-  var people = {}; rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).forEach(function (f) { (f.staff || []).forEach(function (st) { if (!isHiddenStaffRow(st)) people[(st.firstName + ' ' + st.lastName).toLowerCase()] = st.firstName + ' ' + st.lastName; }); });
+  var people = {}; rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).forEach(function (f) { (f.staff || []).forEach(function (st) { if (!isHiddenStaffRow(st)) people[rcPersonName(st)] = st.firstName + ' ' + st.lastName; }); });
   var h = '<div class="card"><div class="rc-h">YOUR WARNINGS</div><div class="rc-small">Checked live on the roster for managers and masters only (never on printouts). A ⚠ shows next to the name, the cells involved get an orange outline, and saving a cell that sets one off tells you straight away.</div>';
-  h += rules.length ? rules.map(function (w, k) {
-    var t = RC_WARN_TYPES[w.type] || { label: w.type, unit: '' };
-    return '<div class="rc-row"><div><b>' + rcEsc(w.msg || t.msg) + '</b><br><span class="rc-small">' + rcEsc(t.label) + ' ' + rcEsc(String(w.value)) + (t.unit === 'time' ? '' : ' ' + t.unit) + ' • ' + rcEsc(rcWarnWho(w)) + '</span></div><div class="rc-btns">'
-      + '<label class="rc-small"><input type="checkbox"' + (w.off ? '' : ' checked') + ' onchange="rcWarnToggle(' + k + ',this.checked)"> on</label><button class="rc-b rc-white" onclick="rcWarnDelete(' + k + ')">DELETE</button></div></div>';
+  var shown = rules.map(function (w, k) { return { w: w, k: k }; }).filter(function (x) { return x.w && RC_WARN_TYPES[x.w.type]; });
+  h += shown.length ? shown.map(function (x) {
+    var w = x.w, k = x.k, t = RC_WARN_TYPES[w.type];
+    var desc = t.label + (t.unit === 'none' ? '' : ' ' + w.value + (/^(time|weekday)$/.test(t.unit) ? '' : ' ' + t.unit)) + ' • ' + (t.day ? rcWarnDaysLabel(w.days) : rcWarnWho(w))
+      + (rcAsArray(w.skip).length ? ' • ignores ' + rcAsArray(w.skip).map(function (k) { return people[k] || k; }).join(', ') : '');
+    return '<div class="rc-row"><div><b>' + rcEsc(w.msg || t.msg) + '</b><br><span class="rc-small">' + rcEsc(desc) + '</span></div><div class="rc-btns">'
+      + '<label class="rc-small"><input type="checkbox"' + (w.off ? '' : ' checked') + ' onchange="rcWarnToggle(' + k + ',this.checked)"> on</label>' + (t.day ? '' : '<button class="rc-b rc-white" onclick="rcWarnIgnore(' + k + ')">IGNORE…</button>') + '<button class="rc-b rc-white" onclick="rcWarnDelete(' + k + ')">DELETE</button></div></div>';
   }).join('') : '<div class="rc-small" style="margin-top:6px"><i>None yet. Add one below or use a quick one.</i></div>';
+  var ign = rcWarnIgnoreAll();
+  h += '</div><div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NEVER WARN ABOUT</div><button class="rc-b rc-white" onclick="rcWarnIgnore(-1)">CHOOSE PEOPLE…</button></div>'
+    + '<div class="rc-small">' + (ign.length ? ign.map(function (k) { return rcEsc(people[k] || k); }).join(', ') : 'Nobody - everyone is checked.') + ' Each warning above can also ignore people with its IGNORE… button. Whole-day cover warnings always count everyone.</div>';
   h += '</div><div class="card"><div class="rc-h">ADD A WARNING</div>'
     + '<div class="rc-small">Quick add: ' + RC_WARN_PRESETS.map(function (p, k) { return '<button class="rc-b rc-white" style="margin:3px 4px 0 0" onclick="rcWarnPreset(' + k + ')">' + rcEsc(p[2]) + '</button>'; }).join('') + '</div>'
-    + '<div class="tm-row" style="border:none;padding:10px 0 0"><select id="wn-type" class="rc-to-in" style="margin:0;flex:2" onchange="rcWarnTypeUI()">' + Object.keys(RC_WARN_TYPES).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</select>'
-    + '<input id="wn-value" class="rc-to-in" style="margin:0;flex:1"><span id="wn-unit" class="rc-small"></span></div>'
-    + '<div class="tm-row" style="border:none;padding:6px 0 0"><select id="wn-who" class="rc-to-in" style="margin:0;flex:1"><option value="all">Everyone</option><option value="fulltime">Full time only</option><option value="casual">Casuals only</option>'
+    + '<div class="tm-row" style="border:none;padding:10px 0 0"><select id="wn-type" class="rc-to-in" style="margin:0;flex:2" onchange="rcWarnTypeUI()">'
+    + '<optgroup label="Each person">' + Object.keys(RC_WARN_TYPES).filter(function (k) { return !RC_WARN_TYPES[k].day; }).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</optgroup>'
+    + '<optgroup label="Each day (cover)">' + Object.keys(RC_WARN_TYPES).filter(function (k) { return RC_WARN_TYPES[k].day; }).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</optgroup></select>'
+    + '<input id="wn-value" class="rc-to-in" style="margin:0;flex:1"><select id="wn-wd" class="rc-to-in" style="margin:0;flex:1;display:none">' + RC_WEEKDAYS.map(function (d) { return '<option>' + d + '</option>'; }).join('') + '</select><span id="wn-unit" class="rc-small"></span></div>'
+    + '<div class="tm-row" style="border:none;padding:6px 0 0"><select id="wn-days" class="rc-to-in" style="margin:0;flex:1;display:none"><option value="all">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option>' + RC_WEEKDAYS.map(function (d) { return '<option value="' + d + '">' + d + ' only</option>'; }).join('') + '</select>'
+    + '<select id="wn-who" class="rc-to-in" style="margin:0;flex:1"><option value="all">Everyone</option><option value="fulltime">Full time only</option><option value="casual">Casuals only</option>'
     + Object.keys(people).sort().map(function (k) { return '<option value="p:' + rcEsc(k) + '">' + rcEsc(people[k]) + '</option>'; }).join('') + '</select>'
     + '<input id="wn-msg" class="rc-to-in" style="margin:0;flex:2" placeholder="Message, e.g. Employee exceeds normal hours"></div>'
     + '<button class="rc-b rc-red rc-wide" style="margin-top:8px" onclick="rcWarnAdd()">ADD WARNING</button></div>'
@@ -3421,17 +3525,22 @@ function rcRenderWarningsPage() {
 }
 function rcWarnTypeUI() {
   var t = RC_WARN_TYPES[(document.getElementById('wn-type') || {}).value]; if (!t) return;
-  var v = document.getElementById('wn-value'); v.type = t.unit === 'time' ? 'time' : 'number'; v.step = t.unit === 'hours' ? '0.5' : '1'; v.value = t.def;
-  document.getElementById('wn-unit').textContent = t.unit === 'time' ? '' : t.unit;
+  var v = document.getElementById('wn-value'), wd = document.getElementById('wn-wd');
+  v.style.display = /^(none|weekday)$/.test(t.unit) ? 'none' : ''; wd.style.display = t.unit === 'weekday' ? '' : 'none';
+  if (!/^(none|weekday)$/.test(t.unit)) { v.type = t.unit === 'time' ? 'time' : 'number'; v.step = t.unit === 'hours' ? '0.5' : '1'; v.value = t.def; }
+  document.getElementById('wn-unit').textContent = /^(time|none|weekday)$/.test(t.unit) ? '' : t.unit;
+  document.getElementById('wn-days').style.display = t.day ? '' : 'none';
+  document.getElementById('wn-who').style.display = t.day ? 'none' : '';
   document.getElementById('wn-msg').placeholder = 'Message, e.g. ' + t.msg;
 }
 function rcWarnSave(list, msg) { safeSetJSON('retail_roster_warnings_v1', list); if (msg) toast(msg); rcRenderWarningsPage(); }
 function rcWarnAdd() {
   var type = document.getElementById('wn-type').value, t = RC_WARN_TYPES[type], raw = document.getElementById('wn-value').value;
-  var value = t.unit === 'time' ? raw : parseFloat(raw);
-  if (t.unit === 'time' ? rcHm(value) === null : !(value >= 0)) { toast('Enter a ' + (t.unit === 'time' ? 'time' : 'number')); return; }
+  var value = t.unit === 'time' ? raw : t.unit === 'none' ? '' : t.unit === 'weekday' ? document.getElementById('wn-wd').value : parseFloat(raw);
+  if (t.unit === 'time' ? rcHm(value) === null : /^(none|weekday)$/.test(t.unit) ? false : !(value >= 0)) { toast('Enter a ' + (t.unit === 'time' ? 'time' : 'number')); return; }
   var whoSel = document.getElementById('wn-who'), who = whoSel.value;
-  var w = { id: 'w' + Date.now().toString(36), type: type, value: value, who: who, msg: document.getElementById('wn-msg').value.trim() || t.msg };
+  var w = { id: 'w' + Date.now().toString(36), type: type, value: value, who: t.day ? 'all' : who, msg: document.getElementById('wn-msg').value.trim() || t.msg };
+  if (t.day) w.days = document.getElementById('wn-days').value;
   if (who.indexOf('p:') === 0) w.whoName = whoSel.options[whoSel.selectedIndex].text;
   rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([w]), 'Warning added');
 }
@@ -3439,8 +3548,97 @@ function rcWarnPreset(k) {
   var p = RC_WARN_PRESETS[k];
   rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([{ id: 'w' + Date.now().toString(36), type: p[0], value: p[1], who: p[3], msg: p[2] }]), 'Warning added');
 }
+/* Pick people to ignore: k = rule index, or -1 for every warning */
+function rcWarnIgnore(k) {
+  var list = rcAsArray(safeGetJSON('retail_roster_warnings_v1', []));
+  var people = {}; rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).forEach(function (f) { (f.staff || []).forEach(function (st) { if (!isHiddenStaffRow(st)) people[rcPersonName(st)] = st.firstName + ' ' + st.lastName; }); });
+  var cur = k === -1 ? rcWarnIgnoreAll() : rcAsArray((list[k] || {}).skip);
+  var names = Object.keys(people).sort();
+  if (!names.length) { toast('No staff on the rosters yet'); return; }
+  showCustomPrompt(k === -1 ? 'Never warn about' : 'Ignore for: ' + rcEsc((list[k] || {}).msg || ''), '<div class="rc-small" style="margin-bottom:6px">Ticked people won\'t get ' + (k === -1 ? 'any warnings' : 'this warning') + '.</div><div style="max-height:50vh;overflow:auto">'
+    + names.map(function (n) { return '<label class="rc-keep" style="margin:4px 0"><input type="checkbox" class="rc-ign" value="' + rcEsc(n) + '"' + (cur.indexOf(n) !== -1 ? ' checked' : '') + '> ' + rcEsc(people[n]) + '</label>'; }).join('') + '</div>', function (v) {
+    if (v === null) return;
+    var pick = [].map.call(document.querySelectorAll('.rc-ign:checked'), function (x) { return x.value; });
+    var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', []));
+    if (k === -1) {
+      var e = l.find(function (w) { return w && w.type === '_ignore'; });
+      if (!e) { e = { id: 'ignore', type: '_ignore', people: [] }; l.push(e); }
+      e.people = pick;
+    } else { if (!l[k]) return; if (pick.length) l[k].skip = pick; else delete l[k].skip; }
+    rcWarnSave(l, pick.length ? 'Ignoring ' + pick.length + ' ' + (pick.length === 1 ? 'person' : 'people') : 'Nobody ignored');
+  });
+}
 function rcWarnToggle(k, on) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); if (!l[k]) return; if (on) delete l[k].off; else l[k].off = true; rcWarnSave(l); }
 function rcWarnDelete(k) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); l.splice(k, 1); rcWarnSave(l, 'Deleted'); }
+
+/* ---------- Day overview (managers and masters): click a date ---------- */
+function rcStoreHours() { var e = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_hours'; }); return e || {}; }
+function rcDayOverview(i) {
+  var fn = getSelectedFortnight(); if (!fn || !fn.dates[i] || !rcIsMgr()) return;
+  var d = fn.dates[i], on = [], off = [], ua = [], ab = [];
+  (fn.staff || []).forEach(function (st) {
+    var sh = String(st.shifts && st.shifts[i] != null ? st.shifts[i] : 'OFF'), p = parseShiftRange(sh);
+    var nm = st.firstName + ' ' + String(st.lastName || '').charAt(0) + String(st.lastName || '').slice(1).toLowerCase(), hid = isHiddenStaffRow(st);
+    if ((st.absentApproved && st.absentApproved[i]) || rcIsAbsentVal(sh)) ab.push(nm);
+    else if ((st.unavailable && st.unavailable[i]) || rcIsUAVal(sh)) ua.push(nm);
+    else if (p) on.push({ nm: nm, p: p, sh: sh, hid: hid, h: netH(sh) });
+    else off.push(nm);
+  });
+  on.sort(function (a, b) { return a.p.start - b.p.start || a.p.end - b.p.end; });
+  var hrs = rcStoreHours();
+  var openT = rcHm(hrs.open);
+  var first = on.length ? on[0].p.start : null, last = on.length ? Math.max.apply(null, on.map(function (x) { return x.p.end; })) : null;
+  // Two groups only. With an opening time set: opening = starts by it, everyone else closing.
+  // Without one: each person goes to whichever end of the day their shift is nearer (start vs first start, finish vs last finish).
+  var split = openT;
+  var opening = on.filter(function (x) { return openT !== null ? x.p.start <= openT : (x.p.start - first) <= (last - x.p.end); });
+  var closing = on.filter(function (x) { return opening.indexOf(x) === -1; });
+  on.forEach(function (x) { x.allDay = x.p.start <= first && x.p.end >= last && on.length > 1; });
+  var t = function (m) { return fmt(String(Math.floor((m % 1440) / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0') + '-00:00').split('-')[0]; };
+  var person = function (x) { return '<div class="dov-p"><span>' + rcEsc(x.nm) + (x.hid ? ' <span class="ms-tag" style="background:#555">HIDDEN</span>' : '') + (x.allDay ? ' <span class="ms-tag" style="background:#111">ALL DAY</span>' : '') + '</span><b>' + rcEsc(fmt(x.sh)) + '</b></div>'; };
+  var group = function (title, list, cls) { return '<div class="dov-g ' + cls + '"><div class="dov-gh">' + title + ' <span>' + list.length + '</span></div>' + (list.length ? list.map(person).join('') : '<div class="rc-small">Nobody</div>') + '</div>'; };
+  // people on, hour by hour
+  var bars = '';
+  if (on.length) {
+    var h0 = Math.floor(first / 60), h1 = Math.ceil(last / 60), max = 1, cnt = [];
+    for (var hh = h0; hh < h1; hh++) { var n = on.filter(function (x) { return x.p.start < (hh + 1) * 60 && x.p.end > hh * 60; }).length; cnt.push([hh, n]); if (n > max) max = n; }
+    bars = '<div class="dov-bars">' + cnt.map(function (c) { return '<div class="dov-bar" title="' + rcEsc(t(c[0] * 60)) + ': ' + c[1] + ' on"><div style="height:' + Math.round(c[1] / max * 100) + '%"><span>' + c[1] + '</span></div><small>' + (c[0] % 24) + '</small></div>'; }).join('') + '</div>';
+  }
+  var total = on.filter(function (x) { return !x.hid; }).reduce(function (a, x) { return a + x.h; }, 0);
+  var dws = rcDayWarnings(fn).filter(function (w) { return w.i === i; });
+  var h = '<div class="dov-head"><div><div class="dov-day">' + rcEsc(d.day + ' ' + d.date) + '</div><div class="rc-small">' + rcEsc(rcFnRange(fn)) + '</div></div><button class="rc-x" style="font-size:22px" onclick="rcCloseDayOverview()">✕</button></div>'
+    + '<div class="dov-stats"><div><b>' + on.length + '</b><small>working</small></div><div><b>' + opening.length + '</b><small>opening</small></div><div><b>' + closing.length + '</b><small>closing</small></div><div><b>' + total.toFixed(1) + 'h</b><small>hours</small></div></div>'
+    + (dws.length ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ ' + dws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>' : '')
+    + bars
+    + group('OPENING' + (split !== null ? ' <small>starts by ' + rcEsc(t(split)) + '</small>' : on.length ? ' <small>nearer the ' + rcEsc(t(first)) + ' start</small>' : ''), opening, 'dov-open')
+    + group('CLOSING' + (split !== null ? ' <small>starts after ' + rcEsc(t(split)) + '</small>' : on.length ? ' <small>nearer the ' + rcEsc(t(last)) + ' finish</small>' : ''), closing, 'dov-close')
+    + (ua.length || ab.length || off.length ? '<div class="dov-g"><div class="dov-gh">NOT WORKING <span>' + (ua.length + ab.length + off.length) + '</span></div><div class="rc-small">'
+      + (ab.length ? '<b>Absent:</b> ' + rcEsc(ab.join(', ')) + '<br>' : '') + (ua.length ? '<b>Unavailable:</b> ' + rcEsc(ua.join(', ')) + '<br>' : '') + (off.length ? '<b>Off:</b> ' + rcEsc(off.join(', ')) : '') + '</div></div>' : '')
+    + '<div class="dov-set rc-small">Opening shift = starts by <input type="time" id="dov-open" value="' + rcEsc(hrs.open || '') + '"> <button class="rc-b rc-white" onclick="rcSaveStoreHours(' + i + ')">SAVE</button><br>Everyone else is closing. Leave blank and each person goes to the end of the day their shift is nearer.</div>'
+    + '<div class="dov-nav"><button class="rc-b rc-white"' + (i > 0 ? ' onclick="rcDayOverview(' + (i - 1) + ')"' : ' disabled') + '>‹ PREVIOUS DAY</button><button class="rc-b rc-white"' + (i < fn.dates.length - 1 ? ' onclick="rcDayOverview(' + (i + 1) + ')"' : ' disabled') + '>NEXT DAY ›</button></div>';
+  var ov = document.getElementById('rc-day-ov');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'rc-day-ov'; ov.onclick = function (e) { if (e.target === ov) rcCloseDayOverview(); }; document.body.appendChild(ov); }
+  ov.innerHTML = '<div class="dov-box">' + h + '</div>';
+  ov.classList.add('show');
+}
+function rcCloseDayOverview() { var ov = document.getElementById('rc-day-ov'); if (ov) ov.classList.remove('show'); }
+function rcSaveStoreHours(i) {
+  var o = document.getElementById('dov-open').value;
+  var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])), e = l.find(function (w) { return w && w.type === '_hours'; });
+  if (!e) { e = { id: 'hours', type: '_hours' }; l.push(e); }
+  if (o) e.open = o; else delete e.open; delete e.close;
+  safeSetJSON('retail_roster_warnings_v1', l); toast(o ? 'Opening shifts start by ' + o : 'Opening and closing worked out from each day'); rcDayOverview(i);
+}
+function rcDayHeaders() {
+  if (!rcIsMgr() || RC.pdfMode) return;
+  var fn = getSelectedFortnight(); if (!fn) return;
+  document.querySelectorAll('#roster-mount table').forEach(function (t) {
+    var ths = t.querySelectorAll('thead th');
+    fn.dates.forEach(function (d, i) { var th = ths[i + 1]; if (!th || th.dataset.dov) return; th.dataset.dov = '1'; th.classList.add('rc-dov-th'); th.title = (th.title ? th.title + '\n' : '') + 'Click for the day overview'; th.addEventListener('click', function () { rcDayOverview(i); }); });
+  });
+  var dh = document.querySelector('.dv-head'), di = RC.dayFn === fn.id ? RC.dayIdx : null;
+  if (dh && di != null && !dh.querySelector('.dov-btn')) dh.insertAdjacentHTML('beforeend', '<button class="rc-b rc-white dov-btn" style="margin-top:6px" onclick="rcDayOverview(' + di + ')">DAY OVERVIEW</button>');
+}
 
 /* ---------- Access log page (masters) ---------- */
 renderOptions = (function (orig) {
@@ -3833,6 +4031,15 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-can-edit .dv-row.dv-edit:hover{box-shadow:inset 4px 0 0 #E30613,0 0 12px rgba(227,6,19,.18)}'
     + '.rc-warn{display:inline-block;background:#F59E0B;color:#111;border-radius:9999px;padding:1px 7px;font-size:9px;font-weight:900;vertical-align:middle;cursor:help}'
     + '#roster-mount td.rc-warn-cell{outline:2px solid #F59E0B;outline-offset:-3px}@media print{.rc-warn,#rc-warn-bar{display:none !important}#roster-mount td.rc-warn-cell{outline:none !important}}'
+    + '#roster-mount th.rc-warn-th{box-shadow:inset 0 -4px 0 #F59E0B}.rc-warn-d{display:block;margin:2px auto 0;width:max-content;padding:0 6px}.rc-warn-dv{margin-top:4px;font-size:12px;font-weight:800;color:#8a5a00}@media print{#roster-mount th.rc-warn-th{box-shadow:none !important}}'
+    + '#roster-mount th.rc-dov-th{cursor:pointer}#roster-mount th.rc-dov-th:hover{filter:brightness(.92);text-decoration:underline}'
+    + '#rc-day-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px}#rc-day-ov.show{display:flex}'
+    + '.dov-box{background:#fff;border:3px solid #111;border-radius:18px;box-shadow:6px 6px 0 #111;max-width:560px;width:100%;padding:16px}.dov-head{display:flex;justify-content:space-between;align-items:flex-start}.dov-day{font-family:"Arial Black",Impact,sans-serif;font-size:24px;font-style:italic}'
+    + '.dov-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}.dov-stats div{background:#111;color:#fff;border-radius:12px;padding:8px 4px;text-align:center}.dov-stats b{display:block;font-size:20px}.dov-stats small{font-size:10px;font-weight:700;text-transform:uppercase;opacity:.8}'
+    + '.dov-bars{display:flex;align-items:flex-end;gap:3px;height:90px;margin:24px 0 18px;padding:0 2px;border-bottom:2px solid #111}.dov-bar{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative}.dov-bar>div{width:100%;background:#E30613;border-radius:4px 4px 0 0;min-height:2px;position:relative}.dov-bar span{position:absolute;top:-15px;left:0;right:0;text-align:center;font-size:10px;font-weight:900}.dov-bar small{position:absolute;bottom:-16px;font-size:9px;color:#666}'
+    + '.dov-g{border-top:2px solid #eee;padding:8px 0}.dov-gh{font-weight:900;font-size:12px;letter-spacing:.4px;margin-bottom:4px}.dov-gh>span{background:#111;color:#fff;border-radius:9999px;padding:1px 8px;margin-left:4px}.dov-gh small{font-weight:600;color:#777;letter-spacing:0}'
+    + '.dov-open .dov-gh>span{background:#1a7f37}.dov-close .dov-gh>span{background:#E30613}.dov-p{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;border-bottom:1px dashed #eee}'
+    + '.dov-set{border-top:2px solid #eee;padding-top:8px;margin-top:4px}.dov-set input{border:2px solid #111;border-radius:9999px;padding:2px 8px}.dov-nav{display:flex;justify-content:space-between;margin-top:10px}@media print{#rc-day-ov{display:none !important}}'
     + '#rc-warn-bar{margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#FFF4DB;border:2px solid #F59E0B;font-size:12px}body.rc-mobile #rc-warn-bar{margin:8px 8px 0}.rc-warn-head{cursor:pointer}.rc-warn-row{padding:4px 0;border-top:1px solid #f3d9a4;margin-top:4px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
