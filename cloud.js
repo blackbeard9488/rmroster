@@ -2085,7 +2085,7 @@ function rcMoreSheet() {
   var sh = document.createElement('div'); sh.id = 'rc-more';
   sh.innerHTML = '<div class="rc-more-card"><div class="rc-small" style="margin-bottom:8px">Signed in as <b>' + rcEsc(p.username || '') + '</b></div>'
     + '<button data-a="account">My account &amp; password</button>'
-    + '<button data-a="avail">My availability</button>'
+    + (rcIsCasual(p) ? '<button data-a="avail">My availability</button>' : '')
     + (rcIsMgr() ? '' : '<button data-a="tomorrow">Tomorrow\'s buddies</button>')
     + '<button data-a="logout" class="rc-more-out">Log out</button><button data-a="close" class="rc-more-close">Close</button></div>';
   sh.onclick = function (e) {
@@ -3398,8 +3398,8 @@ var RC_WARN_TYPES = {
   shiftsUnder:   { label: 'Shifts in the fortnight fewer than', unit: 'shifts', def: 3, msg: 'Not enough shifts' },
   requestedOff:  { label: 'Rostered on a day they asked off', unit: 'none', def: '', msg: 'Rostered on a requested day off' },
   notOnDay:      { label: 'Works on a set weekday', unit: 'weekday', def: 'SUN', msg: 'Not available that day' },
-  availability:  { label: 'Rostered outside their availability (set by staff)', unit: 'none', def: '', msg: 'Rostered outside their availability' },
-  availHours:    { label: 'More hours than they asked for (set by staff)', unit: 'none', def: '', msg: 'More hours than they asked for' },
+  availability:  { label: 'Rostered outside their availability (casuals)', unit: 'none', def: '', msg: 'Rostered outside their availability' },
+  availHours:    { label: 'More hours than they asked for (casuals)', unit: 'none', def: '', msg: 'More hours than they asked for' },
   minStaff:      { label: 'Fewer people working than', unit: 'people', def: 3, msg: 'Understaffed', day: true },
   maxStaff:      { label: 'More people working than', unit: 'people', def: 8, msg: 'Overstaffed', day: true },
   openBy:        { label: 'Nobody starting by', unit: 'time', def: '07:30', msg: 'No one to open', day: true },
@@ -4145,7 +4145,7 @@ function rcTidyControls() {
   if (mgr && fn) extra.push(['rc-tb-draft', fn.draft ? 'PUBLISH TO STAFF' : 'MAKE DRAFT (hide from staff)', function () { rcToolsOpen(false); rcPublishFn(!!fn.draft); }]);
   if (rcIsManagerUp()) extra.push(['rc-tb-compare', 'COMPARE ROSTERS', function () { rcToolsOpen(false); RC.cmpA = null; RC.cmpB = null; openPage('compare-page'); }]);
   if (mgr) extra.push(['rc-tb-avail', 'STAFF AVAILABILITY', function () { rcToolsOpen(false); openPage('availlist-page'); }]);
-  if (mgr && fn) extra.push(['rc-tb-cuts', 'SUGGEST HOURS TO CUT', function () { rcToolsOpen(false); openPage('cuts-page'); }]);
+  if (mgr && fn) extra.push(['rc-tb-cuts', 'CUT HOURS ON THIS ROSTER', function () { rcToolsOpen(false); openPage('cuts-page'); }]);
   if (mgr && fn) extra.push(['rc-tb-day', 'DAY OVERVIEW (today)', function () { rcToolsOpen(false); var k = fn.dates.findIndex(function (d) { return d.iso === getISO(); }); rcDayOverview(k >= 0 ? k : 0); }]);
   extra.push(['rc-tb-pdf', 'EXPORT PDF', function () { rcToolsOpen(false); exportPDF(); }]);
   if (mgr) extra.push(['rc-tb-xlsx', 'EXPORT EXCEL', function () { rcToolsOpen(false); rcExportExcel(); }]);
@@ -4818,7 +4818,9 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
 /* ---------- Availability: staff set their usual week; managers see it, get warnings, and suggestions respect it ---------- */
 /* availability/<person key> = { week: {MON: {mode: 'off'|'between', from, to}}, maxHrs, note, ts, by } (days not listed = any time) */
 RC.avail = RC.avail || {};
-function rcAvailOf(st) { var k = rcPersonKey(st); return (k && RC.avail[k]) || null; }
+function rcIsCasual(p) { return String((p && p.employmentType) || '').toLowerCase() === 'casual'; }
+/* Availability is for casual staff only: anyone else is treated as available any time */
+function rcAvailOf(st) { if (!rcIsCasual(st)) return null; var k = rcPersonKey(st); return (k && RC.avail[k]) || null; }
 /* null = any time, {off: true}, or {from, to} in minutes */
 function rcAvailDay(st, d) {
   var a = rcAvailOf(st), x = a && a.week && a.week[String((d && d.day) || d || '').toUpperCase().slice(0, 3)];
@@ -4904,6 +4906,7 @@ rcRenderLiveInner = (function (orig) {
 /* Edit availability: your own, or (managers) anyone on the team's rosters, including hidden staff */
 function rcOpenAvail(key, name) {
   var me = RC.session.profile, mine = rcPersonKey(me);
+  if (!key && !rcIsCasual(me)) { toast('Availability is for casual staff'); return; }
   key = key || mine;
   if (!key) { toast('Your account needs a first and last name first'); return; }
   RC.availEdit = { key: key, name: name || ((me.firstName || '') + ' ' + (me.lastName || '')).trim(), self: key === mine, draft: null, dirty: false };
@@ -4981,7 +4984,7 @@ function rcAvailSave() {
 }
 /* My Schedule: a small summary with an edit button */
 function rcAvailCard() {
-  if (RC.availErr) return '';
+  if (RC.availErr || !rcIsCasual(RC.session.profile)) return '';
   var mk = rcPersonKey(RC.session.profile); if (!mk) return '';
   var a = RC.avail[mk], wk = (a && a.week) || {};
   var chips = RC_WEEKDAYS.map(function (k) { var x = rcAvailDay(RC.session.profile, k); return '<span class="av-chip ' + (!x ? 'av-c-any' : x.off ? 'av-c-off' : 'av-c-part') + '"><b>' + k.charAt(0) + k.slice(1).toLowerCase() + '</b>' + (!x ? '✓' : x.off ? '✕' : '<small>' + rcEsc(rcHmText(x.from)) + '<br>' + rcEsc(rcHmText(x.to)) + '</small>') + '</span>'; }).join('');
@@ -4990,7 +4993,7 @@ function rcAvailCard() {
 }
 /* Managers: everyone's availability at a glance */
 function rcAvailPeople() {
-  var out = {}, add = function (p, hidden) { var k = rcPersonKey(p); if (k && !out[k]) out[k] = { key: k, name: (p.firstName + ' ' + p.lastName).trim(), hidden: !!hidden, st: p }; };
+  var out = {}, add = function (p, hidden) { var k = rcPersonKey(p); if (k && !out[k] && rcIsCasual(p)) out[k] = { key: k, name: (p.firstName + ' ' + p.lastName).trim(), hidden: !!hidden, st: p }; };
   var fn = getSelectedFortnight();
   ((fn && fn.staff) || []).forEach(function (st) { add(st, isHiddenStaffRow(st)); });
   rcTeamPeople().forEach(function (u) { if (rcRoleOf(u) !== 'master' || rcHomeTeam(u) === RC.team) add(u, false); });
@@ -5000,7 +5003,7 @@ function rcRenderAvailList() {
   var el = document.getElementById('availlist-page-inner'); if (!el) return;
   if (RC.availErr) { el.innerHTML = '<div class="card"><b>Availability isn\'t switched on yet.</b><div class="rc-small">Publish the latest database rules in Firebase (see SETUP.md), then reload. (' + rcEsc(RC.availErr) + ')</div></div><div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>'; return; }
   var people = rcAvailPeople(), set = people.filter(function (p) { return RC.avail[p.key]; }).length;
-  var h = '<div class="card"><div class="rc-small">' + set + ' of ' + people.length + ' people have set their availability. Staff set their own from <b>My Schedule</b>; tap a name to set it for someone (e.g. hidden staff). Shifts that don\'t fit raise a warning, and shaded cells on the roster show the times they can\'t work.</div>'
+  var h = '<div class="card"><div class="rc-small">' + set + ' of ' + people.length + ' casuals have set their availability (it only applies to casual staff). They set their own from <b>My Schedule</b>; tap a name to set it for someone (e.g. hidden staff). Shifts that don\'t fit raise a warning, and shaded cells on the roster show the times they can\'t work.</div>'
     + '<div style="overflow:auto;margin-top:8px"><table class="cmp-t av-t"><tr><th>Person</th>' + RC_WEEKDAYS.map(function (k) { return '<th>' + k + '</th>'; }).join('') + '<th>Max</th></tr>'
     + people.map(function (p) {
       var a = RC.avail[p.key];
@@ -5008,7 +5011,7 @@ function rcRenderAvailList() {
         + RC_WEEKDAYS.map(function (k) { if (!a) return '<td class="av-c-none">-</td>'; var x = rcAvailDay(p.st, k); return '<td class="' + (!x ? 'av-c-any' : x.off ? 'av-c-off' : 'av-c-part') + '">' + (!x ? '✓' : x.off ? '✕' : rcEsc(rcHmText(x.from) + '-' + rcHmText(x.to))) + '</td>'; }).join('')
         + '<td>' + (a && a.maxHrs ? rcEsc(a.maxHrs) + 'h' : a ? '-' : '<span class="rc-small">not set</span>') + '</td></tr>';
     }).join('') + '</table></div><div class="rc-small" style="margin-top:6px">✓ any time • ✕ not available • times = only then</div></div>'
-    + '<div class="card"><button onclick="rcOpenAvail()" class="rc-b rc-white rc-wide">MY OWN AVAILABILITY</button></div><div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+    + (rcIsCasual(RC.session.profile) ? '<div class="card"><button onclick="rcOpenAvail()" class="rc-b rc-white rc-wide">MY OWN AVAILABILITY</button></div>' : '') + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
   el.innerHTML = h;
 }
 
@@ -5066,34 +5069,91 @@ function rcCutPlan(fn, who) {
   });
   return { plan: plan.sort(function (x, y) { return (x.i - y.i) || (y.save - x.save); }), dayRules: dayRules };
 }
+/* Cuts are staged as a draft on one roster (this device only): the roster shows them, nothing is saved until SUBMIT */
+function rcCutStageAll() { try { return JSON.parse(localStorage.getItem('rc_cut_stage_v1') || '{}') || {}; } catch (e) { return {}; } }
+function rcCutStage(fnId) { var all = rcCutStageAll(); return all[fnId] || {}; }
+function rcCutStageSet(fnId, items) { var all = rcCutStageAll(); if (Object.keys(items).length) all[fnId] = items; else delete all[fnId]; try { localStorage.setItem('rc_cut_stage_v1', JSON.stringify(all)); } catch (e) {} }
+function rcCutPickFn(id) {
+  safeSet('retail_roster_currentFortnightId', id);
+  var sel = document.getElementById('fortnight-select'); if (sel) sel.value = id;
+  rcRenderCuts();
+}
 function rcRenderCuts() {
   var el = document.getElementById('cuts-page-inner'); if (!el) return;
   var fn = getSelectedFortnight(); if (!fn) { el.innerHTML = '<div class="card">No roster selected.</div>'; return; }
-  var who = RC.cutWho || 'all', res = rcCutPlan(fn, who), plan = res.plan;
+  var who = RC.cutWho || 'all', res = rcCutPlan(fn, who), plan = res.plan, stage = rcCutStage(fn.id);
   RC.cutPlan = { fnId: fn.id, plan: plan };
   var total = plan.reduce(function (t, x) { return t + x.save; }, 0);
-  var h = '<div class="card cut-hero"><div class="cut-big">' + (plan.length ? '−' + total.toFixed(1) + 'h' : '0h') + '</div><div><b>' + rcEsc(rcFnRange(fn)) + '</b><div class="rc-small">'
-    + (plan.length ? plan.length + ' change' + (plan.length === 1 ? '' : 's') + ' that keep every daily requirement below. Each one was checked together with the ones above it, so you can apply any of them, or all.' : 'Nothing can be cut without breaking a daily requirement.') + ' Shifts that have started (or start within the hour) are left alone.</div></div></div>';
+  var sk = Object.keys(stage), staged = sk.reduce(function (t, k) { return t + (+stage[k].save || 0); }, 0);
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
+  var h = '<div class="card"><label class="cut-pick"><span>ROSTER</span><select class="rc-to-in" onchange="rcCutPickFn(this.value)">'
+    + fns.map(function (f) { return '<option value="' + rcEsc(f.id) + '"' + (f.id === fn.id ? ' selected' : '') + '>' + rcEsc(rcFnRange(f)) + (f.draft ? ' (draft)' : '') + '</option>'; }).join('') + '</select></label>'
+    + '<div class="rc-small" style="margin-top:6px">Suggestions for <b>this roster only</b>. Adding one puts it in a <b>draft</b>: you see it on the roster, but nothing is saved and staff see nothing until you press SUBMIT. Revert any time.</div></div>';
+  if (sk.length) h += '<div class="card cut-draftbox"><div><b>✂ ' + sk.length + ' change' + (sk.length === 1 ? '' : 's') + ' in the draft</b> (−' + staged.toFixed(1) + 'h)<div class="rc-small">Not saved yet.</div></div><div class="cut-r"><button class="rc-b rc-white" onclick="showMain()">VIEW ON ROSTER</button><button class="rc-b rc-white" onclick="rcCutRevert()">REVERT ALL</button><button class="rc-b rc-red" onclick="rcCutSubmit()">SUBMIT</button></div></div>';
+  h += '<div class="card cut-hero"><div class="cut-big">' + (plan.length ? '−' + total.toFixed(1) + 'h' : '0h') + '</div><div><b>' + rcEsc(rcFnRange(fn)) + '</b><div class="rc-small">'
+    + (plan.length ? plan.length + ' possible change' + (plan.length === 1 ? '' : 's') + ' that keep every daily requirement. Each was checked together with the ones above it, so any of them (or all) can go in the draft.' : 'Nothing can be cut without breaking a daily requirement.') + ' Shifts that have started (or start within the hour) are left alone.</div></div></div>';
   h += '<div class="card"><div class="rc-row" style="border:none;padding:0"><label class="rc-small">Look at <select onchange="RC.cutWho=this.value;rcRenderCuts()" class="rc-to-in" style="margin:0;width:auto"><option value="all"' + (who === 'all' ? ' selected' : '') + '>everyone</option><option value="casual"' + (who === 'casual' ? ' selected' : '') + '>casuals only</option></select></label>'
-    + (plan.length ? '<button class="rc-b rc-green" onclick="rcCutApply(-1)">APPLY ALL</button>' : '') + '</div>';
+    + (plan.length ? '<button class="rc-b rc-green" onclick="rcCutAdd(-1)">ADD ALL TO DRAFT</button>' : '') + '</div>';
   if (!res.dayRules.length) h += '<div class="cut-warn">⚠ No daily requirements are set, so nothing protects cover. Add some in <a href="#" onclick="openPage(\'warnings-page\');return false">ROSTER WARNINGS</a> (EACH DAY - COVER / DUTIES) first.</div>';
   var lastI = -1;
   h += plan.map(function (c, k) {
-    var d = fn.dates[c.i], st = fn.staff[c.r], head = '';
+    var d = fn.dates[c.i], st = fn.staff[c.r], head = '', on = !!stage[c.r + '|' + c.i];
     if (c.i !== lastI) { lastI = c.i; head = '<div class="cut-day">' + rcEsc(d.day + ' ' + d.date) + '</div>'; }
-    return head + '<div class="cut-row"><div><b>' + rcEsc(st.firstName + ' ' + String(st.lastName || '').charAt(0)) + '</b> <span class="cut-from">' + rcEsc(fmt(c.from)) + '</span> → <span class="cut-to">' + (c.shift === 'OFF' ? 'OFF' : rcEsc(fmt(c.shift))) + '</span></div><div class="cut-r"><span class="cut-save">−' + c.save.toFixed(1) + 'h</span><button class="rc-b rc-green sg-apply" onclick="rcCutApply(' + k + ')">APPLY</button></div></div>';
+    return head + '<div class="cut-row' + (on ? ' cut-on' : '') + '"><div><b>' + rcEsc(st.firstName + ' ' + String(st.lastName || '').charAt(0)) + '</b> <span class="cut-from">' + rcEsc(fmt(c.from)) + '</span> → <span class="cut-to">' + (c.shift === 'OFF' ? 'OFF' : rcEsc(fmt(c.shift))) + '</span></div><div class="cut-r"><span class="cut-save">−' + c.save.toFixed(1) + 'h</span>'
+      + (on ? '<button class="rc-b rc-white sg-apply" onclick="rcCutDrop(\'' + c.r + '|' + c.i + '\')">✓ IN DRAFT · UNDO</button>' : '<button class="rc-b rc-green sg-apply" onclick="rcCutAdd(' + k + ')">ADD TO DRAFT</button>') + '</div></div>';
   }).join('');
   h += '<div class="rc-small" style="margin-top:8px">Checked against: ' + (res.dayRules.length ? res.dayRules.map(function (w) { return rcEsc(w.msg || RC_WARN_TYPES[w.type].msg); }).join(' • ') : 'nothing') + '. People\'s own warnings (e.g. minimum hours, shortest shift) are kept too.</div></div>'
     + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
   el.innerHTML = h;
 }
-function rcCutApply(k) {
+function rcCutAdd(k) {
   var cp = RC.cutPlan, fn = getSelectedFortnight(); if (!cp || !fn || fn.id !== cp.fnId) return;
-  var list = k === -1 ? cp.plan : [cp.plan[k]];
-  list.forEach(function (c) { if (c && String(fn.staff[c.r].shifts[c.i]) === c.from) rcSaveCell(fn.id, c.r, c.i, c.shift); });
-  toast(k === -1 ? 'Applied ' + list.length + ' changes' : 'Done');
-  setTimeout(function () { renderRosterSafe(); rcRenderCuts(); }, 400);
+  var stage = rcCutStage(fn.id);
+  (k === -1 ? cp.plan : [cp.plan[k]]).forEach(function (c) { if (c) stage[c.r + '|' + c.i] = { r: c.r, i: c.i, from: c.from, shift: c.shift, save: c.save, who: rcPersonName(fn.staff[c.r]) }; });
+  rcCutStageSet(fn.id, stage);
+  toast(k === -1 ? 'All added to the draft - not saved yet' : 'Added to the draft - not saved yet');
+  rcRenderCuts();
 }
+function rcCutDrop(key) { var fn = getSelectedFortnight(); if (!fn) return; var stage = rcCutStage(fn.id); delete stage[key]; rcCutStageSet(fn.id, stage); rcRenderCuts(); try { renderRosterSafe(); } catch (e) {} }
+function rcCutRevert() {
+  var fn = getSelectedFortnight(); if (!fn) return;
+  rcCutStageSet(fn.id, {}); toast('Draft cuts reverted - the roster is unchanged');
+  try { renderRosterSafe(); } catch (e) {}
+  if (document.getElementById('cuts-page') && document.getElementById('cuts-page').classList.contains('show')) rcRenderCuts();
+}
+function rcCutSubmit() {
+  var fn = getSelectedFortnight(); if (!fn) return;
+  var stage = rcCutStage(fn.id), keys = Object.keys(stage); if (!keys.length) return;
+  var ok = 0, skipped = 0;
+  keys.forEach(function (k) {
+    var c = stage[k], st = fn.staff[c.r];
+    if (st && rcPersonName(st) === c.who && String(st.shifts[c.i]) === c.from) { rcSaveCell(fn.id, c.r, c.i, c.shift); ok++; } else skipped++;
+  });
+  rcCutStageSet(fn.id, {});
+  toast('Submitted ' + ok + ' change' + (ok === 1 ? '' : 's') + (skipped ? ' - ' + skipped + ' skipped because the roster changed since' : ''));
+  setTimeout(function () { renderRosterSafe(); if (document.getElementById('cuts-page') && document.getElementById('cuts-page').classList.contains('show')) rcRenderCuts(); }, 400);
+}
+/* Roster: show the staged cuts and a bar to submit or revert them */
+function rcCutMarks() {
+  var old = document.getElementById('rc-cut-bar'); if (old) old.remove();
+  if (!rcIsMgr() || RC.pdfMode) return;
+  var fn = getSelectedFortnight(); if (!fn) return;
+  var stage = rcCutStage(fn.id), keys = Object.keys(stage); if (!keys.length) return;
+  var live = keys.filter(function (k) { var c = stage[k], st = fn.staff[c.r]; return st && rcPersonName(st) === c.who && String(st.shifts[c.i]) === c.from; });
+  live.forEach(function (k) {
+    var c = stage[k];
+    document.querySelectorAll('#roster-mount td[data-r="' + c.r + '"][data-i="' + c.i + '"]').forEach(function (td) {
+      td.classList.add('rc-cut-cell'); td.title = 'Draft cut (not saved): ' + (c.shift === 'OFF' ? 'OFF' : c.shift);
+      if (!td.querySelector('.rc-cut-tag')) td.insertAdjacentHTML('beforeend', '<span class="rc-cut-tag">→ ' + (c.shift === 'OFF' ? 'OFF' : rcEsc(fmt(c.shift))) + '</span>');
+    });
+  });
+  var save = live.reduce(function (t, k) { return t + (+stage[k].save || 0); }, 0);
+  var bar = document.createElement('div'); bar.id = 'rc-cut-bar'; bar.className = 'rc-cut-bar';
+  bar.innerHTML = '<span><b>✂ DRAFT CUTS</b> - ' + live.length + ' change' + (live.length === 1 ? '' : 's') + ' (−' + save.toFixed(1) + 'h) shown in green. Not saved; staff see nothing yet.' + (live.length < keys.length ? ' ' + (keys.length - live.length) + ' no longer match the roster and will be skipped.' : '') + '</span>'
+    + '<span class="cut-r"><button class="rc-b rc-white" onclick="openPage(\'cuts-page\')">REVIEW</button><button class="rc-b rc-white" onclick="rcCutRevert()">REVERT</button><button class="rc-b rc-red" onclick="rcCutSubmit()">SUBMIT</button></span>';
+  var mount = document.getElementById('roster-mount'); if (mount) mount.parentNode.insertBefore(bar, mount);
+}
+rcRosterWarnings = (function (orig) { return function () { var r = orig.apply(this, arguments); try { rcCutMarks(); } catch (e) { console.error('cut marks', e); } return r; }; })(rcRosterWarnings);
 
 (function () {
   var css = ''
@@ -5115,6 +5175,9 @@ function rcCutApply(k) {
     + '.av-t td,.av-t th{text-align:center;font-size:12px;white-space:nowrap}.av-t td:first-child{text-align:left;white-space:normal;min-width:120px}.av-n{font-style:italic;max-width:220px}'
     + '.cut-hero{display:flex;gap:14px;align-items:center}.cut-big{font-family:"Arial Black",Impact,sans-serif;font-size:30px;color:#1a7f37;white-space:nowrap}'
     + '.cut-day{margin:12px 0 4px;font-size:11px;font-weight:900;letter-spacing:1px;color:#888}.cut-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:#f6f6f6;margin-bottom:6px;font-size:13px}'
+    + '.cut-pick{display:flex;align-items:center;gap:10px;font-weight:900;font-size:12px}.cut-pick select{margin:0;flex:1}.cut-on{background:#e7f6ec !important;box-shadow:inset 0 0 0 2px #1a7f37}.cut-draftbox{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-color:#1a7f37 !important;background:#f3fbf5}'
+    + '.rc-cut-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#f3fbf5;border:2px solid #1a7f37;border-radius:12px;padding:8px 12px;margin:6px 0;font-size:13px}'
+    + '.r-table td.rc-cut-cell:not(.rc-cut-edit){outline:3px dashed #1a7f37;outline-offset:-3px;background:#eaf7ee !important}.rc-cut-tag{display:block;font-size:9px;font-weight:900;color:#11602a;white-space:nowrap}@media print{.rc-cut-tag,.rc-cut-bar{display:none !important}.r-table td.rc-cut-cell{outline:none !important;background:#fff !important}}'
     + '.cut-from{text-decoration:line-through;color:#999}.cut-to{font-weight:900}.cut-r{display:flex;align-items:center;gap:8px}.cut-save{font-weight:900;color:#1a7f37}.cut-warn{margin-top:8px;padding:8px 10px;border-radius:10px;background:#fff3d6;font-size:12px;font-weight:700}';
   var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
 })();

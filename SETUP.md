@@ -96,8 +96,9 @@ weekdays in every new fortnight: Excel uploads, + NEW and DUPLICATE.
 
 **Needs the latest database rules:** paste `database.rules.json` into Firebase → Realtime Database → Rules → Publish.
 
-**Staff**
-- Each person sets their usual week from **My Schedule → My availability**, or from **More → My availability**.
+**Staff (casuals only)**
+- Availability only applies to casual staff. Full-time staff don't see it, and their shifts are never checked against it.
+- Each casual sets their usual week from **My Schedule → My availability**, or from **More → My availability**.
 - For each day they choose *Any time*, *Only…* (between two times) or *Not available*.
 - They can also add the most hours they want a fortnight and a note.
 - Managers get an alert when someone changes it.
@@ -111,10 +112,14 @@ weekdays in every new fortnight: Excel uploads, + NEW and DUPLICATE.
 - Two warnings are switched on automatically: *Rostered outside their availability* and *More hours than they asked for*. They come with APPLY suggestions: trim the shift to their hours, or make the day OFF.
 - Suggestions for other warnings never put someone on at a time they said they can't work.
 
-**TOOLS → SUGGEST HOURS TO CUT**
+**TOOLS → CUT HOURS ON THIS ROSTER**
+- Works on one roster at a time; pick the roster at the top of the page.
+- ADD TO DRAFT puts a suggestion in a draft. The roster shows it as a green dashed cell with the new time, plus a DRAFT CUTS bar.
+- Nothing is saved, and staff see nothing, until you press SUBMIT. REVERT clears the draft and leaves the roster as it was.
+- The draft is kept on this device only.
 - Lists shifts that can be dropped or shortened while every daily requirement in ROSTER WARNINGS still holds (opening and closing headcount, register cover, manager on and so on).
 - It also never creates new warnings for that person, for example under minimum hours or a shift too short.
-- Each change was checked together with the ones above it, so you can APPLY any of them, or APPLY ALL.
+- Each change was checked together with the ones above it, so any of them, or all, can go in the draft.
 - Today's shifts that have started, or start within the hour, are left alone.
 
 ## How things work now
