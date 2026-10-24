@@ -61,6 +61,15 @@
       ".read": "(auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'manager' || root.child('users/' + auth.uid + '/role').val() === 'master'))",
       ".write": "(auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'manager' || root.child('users/' + auth.uid + '/role').val() === 'master'))"
     },
+    "history": {
+      ".read": "(auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'manager' || root.child('users/' + auth.uid + '/role').val() === 'master'))",
+      ".indexOn": [
+        "ts"
+      ],
+      "$hid": {
+        ".write": "(auth != null && root.child('users/' + auth.uid + '/role').exists()) && !data.exists() && newData.exists()"
+      }
+    },
     "offers": {
       ".read": "(auth != null && (root.child('users/' + auth.uid + '/role').val() === 'admin' || root.child('users/' + auth.uid + '/role').val() === 'manager' || root.child('users/' + auth.uid + '/role').val() === 'master')) || ((auth != null && root.child('users/' + auth.uid + '/role').exists()) && query.orderByChild === 'toUid' && query.equalTo === auth.uid)",
       ".indexOn": [

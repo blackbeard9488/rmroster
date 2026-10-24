@@ -175,6 +175,7 @@ function rcFromCloud(spec, raw) {
       return fn;
     });
     fns.sort(function (a, b) { var x = (a.dates[0] && a.dates[0].iso) || '', y = (b.dates[0] && b.dates[0].iso) || ''; return x < y ? -1 : x > y ? 1 : 0; });
+    if (RC.session && !rcIsMgr()) fns = fns.filter(function (f) { return !f.draft; });   // drafts are for managers only
     return fns;
   }
   if (spec.kind === 'list') return rcAsArray(v).sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
@@ -194,8 +195,17 @@ function rcFlush(spec) {
   if (!RC.session || !RC.ready[spec.key]) return;
   if (spec.mgrWrite && !rcIsMgr()) return;
   var local = safeGetJSON(spec.key, spec.def);
-  var next = rcToCloud(spec, local);
   var prev = RC.base[spec.key];
+  if (spec.kind === 'roster' && RC.importDraft) {   // "Import as a draft": new fortnights start hidden from staff
+    var marked = false;
+    RC.importDraftIds = RC.importDraftIds || {};   // the import can save more than once; keep its new fortnights marked
+    rcAsArray(local).forEach(function (fn) {
+      if (!fn || !fn.id || fn.draft) return;
+      if (!(prev && prev[rcEncodeKey(fn.id)]) || RC.importDraftIds[fn.id]) { fn.draft = true; RC.importDraftIds[fn.id] = 1; marked = true; }
+    });
+    if (marked) rcSetLocal(spec.key, local);
+  }
+  var next = rcToCloud(spec, local);
   var updates = {};
   rcDiff(prev, next, spec.path, updates);
   if (!Object.keys(updates).length) return;
@@ -242,10 +252,15 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
   var me = RC.session.uid;
   if (spec.kind === 'roster' && rcIsMgr()) {
     var newFns = [];
+    Object.keys(prev || {}).forEach(function (fk) {
+      if (!next || !next[fk]) rcLogHistory(updates, { fnId: prev[fk].id, fn: rcFnRange(rcDecodeTree(prev[fk])), action: 'Roster deleted' });
+    });
     Object.keys(next || {}).forEach(function (fk) {
       var nf = next[fk], of = prev && prev[fk];
       var fnLabel = rcFnRange(rcDecodeTree(nf));
-      if (!of) { newFns.push(fk); }
+      // Drafts: staff can't see them, so no alerts until a manager publishes
+      var isDraft = !!(nf && nf.draft) || (!of && RC.importDraft);
+      if (!of) { newFns.push(fk); if (prev) rcLogHistory(updates, { fnId: nf.id, fn: fnLabel, action: isDraft ? 'Roster added as draft' : 'Roster added' }); }
       var changesByUser = {};
       Object.keys((nf && nf.staff) || {}).forEach(function (sk) {
         var ns = nf.staff[sk], os = of && of.staff && of.staff[sk];
@@ -262,6 +277,8 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
             rcWithdrawOfferAlert(offer, updates);
             notes.push({ withdraw: offer });
           }
+          if (of && ov !== undefined && ov !== nv) rcLogHistory(updates, { fnId: nf.id, fn: fnLabel, name: String(ns.lastName || '').toUpperCase() + ', ' + ns.firstName, day: rcDayLabel(rcDecodeTree(nf), i), from: rcShiftText(ov), to: rcShiftText(nv) });
+          if (isDraft) return;
           if (!of || ov === undefined || ov === nv || !targets.length) return;
           if (RC.quietUids && targets.some(function (uid) { return RC.quietUids[uid]; })) return;   // a request decision sends its own alert
           if (rcIsEmptyVal(ov) && rcIsEmptyVal(nv)) return;
@@ -287,7 +304,7 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
         var lines = b.shift;
         if (lines.length) notes.push({ uids: uid, note: { type: 'shift-update', title: 'Your shifts changed', body: lines.length <= 3 ? lines.join('\n') : (lines.length + ' shifts changed in ' + fnLabel + '. Open the roster to check.') } });
       });
-      if (!of && prev) {
+      if (!of && prev && !isDraft) {
         var who = {};
         Object.keys((nf && nf.staff) || {}).forEach(function (sk) {
           var ns = nf.staff[sk];
@@ -320,6 +337,11 @@ function rcCollectSideEffects(spec, prev, next, updates, notes) {
       }
     });
   }
+}
+/* Change history: one entry per changed cell, kept for managers */
+function rcLogHistory(updates, e) {
+  var key = RC.db.ref('history').push().key;
+  updates['history/' + key] = Object.assign({ ts: firebase.database.ServerValue.TIMESTAMP, by: RC.session.profile.username }, e);
 }
 function rcReqSummary(r) {
   if (!r) return '';
@@ -1368,6 +1390,7 @@ function rcRespondOffer(oid, accept) {
   if (rcOfferExpired(o)) { toast('This shift date has passed'); return; }
   var upd = {};
   upd['offers/' + oid + '/status'] = accept ? 'accepted' : 'declined';
+  if (accept) rcLogHistory(upd, { fnId: o.fnId || '', fn: o.fnLabel || '', name: String(o.staffName || '').replace(/^(\S+)\s+(.*)$/, function (m, f, l) { return l.toUpperCase() + ', ' + f; }), day: o.dateLabel, from: 'OFF', to: o.shift, action: 'Accepted shift offer' });
   upd['offers/' + oid + '/respondedTs'] = firebase.database.ServerValue.TIMESTAMP;
   if (accept) {
     var cellPath = 'data/roster/' + o.fn + '/staff/' + o.sk;
@@ -1397,7 +1420,7 @@ function rcMyPendingOffers() {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcMobileRoster(); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcMobileRoster(); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
 /* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
 function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
@@ -1488,7 +1511,8 @@ function rcCurrentIndicator() {
   var todayId = today && today.dates.some(function (d) { return d.iso === iso; }) ? today.id : null;
   Array.prototype.forEach.call(sel.options, function (o) {
     if (!o.dataset.base) o.dataset.base = o.textContent;
-    o.textContent = o.dataset.base + (o.value === todayId ? '  ★ CURRENT' : '');
+    var f = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).find(function (x) { return x.id === o.value; });
+    o.textContent = o.dataset.base + (o.value === todayId ? '  ★ CURRENT' : '') + (f && f.draft ? '  (DRAFT)' : '');
   });
   var el = document.getElementById('rc-current');
   if (!el) { el = document.createElement('span'); el.id = 'rc-current'; sel.insertAdjacentElement('afterend', el); }
@@ -2125,6 +2149,7 @@ renderMySchedule = function () {
       });
       h += '</div>';
     });
+    h += rcMyHoursCard(rows, today);
     h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">BACK TO ROSTER</button></div>';
     el.innerHTML = h;
     rcStartSchedTicker();
@@ -2429,6 +2454,130 @@ async function rcExportExcel() {
   } catch (e) { console.error('xlsx export', e); toast('Excel export failed: ' + (e.message || e)); }
 }
 
+/* ---------- Drafts: managers can keep a fortnight hidden from staff until it's published ---------- */
+function rcDraftBar() {
+  var old = document.getElementById('rc-draft-bar'); if (old) old.remove();
+  if (!rcIsMgr() || RC.pdfMode) return;
+  var fn = getSelectedFortnight(); if (!fn) return;
+  var mount = document.getElementById('roster-mount'); if (!mount) return;
+  var bar = document.createElement('div'); bar.id = 'rc-draft-bar';
+  if (fn.draft) {
+    bar.className = 'rc-draft on';
+    bar.innerHTML = '<span><b>DRAFT</b> - staff can\'t see this fortnight yet</span><button class="rc-b rc-green" onclick="rcPublishFn(true)">PUBLISH TO STAFF</button>';
+  } else {
+    bar.className = 'rc-draft';
+    bar.innerHTML = '<span>Published - staff can see this fortnight</span><button class="rc-b rc-white" onclick="rcPublishFn(false)">MAKE DRAFT</button>';
+  }
+  mount.parentNode.insertBefore(bar, mount);
+}
+function rcPublishFn(publish) {
+  var fn = getSelectedFortnight(); if (!fn) return;
+  var go = function () {
+    if (RC.importDraftIds) delete RC.importDraftIds[fn.id];
+    var upd = {}; upd['data/roster/' + rcEncodeKey(fn.id) + '/draft'] = publish ? null : true;
+    rcLogHistory(upd, { fnId: fn.id, fn: rcFnRange(fn), action: publish ? 'Roster published' : 'Roster made draft' });
+    RC.db.ref().update(upd).then(function () {
+      toast(publish ? 'Published - staff can see it now' : 'Now a draft - hidden from staff');
+      if (!publish) return;
+      var who = {};
+      fn.staff.forEach(function (st) { if (st.shifts.some(function (v) { return !!parseShiftRange(v); })) rcUsersForStaff(st).forEach(function (u) { if (u.uid !== RC.session.uid) who[u.uid] = 1; }); });
+      if (Object.keys(who).length) rcNotify(Object.keys(who), { type: 'roster-new', title: 'New roster published', body: rcFnRange(fn) + ' is now on the roster.' });
+    }).catch(function (e) { toast('Not changed: ' + rcErrMsg(e)); });
+  };
+  if (publish) go();
+  else showCustomConfirm('Make this fortnight a draft?', 'Staff will stop seeing ' + rcEsc(rcFnRange(fn)) + ' until you publish it again.', function (ok) { if (ok) go(); });
+}
+renderImportExportPage = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    var f = document.getElementById('excel-file-input'); if (!f || document.getElementById('rc-import-draft')) return;
+    var l = document.createElement('label'); l.className = 'rc-keep'; l.style.margin = '10px 0 0';
+    l.innerHTML = '<input type="checkbox" id="rc-import-draft" onchange="RC.importDraftPick=this.checked"' + (RC.importDraftPick ? ' checked' : '') + '> Import as a draft (staff won\'t see it until you publish)';
+    f.parentNode.insertBefore(l, f.nextSibling);
+  };
+})(renderImportExportPage);
+importExcelFile = (function (orig) {
+  return function () {
+    if (RC.importDraftPick && document.getElementById('rc-import-draft')) {
+      RC.importDraft = true; RC.importDraftPick = false;
+      setTimeout(function () { RC.importDraft = false; RC.importDraftIds = {}; }, 15000);
+    }
+    return orig.apply(this, arguments);
+  };
+})(importExcelFile);
+
+/* ---------- Change history page (managers) ---------- */
+function rcEnsureHistoryPage() {
+  if (document.getElementById('history-page')) return;
+  var p = document.createElement('div'); p.id = 'history-page'; p.className = 'full-page';
+  p.innerHTML = '<div class="page-inner"><div class="page-title">CHANGE HISTORY</div><div id="history-inner"></div></div>';
+  document.body.appendChild(p);
+}
+openPage = (function (orig) {
+  return function (id) {
+    if (id === 'history-page') { if (!rcIsMgr()) { toast('Admin only'); return; } rcEnsureHistoryPage(); }
+    orig.apply(this, arguments);
+    if (id === 'history-page') { rcLoadHistory(); setTimeout(rcFitHeader, 0); }
+  };
+})(openPage);
+renderOptions = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    if (!rcIsMgr()) return;
+    var grid = document.querySelector('#options-inner > div'); if (!grid || document.getElementById('btn-history')) return;
+    var b = document.createElement('button'); b.className = 'card'; b.id = 'btn-history'; b.style.cssText = 'font-weight:900;text-align:left';
+    b.textContent = 'CHANGE HISTORY'; b.onclick = function () { openPage('history-page'); };
+    grid.insertBefore(b, grid.lastElementChild);
+  };
+})(renderOptions);
+function rcLoadHistory() {
+  var el = document.getElementById('history-inner'); if (!el) return;
+  el.innerHTML = '<div class="card">Loading...</div>';
+  RC.db.ref('history').orderByChild('ts').limitToLast(500).once('value').then(function (s) {
+    var v = s.val() || {};
+    RC.history = Object.keys(v).map(function (k) { return v[k]; }).sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    el.innerHTML = '<div class="card"><input id="hist-q" class="rc-to-in" style="margin:0" placeholder="Search name, day or who made the change" oninput="rcRenderHistory()"><div class="rc-small" style="margin-top:6px">Latest 500 changes. Entries can\'t be edited or deleted.</div></div><div id="hist-list"></div>';
+    rcRenderHistory();
+  }).catch(function (e) { el.innerHTML = '<div class="card">Could not load: ' + rcEsc(rcErrMsg(e)) + '</div>'; });
+}
+function rcRenderHistory() {
+  var list = document.getElementById('hist-list'); if (!list) return;
+  var q = ((document.getElementById('hist-q') || {}).value || '').toLowerCase().trim();
+  var rows = (RC.history || []).filter(function (e) { return !q || [e.name, e.day, e.by, e.fn, e.action, e.from, e.to].join(' ').toLowerCase().indexOf(q) !== -1; });
+  if (!rows.length) { list.innerHTML = '<div class="card">' + (q ? 'Nothing matches.' : 'No changes recorded yet.') + '</div>'; return; }
+  var lastDay = '', h = '';
+  rows.slice(0, 300).forEach(function (e) {
+    var d = new Date(e.ts || 0), dayKey = d.toLocaleDateString('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (dayKey !== lastDay) { if (lastDay) h += '</div>'; h += '<div class="card"><div class="rc-h">' + rcEsc(dayKey) + '</div>'; lastDay = dayKey; }
+    var time = d.toLocaleTimeString('en-AU', { timeZone: 'Australia/Brisbane', hour: 'numeric', minute: '2-digit' });
+    var what = e.name ? '<b>' + rcEsc(e.name) + '</b> · ' + rcEsc(e.day || '') + ': <span class="pc-cur">' + rcEsc(e.from || '') + '</span> → <b>' + rcEsc(e.to || '') + '</b>' + (e.action ? ' <span class="rc-pill">' + rcEsc(e.action) + '</span>' : '')
+      : '<b>' + rcEsc(e.action || 'Change') + '</b> · ' + rcEsc(e.fn || '');
+    h += '<div class="hist-row"><span class="hist-t">' + rcEsc(time) + '</span><span class="hist-w">' + what + '<br><span class="rc-small">by ' + rcEsc(e.by || '?') + (e.name && e.fn ? ' • ' + rcEsc(e.fn) : '') + '</span></span></div>';
+  });
+  list.innerHTML = h + '</div>';
+}
+
+/* ---------- My hours (My Schedule) ---------- */
+function rcMyHoursCard(rows, today) {
+  var byFn = {}, order = [];
+  rows.forEach(function (r) { if (!byFn[r.fn.id]) { byFn[r.fn.id] = []; order.push(r.fn); } byFn[r.fn.id].push(r); });
+  var idx = order.findIndex(function (fn) { return fn.dates.some(function (d) { return d.iso === today; }); });
+  if (idx === -1) idx = order.findIndex(function (fn) { return fn.dates[0] && fn.dates[0].iso > today; }) - 0.5;
+  var pick = function (k) { return Number.isInteger(k) && k >= 0 && k < order.length ? order[k] : null; };
+  var sum = function (fn, onlyPast) {
+    var h = 0, n = 0;
+    (byFn[fn.id] || []).forEach(function (r) { if (!r.t) return; if (onlyPast && r.t.end.getTime() > Date.now()) return; h += netH(r.sh); n++; });
+    return { h: h, n: n };
+  };
+  var line = function (label, fn, extra) { if (!fn) return ''; var a = sum(fn); return '<div class="hrs-row"><span><b>' + label + '</b><br><span class="rc-small">' + rcEsc(rcFnRange(fn)) + '</span></span><span class="hrs-v">' + a.h.toFixed(1) + 'h<small>' + a.n + ' shifts' + (extra ? ' • ' + extra : '') + '</small></span></div>'; };
+  var cur = pick(Math.round(idx)), prev = pick(Math.round(idx) - 1), next = pick(Math.round(idx) + 1);
+  if (!Number.isInteger(idx)) { cur = null; prev = pick(Math.floor(idx)); next = pick(Math.ceil(idx)); }
+  var done = cur ? sum(cur, true).h.toFixed(1) + 'h done so far' : '';
+  var h = line('LAST FORTNIGHT', prev) + line('THIS FORTNIGHT', cur, done) + line('NEXT FORTNIGHT', next);
+  if (!h) return '';
+  return '<div class="card"><div class="rc-h">MY HOURS</div>' + h + '<div class="rc-small" style="margin-top:6px;color:#777">Rostered hours after a 30-minute break on shifts over 5 hours. Absent and unavailable days aren\'t counted.</div></div>';
+}
+
 /* ---------- PDF export: a picture of the roster tables exactly as they look on screen ---------- */
 exportPDF = async function () {
   var fn = getSelectedFortnight() || getCurrentFortnight();
@@ -2625,6 +2774,10 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-mobile .full-page .card:has(> button[onclick^="showMain"]:only-child){display:none}'
     + 'body.rc-mobile #options-inner button[onclick="showMain()"]{display:none}'
     + '.bd-left{font-size:11px;font-weight:700;color:#555;white-space:nowrap}.bd-left b{color:#E30613}.bd-you .bd-left{color:#ddd;margin-left:6px}.bd-you .bd-left b{color:#ff6b74}'
+    + '.rc-draft{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#fff;border:2px solid #ccc;font-size:12px;font-weight:700;color:#555}'
+    + '.rc-draft.on{background:#FFF6CC;border:3px solid #b58900;color:#111}body.rc-mobile .rc-draft{margin:8px 8px 0}'
+    + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
+    + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
     + '.ms-fn{background:#fff;border:3px solid #111;border-radius:14px;box-shadow:4px 4px 0 #111;margin-bottom:14px;overflow:hidden}'
     + '.ms-fn-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#111;color:#fff;padding:10px 14px;font-weight:900;font-size:12px}'
