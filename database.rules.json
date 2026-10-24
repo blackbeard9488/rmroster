@@ -44,6 +44,14 @@
         }
       }
     },
+    "availability": {
+      ".read": "auth != null && ((root.child('users/' + auth.uid).child('role').isString() && root.child('users/' + auth.uid).child('role').val().toLowerCase().replace(' ', '') === 'manager') || (root.child('users/' + auth.uid).child('role').isString() && root.child('users/' + auth.uid).child('role').val().toLowerCase().replace(' ', '') === 'master'))",
+      "$person": {
+        ".read": "(auth != null && root.child('users/' + auth.uid).child('role').exists()) && $person === (root.child('users/' + auth.uid).child('lastName').val() + '_' + root.child('users/' + auth.uid).child('firstName').val()).toLowerCase()",
+        ".write": "((auth != null && root.child('users/' + auth.uid).child('role').exists()) && $person === (root.child('users/' + auth.uid).child('lastName').val() + '_' + root.child('users/' + auth.uid).child('firstName').val()).toLowerCase()) || (auth != null && ((root.child('users/' + auth.uid).child('role').isString() && root.child('users/' + auth.uid).child('role').val().toLowerCase().replace(' ', '') === 'manager') || (root.child('users/' + auth.uid).child('role').isString() && root.child('users/' + auth.uid).child('role').val().toLowerCase().replace(' ', '') === 'master')))",
+        ".validate": "!newData.exists() || newData.hasChildren(['ts'])"
+      }
+    },
     "logins": {
       "$u": {
         ".read": true,

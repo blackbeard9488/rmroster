@@ -92,6 +92,31 @@ hours) and **No register worker at closing**. The day overview shows who is on e
 Hidden staff with **Consistent shifts** ticked (Hidden Staff page) get their latest shifts copied onto the same
 weekdays in every new fortnight: Excel uploads, + NEW and DUPLICATE.
 
+## 9. Staff availability and cutting hours
+
+**Needs the latest database rules:** paste `database.rules.json` into Firebase → Realtime Database → Rules → Publish.
+
+**Staff**
+- Each person sets their usual week from **My Schedule → My availability**, or from **More → My availability**.
+- For each day they choose *Any time*, *Only…* (between two times) or *Not available*.
+- They can also add the most hours they want a fortnight and a note.
+- Managers get an alert when someone changes it.
+- For one particular day off, staff still use a time-off request.
+
+**Managers and masters**
+- **TOOLS → STAFF AVAILABILITY** shows everyone's week at a glance. Tap a name to set it for them, for example for hidden staff.
+- On the roster:
+  - cells for days someone can't work are shaded;
+  - cells where they can only work part of the day get an orange line.
+- Two warnings are switched on automatically: *Rostered outside their availability* and *More hours than they asked for*. They come with APPLY suggestions: trim the shift to their hours, or make the day OFF.
+- Suggestions for other warnings never put someone on at a time they said they can't work.
+
+**TOOLS → SUGGEST HOURS TO CUT**
+- Lists shifts that can be dropped or shortened while every daily requirement in ROSTER WARNINGS still holds (opening and closing headcount, register cover, manager on and so on).
+- It also never creates new warnings for that person, for example under minimum hours or a shift too short.
+- Each change was checked together with the ones above it, so you can APPLY any of them, or APPLY ALL.
+- Today's shifts that have started, or start within the hour, are left alone.
+
 ## How things work now
 
 - **Logins**: username and password only. Managers add people, reset forgotten passwords and remove

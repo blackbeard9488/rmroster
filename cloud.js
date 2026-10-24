@@ -2085,6 +2085,7 @@ function rcMoreSheet() {
   var sh = document.createElement('div'); sh.id = 'rc-more';
   sh.innerHTML = '<div class="rc-more-card"><div class="rc-small" style="margin-bottom:8px">Signed in as <b>' + rcEsc(p.username || '') + '</b></div>'
     + '<button data-a="account">My account &amp; password</button>'
+    + '<button data-a="avail">My availability</button>'
     + (rcIsMgr() ? '' : '<button data-a="tomorrow">Tomorrow\'s buddies</button>')
     + '<button data-a="logout" class="rc-more-out">Log out</button><button data-a="close" class="rc-more-close">Close</button></div>';
   sh.onclick = function (e) {
@@ -2093,6 +2094,7 @@ function rcMoreSheet() {
     if (!a) return;
     sh.remove();
     if (a === 'account') openPage('account-page');
+    if (a === 'avail') rcOpenAvail();
     if (a === 'tomorrow') openPage('buddies-tomorrow-page-v141');
     if (a === 'logout') doLogout();
   };
@@ -2423,6 +2425,7 @@ renderMySchedule = function () {
       h += '</div>';
     });
     h += rcOtherTeamsCard(other, today);
+    h += rcAvailCard();
     h += rcMyHoursCard(rows, today);
     h += '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">BACK TO ROSTER</button></div>';
     el.innerHTML = h;
@@ -3395,6 +3398,8 @@ var RC_WARN_TYPES = {
   shiftsUnder:   { label: 'Shifts in the fortnight fewer than', unit: 'shifts', def: 3, msg: 'Not enough shifts' },
   requestedOff:  { label: 'Rostered on a day they asked off', unit: 'none', def: '', msg: 'Rostered on a requested day off' },
   notOnDay:      { label: 'Works on a set weekday', unit: 'weekday', def: 'SUN', msg: 'Not available that day' },
+  availability:  { label: 'Rostered outside their availability (set by staff)', unit: 'none', def: '', msg: 'Rostered outside their availability' },
+  availHours:    { label: 'More hours than they asked for (set by staff)', unit: 'none', def: '', msg: 'More hours than they asked for' },
   minStaff:      { label: 'Fewer people working than', unit: 'people', def: 3, msg: 'Understaffed', day: true },
   maxStaff:      { label: 'More people working than', unit: 'people', def: 8, msg: 'Overstaffed', day: true },
   openBy:        { label: 'Nobody starting by', unit: 'time', def: '07:30', msg: 'No one to open', day: true },
@@ -3483,7 +3488,7 @@ function rcDayMatch(w, d) {
 function rcWarnDaysLabel(f) { return !f || f === 'all' ? 'every day' : f === 'weekdays' ? 'weekdays' : f === 'weekends' ? 'weekends' : f; }
 var RC_WARN_PRESETS = [
   ['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'],
-  ['daysInRow', 6, 'More than 6 days in a row', 'all'], ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['outsideHours', 1, 'Shift outside store hours', 'all'],
+  ['daysInRow', 6, 'More than 6 days in a row', 'all'], ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['availability', '', 'Rostered outside their availability', 'all'], ['availHours', '', 'More hours than they asked for', 'all'], ['outsideHours', 1, 'Shift outside store hours', 'all'],
   ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['coverAnyTime', 2, 'Fewer than 2 people in the store', 'all'], ['openCount', 2, 'Fewer than 2 people at opening (8:00)', 'all'], ['closeCount', 2, 'Fewer than 2 people at closing', 'all'], ['mgrCover', 1, 'No manager on', 'all'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all'],
   ['dutyCover', 1, 'Register not covered', 'all', 'register'], ['dutyOpen', '', 'No register worker at opening', 'all', 'register'], ['dutyClose', '', 'No register worker at closing', 'all', 'register'], ['dutyBreak', 5, 'Register worker has no break cover', 'all', 'register'],
   ['dutyCover', 1, 'Spares/Parts not covered', 'all', 'parts'], ['dutyOpen', '', 'No spares/parts at opening', 'all', 'parts'], ['dutyClose', '', 'No spares/parts at closing', 'all', 'parts']];
@@ -3540,6 +3545,8 @@ function rcRowWarnings(fn, st, rules) {
           if (best < +v) { hit = hit.concat(days.filter(function (x) { return x.i >= s0 && x.i <= e0; }).map(function (x) { return x.i; })); detail = (detail ? detail + ', ' : '') + 'week ' + (s0 ? 2 : 1) + ': ' + (best ? 'longest ' + best : 'no days off'); }
         });
         break;
+      case 'availability': days.forEach(function (x) { if (rcAvailBlocks(st, fn.dates[x.i], st.shifts[x.i])) hit.push(x.i); }); if (hit.length) detail = hit.map(function (i) { return fn.dates[i].day + ': ' + rcAvailText(rcAvailDay(st, fn.dates[i])).toLowerCase(); }).join(', '); break;
+      case 'availHours': var avw = rcAvailOf(st); if (avw && +avw.maxHrs > 0 && total > +avw.maxHrs) detail = total.toFixed(1) + 'h, wants up to ' + avw.maxHrs + 'h'; break;
       case 'notOnDay': days.forEach(function (x) { if (String(fn.dates[x.i].day).toUpperCase().slice(0, 3) === String(v).toUpperCase()) hit.push(x.i); }); break;
       case 'requestedOff':
         var u = rcUserForStaff(st), un = u && String(u.username || '').toLowerCase();
@@ -3557,7 +3564,7 @@ function rcRowWarnings(fn, st, rules) {
         break;
     }
     if (RC_WARN_TYPES[w.type].day) return;
-    if (hit.length || (detail && /^(hoursOver|hoursUnder|shiftsOver|shiftsUnder)$/.test(w.type))) out.push({ rule: w, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail, days: hit.filter(function (x, i, a) { return a.indexOf(x) === i; }) });
+    if (hit.length || (detail && /^(hoursOver|hoursUnder|shiftsOver|shiftsUnder|availHours)$/.test(w.type))) out.push({ rule: w, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail, days: hit.filter(function (x, i, a) { return a.indexOf(x) === i; }) });
   });
   return out;
 }
@@ -3649,6 +3656,8 @@ function rcRosterWarnings() {
   var h = '<div class="rc-warn-head" onclick="RC.warnOpen=false;rcRosterWarnings()"><b>⚠ ' + n + ' warning' + (n === 1 ? '' : 's') + '</b> on this roster <span class="rc-small">(hide)</span></div>';
   if (RC.warnOpen) { RC.sg = {}; h += dayWs.map(function (w) { var d = fn.dates[w.i]; return '<div class="rc-warn-row"><b>' + rcEsc(d.day + ' ' + d.date) + '</b>: ' + rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : '') + rcSuggestHtml(rcSuggestDay(fn, w)) + '</div>'; }).join(''); }
   if (RC.warnOpen) h += all.map(function (x) { return '<div class="rc-warn-row"><b>' + rcEsc(String(x.st.lastName).toUpperCase() + ', ' + x.st.firstName) + '</b>: ' + x.ws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' <span class="rc-small">(' + rcEsc(w.detail) + ')</span>' : ''); }).join(' • ') + rcSuggestHtml([].concat.apply([], x.ws.map(function (w) { return rcSuggestPerson(fn, x.r, w); })).slice(0, 3)) + '</div>'; }).join('');
+  if (all.some(function (x) { return x.ws.some(function (w) { return /^(hoursOver|weekHoursOver|availHours)$/.test(w.rule.type); }); }) || dayWs.some(function (w) { return /^(dayHoursOver|maxStaff)$/.test(w.rule.type); }))
+    h += '<div class="rc-warn-row">💡 <a href="#" onclick="openPage(\'cuts-page\');return false"><b>Find hours to cut</b></a> <span class="rc-small">- shifts that can be shortened or dropped while every daily requirement still holds</span></div>';
   if (!bar) { bar = document.createElement('div'); bar.id = 'rc-warn-bar'; var mount = document.getElementById('roster-mount'); mount.parentNode.insertBefore(bar, mount); }
   bar.innerHTML = h;
 }
@@ -4135,6 +4144,8 @@ function rcTidyControls() {
   if (mgr) extra.push(['rc-tb-import', 'IMPORT ROSTER (EXCEL)', function () { rcToolsOpen(false); openPage('import-export-page'); }]);
   if (mgr && fn) extra.push(['rc-tb-draft', fn.draft ? 'PUBLISH TO STAFF' : 'MAKE DRAFT (hide from staff)', function () { rcToolsOpen(false); rcPublishFn(!!fn.draft); }]);
   if (rcIsManagerUp()) extra.push(['rc-tb-compare', 'COMPARE ROSTERS', function () { rcToolsOpen(false); RC.cmpA = null; RC.cmpB = null; openPage('compare-page'); }]);
+  if (mgr) extra.push(['rc-tb-avail', 'STAFF AVAILABILITY', function () { rcToolsOpen(false); openPage('availlist-page'); }]);
+  if (mgr && fn) extra.push(['rc-tb-cuts', 'SUGGEST HOURS TO CUT', function () { rcToolsOpen(false); openPage('cuts-page'); }]);
   if (mgr && fn) extra.push(['rc-tb-day', 'DAY OVERVIEW (today)', function () { rcToolsOpen(false); var k = fn.dates.findIndex(function (d) { return d.iso === getISO(); }); rcDayOverview(k >= 0 ? k : 0); }]);
   extra.push(['rc-tb-pdf', 'EXPORT PDF', function () { rcToolsOpen(false); exportPDF(); }]);
   if (mgr) extra.push(['rc-tb-xlsx', 'EXPORT EXCEL', function () { rcToolsOpen(false); rcExportExcel(); }]);
@@ -4143,7 +4154,7 @@ function rcTidyControls() {
     if (!b) { b = document.createElement('button'); b.id = x[0]; menu.appendChild(b); }
     b.textContent = x[1]; b.onclick = x[2];
   });
-  ['rc-tb-import', 'rc-tb-draft', 'rc-tb-compare', 'rc-tb-day', 'rc-tb-xlsx'].forEach(function (id) { if (!extra.some(function (x) { return x[0] === id; })) { var o = document.getElementById(id); if (o) o.remove(); } });
+  ['rc-tb-import', 'rc-tb-draft', 'rc-tb-compare', 'rc-tb-avail', 'rc-tb-cuts', 'rc-tb-day', 'rc-tb-xlsx'].forEach(function (id) { if (!extra.some(function (x) { return x[0] === id; })) { var o = document.getElementById(id); if (o) o.remove(); } });
   var sep = document.getElementById('rc-tb-sep'); if (!sep) { sep = document.createElement('div'); sep.id = 'rc-tb-sep'; sep.className = 'rc-tb-sep'; sep.textContent = 'VIEW'; }
   var del = document.getElementById('delete-roster-btn'); if (del) del.textContent = 'DELETE THIS ROSTER';
   // fixed order every time
@@ -4206,6 +4217,7 @@ function rcSuggestDay(fn, w) {
   var tried = [];
   var add = function (r, shift, text) {
     var k = r + '|' + shift; if (seen[k] || out.length >= 3) return; seen[k] = 1;
+    if (rcAvailBlocks(fn.staff[r], d, shift)) return;   // never suggest a time they said they can't work
     var ch = { r: r, i: i, shift: shift };
     tried.push({ r: r, i: i, shift: shift, text: text });
     if (!rcFixes(fn, w, ch, true)) return;
@@ -4252,7 +4264,21 @@ function rcSuggestPerson(fn, r, w) {
   };
   var working = (st.shifts || []).map(function (v, i) { return parseShiftRange(String(v || '')) ? i : -1; }).filter(function (i) { return i !== -1; });
   if (t === 'requestedOff') w.days.forEach(function (i) { tryOff(i, ' (they asked for it off)'); });
-  else if (/^(hoursOver|weekHoursOver|daysInRow|restRunUnder|daysOffUnder|shiftsOver|weekendsOver|notOnDay)$/.test(t)) {
+  else if (t === 'availability') {
+    // each day on its own: is that day still outside their availability after the change?
+    var dayOk = function (ch) { var f2 = rcCloneFn(fn); f2.staff[r].shifts[ch.i] = ch.shift; return !rcRowWarnings(f2, f2.staff[r], [w.rule]).some(function (x) { return x.days.indexOf(ch.i) !== -1; }); };
+    w.days.forEach(function (i) {
+      if (out.length >= 3) return;
+      var x = rcAvailDay(st, fn.dates[i]), p = parseShiftRange(String(st.shifts[i] || '')), d = fn.dates[i], ch;
+      if (x && !x.off && p) {
+        var a = Math.max(p.start, x.from), b = Math.min(p.end, x.to);
+        if (b - a >= 120) { ch = { r: r, i: i, shift: rcShiftStr(a, b) }; if (dayOk(ch)) out.push({ r: r, i: i, shift: ch.shift, text: 'Change ' + nm + ' on ' + d.day + ' ' + d.date + ' to ' + ch.shift + ' (their available time)', warn: rcSideEffects(fn, ch) }); }
+      }
+      ch = { r: r, i: i, shift: 'OFF' };
+      if (out.length < 3 && dayOk(ch)) out.push({ r: r, i: i, shift: 'OFF', text: 'Make ' + nm + ' OFF on ' + d.day + ' ' + d.date + ' (' + (x && x.off ? 'not available' : 'only ' + rcHmText(x.from) + '-' + rcHmText(x.to)) + ')', warn: rcSideEffects(fn, ch) });
+    });
+  }
+  else if (/^(hoursOver|weekHoursOver|daysInRow|restRunUnder|daysOffUnder|shiftsOver|weekendsOver|notOnDay|availHours)$/.test(t)) {
     // drop the day with the most other people on, so cover suffers least
     var order = (w.days.length ? w.days : working).slice().sort(function (a, b) {
       var c = function (i) { return (fn.staff || []).filter(function (x, k) { return k !== r && parseShiftRange(String(x.shifts[i] || '')); }).length; };
@@ -4354,7 +4380,7 @@ function rcPermHint() {
 }
 /* Which parts of the live rules let this login in (shows whether the latest rules are really published) */
 function rcProbeRules() {
-  var tries = [['teamInfo', 'Teams (rules from V226)'], [rcTP('history'), 'Change history (V225)'], ['accesslog', 'Access log (V229)'], ['shared', 'Linked staff (V229)']];
+  var tries = [['teamInfo', 'Teams (rules from V226)'], [rcTP('history'), 'Change history (V225)'], ['accesslog', 'Access log (V229)'], ['shared', 'Linked staff (V229)'], ['availability', 'Staff availability (V252)']];
   Promise.all(tries.map(function (t) { return RC.db.ref(t[0]).limitToLast(1).once('value').then(function () { return true; }, function () { return false; }); })).then(function (ok) {
     var allOk = ok.every(Boolean), none = !ok.some(Boolean);
     var html = '<b>Live rules check for this login:</b><br>' + tries.map(function (t, i) { return (ok[i] ? '✅ ' : '❌ ') + t[1]; }).join('<br>')
@@ -4787,4 +4813,308 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
   rcLoginMsg(RC.auth ? 'Checking login...' : 'Could not reach the server - check your internet connection');
   rcLoginBusy(true);
   if (RC.auth) setTimeout(function () { if (!RC.session && !RC.loggingIn) { var e = document.getElementById('login-err'); if (e && e.textContent === 'Checking login...') rcLoginMsg(''); rcLoginBusy(false); } }, 4000);
+})();
+
+/* ---------- Availability: staff set their usual week; managers see it, get warnings, and suggestions respect it ---------- */
+/* availability/<person key> = { week: {MON: {mode: 'off'|'between', from, to}}, maxHrs, note, ts, by } (days not listed = any time) */
+RC.avail = RC.avail || {};
+function rcAvailOf(st) { var k = rcPersonKey(st); return (k && RC.avail[k]) || null; }
+/* null = any time, {off: true}, or {from, to} in minutes */
+function rcAvailDay(st, d) {
+  var a = rcAvailOf(st), x = a && a.week && a.week[String((d && d.day) || d || '').toUpperCase().slice(0, 3)];
+  if (!x || !x.mode || x.mode === 'any') return null;
+  if (x.mode === 'off') return { off: true };
+  var f = rcHm(x.from), t = rcHm(x.to); return f === null || t === null || t <= f ? null : { from: f, to: t };
+}
+function rcAvailText(x) { return !x ? 'Any time' : x.off ? 'Not available' : 'Only ' + rcHmText(x.from) + '-' + rcHmText(x.to); }
+function rcAvailBlocks(st, d, shift) { var x = rcAvailDay(st, d), p = parseShiftRange(String(shift || '')); return !!(x && p && (x.off || p.start < x.from || p.end > x.to)); }
+function rcAvailListen() {
+  RC.avail = {}; RC.availErr = null; RC.availReady = false;
+  var mk = rcPersonKey(RC.session.profile), mgr = rcIsMgr();
+  var ref = mgr ? RC.db.ref('availability') : mk ? RC.db.ref('availability/' + mk) : null;
+  if (!ref) { RC.availReady = true; return; }
+  rcListen(ref, 'value', function (s) {
+    var v = s.val(); RC.avail = {};
+    if (mgr) RC.avail = v || {}; else if (v) RC.avail[mk] = v;
+    RC.availReady = true; RC.availErr = null; rcScheduleRender('avail');
+  }, function (e) { RC.availErr = rcErrMsg(e) || 'no permission'; RC.availReady = true; rcScheduleRender('avail'); });
+}
+rcAttach = (function (orig) { return function () { orig.apply(this, arguments); try { rcAvailListen(); } catch (e) { console.error('availability', e); } }; })(rcAttach);
+/* Managers: switch the two availability warnings on once (they can still be turned off or deleted) */
+function rcAvailSeed() {
+  if (RC.availSeeded || !RC.ready['retail_roster_warnings_v1'] || !rcIsMgr()) return;
+  RC.availSeeded = true;
+  var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', []));
+  if (l.some(function (w) { return w && w.type === '_seed' && w.avail; })) return;
+  if (!l.some(function (w) { return w && w.type === 'availability'; })) l.push({ id: 'wavail', type: 'availability', value: '', who: 'all', msg: 'Rostered outside their availability' });
+  if (!l.some(function (w) { return w && w.type === 'availHours'; })) l.push({ id: 'wavailh', type: 'availHours', value: '', who: 'all', msg: 'More hours than they asked for' });
+  l.push({ id: 'seed', type: '_seed', avail: true });
+  safeSetJSON('retail_roster_warnings_v1', l);
+}
+/* Roster (managers): shade the days someone isn't available, so it's seen before typing a shift */
+rcRosterWarnings = (function (orig) {
+  return function () {
+    try { rcAvailSeed(); } catch (e) {}
+    var res = orig.apply(this, arguments);
+    try {
+      if (rcIsMgr() && !RC.pdfMode) {
+        var fn = getSelectedFortnight();
+        if (fn) (fn.staff || []).forEach(function (st, r) {
+          if (!rcAvailOf(st)) return;
+          (fn.dates || []).forEach(function (d, i) {
+            var x = rcAvailDay(st, d); if (!x) return;
+            document.querySelectorAll('#roster-mount td[data-r="' + r + '"][data-i="' + i + '"]').forEach(function (td) {
+              td.classList.add(x.off ? 'rc-av-off' : 'rc-av-part');
+              if (!/Availability:/.test(td.title || '')) td.title = (td.title ? td.title + '\n' : '') + 'Availability: ' + rcAvailText(x);
+            });
+          });
+        });
+      }
+    } catch (e) { console.error('availability marks', e); }
+    return res;
+  };
+})(rcRosterWarnings);
+
+function rcEnsurePage(id, title) {
+  if (document.getElementById(id)) return;
+  var p = document.createElement('div'); p.id = id; p.className = 'full-page';
+  p.innerHTML = '<div class="page-inner"><div class="page-title">' + rcEsc(title) + '</div><div id="' + id + '-inner"></div></div>';
+  document.body.appendChild(p);
+}
+openPage = (function (orig) {
+  return function (id) {
+    if (id === 'avail-page') rcEnsurePage('avail-page', 'AVAILABILITY');
+    if (id === 'availlist-page') { if (!rcIsMgr()) { toast('Managers only'); return; } rcEnsurePage('availlist-page', 'STAFF AVAILABILITY'); }
+    if (id === 'cuts-page') { if (!rcIsMgr()) { toast('Managers only'); return; } rcEnsurePage('cuts-page', 'CUT HOURS'); }
+    orig.apply(this, arguments);
+    if (id === 'avail-page') { rcRenderAvailPage(); setTimeout(rcFitHeader, 0); }
+    if (id === 'availlist-page') { rcRenderAvailList(); setTimeout(rcFitHeader, 0); }
+    if (id === 'cuts-page') { rcRenderCuts(); setTimeout(rcFitHeader, 0); }
+  };
+})(openPage);
+rcRenderLiveInner = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    var open = document.querySelector('.full-page.show');
+    if (open && open.id === 'availlist-page') rcRenderAvailList();
+    if (open && open.id === 'avail-page' && RC.availEdit && !RC.availEdit.dirty && !(open.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))) { RC.availEdit.draft = null; rcRenderAvailPage(); }
+  };
+})(rcRenderLiveInner);
+
+/* Edit availability: your own, or (managers) anyone on the team's rosters, including hidden staff */
+function rcOpenAvail(key, name) {
+  var me = RC.session.profile, mine = rcPersonKey(me);
+  key = key || mine;
+  if (!key) { toast('Your account needs a first and last name first'); return; }
+  RC.availEdit = { key: key, name: name || ((me.firstName || '') + ' ' + (me.lastName || '')).trim(), self: key === mine, draft: null, dirty: false };
+  openPage('avail-page');
+}
+function rcAvailDraft() {
+  var e = RC.availEdit; if (!e) return null;
+  if (!e.draft) { var cur = RC.avail[e.key] || {}; e.draft = { week: JSON.parse(JSON.stringify(cur.week || {})), maxHrs: cur.maxHrs || '', note: cur.note || '', ts: cur.ts || 0, by: cur.by || '' }; }
+  return e.draft;
+}
+function rcAvailCollect() {
+  var dr = rcAvailDraft(); if (!dr) return;
+  RC_WEEKDAYS.forEach(function (k) {
+    var f = document.getElementById('av-f-' + k), t = document.getElementById('av-t-' + k), x = dr.week[k];
+    if (x && x.mode === 'between' && f && t) { x.from = f.value; x.to = t.value; }
+  });
+  var m = document.getElementById('av-max'), n = document.getElementById('av-note');
+  if (m) dr.maxHrs = m.value; if (n) dr.note = n.value;
+}
+function rcAvailMode(day, mode) {
+  rcAvailCollect();
+  var dr = rcAvailDraft(), h = rcHoursFor(day);
+  if (mode === 'any') delete dr.week[day];
+  else dr.week[day] = mode === 'off' ? { mode: 'off' } : { mode: 'between', from: (dr.week[day] && dr.week[day].from) || h.openS, to: (dr.week[day] && dr.week[day].to) || '13:00' };
+  RC.availEdit.dirty = true;
+  rcRenderAvailPage();
+}
+function rcRenderAvailPage() {
+  var el = document.getElementById('avail-page-inner'); if (!el) return;
+  var e = RC.availEdit; if (!e) { el.innerHTML = '<div class="card">Nothing to show.</div>'; return; }
+  if (RC.availErr) { el.innerHTML = '<div class="card"><b>Availability isn\'t switched on yet.</b><div class="rc-small">A master needs to publish the latest database rules (see SETUP.md). (' + rcEsc(RC.availErr) + ')</div></div><div class="card"><button onclick="rcAvailBack()" class="rc-b rc-wide">← BACK</button></div>'; return; }
+  var dr = rcAvailDraft();
+  var h = '<div class="card av-hero"><div class="av-who">' + rcEsc(e.self ? 'WHEN CAN YOU WORK?' : String(e.name).toUpperCase()) + '</div>'
+    + '<div class="rc-small">' + (e.self ? 'Set your usual week. Managers see this when they write the roster and get a warning if a shift doesn\'t fit.' : 'Their usual week. You\'ll get a warning when a shift doesn\'t fit.') + (dr.ts ? ' Last updated ' + new Date(dr.ts).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + (dr.by && rcIsMgr() ? ' by ' + rcEsc(dr.by) : '') + '.' : '') + '</div></div>';
+  h += '<div class="card av-week">' + RC_WEEKDAYS.map(function (k) {
+    var x = dr.week[k], m = !x ? 'any' : x.mode === 'off' ? 'off' : 'between';
+    var seg = [['any', 'Any time'], ['between', 'Only…'], ['off', 'Not available']].map(function (o) { return '<button class="av-' + o[0] + (m === o[0] ? ' on' : '') + '" onclick="rcAvailMode(\'' + k + '\',\'' + o[0] + '\')">' + o[1] + '</button>'; }).join('');
+    return '<div class="av-day av-m-' + m + '"><div class="av-dn">' + k + '</div><div class="av-body"><div class="av-seg">' + seg + '</div>'
+      + (m === 'between' ? '<div class="av-times"><input type="time" id="av-f-' + k + '" value="' + rcEsc(x.from || '') + '" oninput="RC.availEdit.dirty=true"><span>to</span><input type="time" id="av-t-' + k + '" value="' + rcEsc(x.to || '') + '" oninput="RC.availEdit.dirty=true"></div>' : '') + '</div></div>';
+  }).join('') + '</div>';
+  h += '<div class="card"><div class="rc-h">HOURS</div><div class="av-max">Up to <input type="number" id="av-max" min="0" step="0.5" value="' + rcEsc(dr.maxHrs) + '" placeholder="any" oninput="RC.availEdit.dirty=true"> hours a fortnight</div><div class="rc-small">Leave blank if you don\'t mind.</div>'
+    + '<div class="rc-h" style="margin-top:12px">NOTE FOR THE MANAGER</div><textarea id="av-note" class="rc-to-in av-note" maxlength="300" placeholder="e.g. Uni on Tuesdays until December" oninput="RC.availEdit.dirty=true">' + rcEsc(dr.note) + '</textarea></div>';
+  h += '<div class="card"><button class="rc-b rc-red rc-wide" onclick="rcAvailSave()">SAVE AVAILABILITY</button>'
+    + (e.self ? '<div class="rc-small" style="margin-top:8px">Need one particular day off? Use <a href="#" onclick="openPage(\'requests-page\');return false">REQUESTS</a> to ask for time off.</div>' : '')
+    + '</div><div class="card"><button onclick="rcAvailBack()" class="rc-b rc-wide">← BACK</button></div>';
+  el.innerHTML = h;
+}
+function rcAvailBack() { if (RC.availEdit && !RC.availEdit.self && rcIsMgr()) openPage('availlist-page'); else if (rcIsMgr()) showMain(); else openPage('mysched-page'); }
+function rcAvailSave() {
+  var e = RC.availEdit; if (!e) return;
+  rcAvailCollect();
+  var dr = rcAvailDraft(), week = {}, bad = '';
+  RC_WEEKDAYS.forEach(function (k) {
+    var x = dr.week[k]; if (!x) return;
+    if (x.mode === 'off') week[k] = { mode: 'off' };
+    else { var f = rcHm(x.from), t = rcHm(x.to); if (f === null || t === null || t <= f) bad = k; else week[k] = { mode: 'between', from: x.from, to: x.to }; }
+  });
+  if (bad) { toast(bad + ': the finish time must be after the start time'); return; }
+  var max = parseFloat(dr.maxHrs);
+  var data = { week: week, ts: firebase.database.ServerValue.TIMESTAMP, by: RC.session.profile.username || '' };
+  if (max > 0) data.maxHrs = max;
+  if (String(dr.note || '').trim()) data.note = String(dr.note).trim().slice(0, 300);
+  rcSetStatus('saving');
+  RC.db.ref('availability/' + e.key).set(data).then(function () {
+    rcSetStatus('saved'); e.dirty = false; e.draft = null;
+    toast('Availability saved');
+    var sum = RC_WEEKDAYS.filter(function (k) { return week[k]; }).map(function (k) { return k + ' ' + (week[k].mode === 'off' ? 'off' : week[k].from + '-' + week[k].to); }).join(', ') || 'any time';
+    if (e.self && !rcIsMgr()) rcNotify(rcManagerUids().filter(function (u) { return u !== RC.session.uid; }), { type: 'availability', title: e.name + ' updated their availability', body: sum + (data.maxHrs ? ' • up to ' + data.maxHrs + 'h a fortnight' : '') });
+    else if (!e.self) {
+      var u = rcTeamPeople().filter(function (x) { return rcPersonKey(x) === e.key; }).map(function (x) { return x.uid; });
+      if (u.length) rcNotify(u, { type: 'availability', title: 'Your availability was updated', body: 'Management updated it: ' + sum + '.' });
+    }
+    rcAvailBack();
+  }).catch(function (err) { rcSetStatus('error'); toast('NOT SAVED - ' + rcErrMsg(err)); });
+}
+/* My Schedule: a small summary with an edit button */
+function rcAvailCard() {
+  if (RC.availErr) return '';
+  var mk = rcPersonKey(RC.session.profile); if (!mk) return '';
+  var a = RC.avail[mk], wk = (a && a.week) || {};
+  var chips = RC_WEEKDAYS.map(function (k) { var x = rcAvailDay(RC.session.profile, k); return '<span class="av-chip ' + (!x ? 'av-c-any' : x.off ? 'av-c-off' : 'av-c-part') + '"><b>' + k.charAt(0) + k.slice(1).toLowerCase() + '</b>' + (!x ? '✓' : x.off ? '✕' : '<small>' + rcEsc(rcHmText(x.from)) + '<br>' + rcEsc(rcHmText(x.to)) + '</small>') + '</span>'; }).join('');
+  return '<div class="card av-card"><div class="rc-row" style="border:none;padding:0"><div class="rc-h">MY AVAILABILITY</div><button class="rc-b rc-red" onclick="rcOpenAvail()">' + (a ? 'EDIT' : 'SET IT') + '</button></div>'
+    + (a ? '<div class="av-chips">' + chips + '</div>' + (a.maxHrs ? '<div class="rc-small">Up to ' + rcEsc(a.maxHrs) + ' hours a fortnight</div>' : '') : '<div class="rc-small">Tell your manager which days and times you can work. They\'ll see it when they make the roster.</div>') + '</div>';
+}
+/* Managers: everyone's availability at a glance */
+function rcAvailPeople() {
+  var out = {}, add = function (p, hidden) { var k = rcPersonKey(p); if (k && !out[k]) out[k] = { key: k, name: (p.firstName + ' ' + p.lastName).trim(), hidden: !!hidden, st: p }; };
+  var fn = getSelectedFortnight();
+  ((fn && fn.staff) || []).forEach(function (st) { add(st, isHiddenStaffRow(st)); });
+  rcTeamPeople().forEach(function (u) { if (rcRoleOf(u) !== 'master' || rcHomeTeam(u) === RC.team) add(u, false); });
+  return Object.keys(out).map(function (k) { return out[k]; }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+}
+function rcRenderAvailList() {
+  var el = document.getElementById('availlist-page-inner'); if (!el) return;
+  if (RC.availErr) { el.innerHTML = '<div class="card"><b>Availability isn\'t switched on yet.</b><div class="rc-small">Publish the latest database rules in Firebase (see SETUP.md), then reload. (' + rcEsc(RC.availErr) + ')</div></div><div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>'; return; }
+  var people = rcAvailPeople(), set = people.filter(function (p) { return RC.avail[p.key]; }).length;
+  var h = '<div class="card"><div class="rc-small">' + set + ' of ' + people.length + ' people have set their availability. Staff set their own from <b>My Schedule</b>; tap a name to set it for someone (e.g. hidden staff). Shifts that don\'t fit raise a warning, and shaded cells on the roster show the times they can\'t work.</div>'
+    + '<div style="overflow:auto;margin-top:8px"><table class="cmp-t av-t"><tr><th>Person</th>' + RC_WEEKDAYS.map(function (k) { return '<th>' + k + '</th>'; }).join('') + '<th>Max</th></tr>'
+    + people.map(function (p) {
+      var a = RC.avail[p.key];
+      return '<tr><td><a href="#" onclick="rcOpenAvail(\'' + rcEsc(p.key) + '\',\'' + rcEsc(p.name.replace(/'/g, '')) + '\');return false"><b>' + rcEsc(p.name) + '</b></a>' + (p.hidden ? ' <span class="rc-small">(hidden)</span>' : '') + (a && a.note ? '<div class="rc-small av-n">“' + rcEsc(a.note) + '”</div>' : '') + '</td>'
+        + RC_WEEKDAYS.map(function (k) { if (!a) return '<td class="av-c-none">-</td>'; var x = rcAvailDay(p.st, k); return '<td class="' + (!x ? 'av-c-any' : x.off ? 'av-c-off' : 'av-c-part') + '">' + (!x ? '✓' : x.off ? '✕' : rcEsc(rcHmText(x.from) + '-' + rcHmText(x.to))) + '</td>'; }).join('')
+        + '<td>' + (a && a.maxHrs ? rcEsc(a.maxHrs) + 'h' : a ? '-' : '<span class="rc-small">not set</span>') + '</td></tr>';
+    }).join('') + '</table></div><div class="rc-small" style="margin-top:6px">✓ any time • ✕ not available • times = only then</div></div>'
+    + '<div class="card"><button onclick="rcOpenAvail()" class="rc-b rc-white rc-wide">MY OWN AVAILABILITY</button></div><div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+  el.innerHTML = h;
+}
+
+/* ---------- Cut hours: shifts that can be shortened or dropped while every daily requirement (cover warnings) still holds ---------- */
+function rcOneDay(fn, i) {
+  return { dates: [fn.dates[i]], staff: (fn.staff || []).map(function (st) {
+    return Object.assign({}, st, { shifts: [st.shifts ? st.shifts[i] : ''], unavailable: st.unavailable ? [st.unavailable[i]] : undefined, absentApproved: st.absentApproved ? [st.absentApproved[i]] : undefined });
+  }) };
+}
+function rcDayWarnKeys(fn, i, rules) { return rcDayWarnings(rcOneDay(fn, i), rules).map(function (w) { return (w.rule.id || w.rule.type) + '|' + w.text; }); }
+function rcRowWarnKeys(fn, st, rules) { return rcRowWarnings(fn, st, rules).map(function (w) { return (w.rule.id || w.rule.type) + '|' + w.text; }); }
+function rcSubset(a, b) { return a.every(function (x) { return b.indexOf(x) !== -1; }); }
+function rcCutPlan(fn, who) {
+  var rules = rcWarnRules(), dayRules = rules.filter(function (w) { return !w.off && RC_WARN_TYPES[w.type].day; }), rowRules = rules.filter(function (w) { return !w.off && !RC_WARN_TYPES[w.type].day; });
+  var today = getISO(), nowD = new Date(), nowM = nowD.getHours() * 60 + nowD.getMinutes(), f2 = rcCloneFn(fn), plan = [], baseDay = {}, baseRow = {};
+  var minLen = 180; rowRules.forEach(function (w) { if (w.type === 'shiftUnder') minLen = Math.max(minLen, Math.round(+w.value * 60)); });
+  var onCount = function (i) { return f2.staff.filter(function (st) { return !(st.unavailable && st.unavailable[i]) && !(st.absentApproved && st.absentApproved[i]) && parseShiftRange(String(st.shifts[i] || '')); }).length; };
+  (fn.dates || []).forEach(function (d, i) { if (d.iso >= today) baseDay[i] = rcDayWarnKeys(f2, i, dayRules); });
+  f2.staff.forEach(function (st, r) { baseRow[r] = rcRowWarnKeys(f2, st, rowRules); });
+  var jobs = [];
+  f2.staff.forEach(function (st, r) {
+    if (isHiddenStaffRow(st) || (who === 'casual' && st.employmentType !== 'casual')) return;
+    (fn.dates || []).forEach(function (d, i) {
+      if (!(i in baseDay) || (st.unavailable && st.unavailable[i]) || (st.absentApproved && st.absentApproved[i])) return;
+      var p = parseShiftRange(String(st.shifts[i] || '')); if (!p) return;
+      if (d.iso === today && p.start <= nowM + 60) return;   // today: only shifts that haven't started (with an hour's notice)
+      jobs.push({ r: r, i: i, p: p, len: p.end - p.start });
+    });
+  });
+  // busiest days and longest shifts first: that's where spare hours usually are
+  var busy = {}; Object.keys(baseDay).forEach(function (i) { busy[i] = onCount(+i); });
+  jobs.sort(function (a, b) { return (busy[b.i] - busy[a.i]) || (b.len - a.len); });
+  jobs.forEach(function (j) {
+    var st = f2.staff[j.r], old = String(st.shifts[j.i]);
+    var ok = function (shift) {
+      st.shifts[j.i] = shift;
+      var good = rcSubset(rcDayWarnKeys(f2, j.i, dayRules), baseDay[j.i]) && rcSubset(rcRowWarnKeys(f2, st, rowRules), baseRow[j.r]);
+      st.shifts[j.i] = old; return good;
+    };
+    var pick = null;
+    if (ok('OFF')) pick = 'OFF';
+    else {
+      var a = 0, b = 0;
+      while (j.len - (a + 30) >= minLen && ok(rcShiftStr(j.p.start + a + 30, j.p.end))) a += 30;
+      while (j.len - (b + 30) >= minLen && ok(rcShiftStr(j.p.start, j.p.end - b - 30))) b += 30;
+      var tries = [[a, b], [a, 0], [0, b]].filter(function (x) { return (x[0] || x[1]) && j.len - x[0] - x[1] >= minLen; });
+      for (var k = 0; k < tries.length && !pick; k++) { var s = rcShiftStr(j.p.start + tries[k][0], j.p.end - tries[k][1]); if (ok(s)) pick = s; }
+    }
+    if (!pick) return;
+    var save = netH(old) - (pick === 'OFF' ? 0 : netH(pick));
+    if (save < 0.5) return;
+    st.shifts[j.i] = pick;
+    baseRow[j.r] = rcRowWarnKeys(f2, st, rowRules);
+    plan.push({ r: j.r, i: j.i, from: old, shift: pick, save: save });
+  });
+  return { plan: plan.sort(function (x, y) { return (x.i - y.i) || (y.save - x.save); }), dayRules: dayRules };
+}
+function rcRenderCuts() {
+  var el = document.getElementById('cuts-page-inner'); if (!el) return;
+  var fn = getSelectedFortnight(); if (!fn) { el.innerHTML = '<div class="card">No roster selected.</div>'; return; }
+  var who = RC.cutWho || 'all', res = rcCutPlan(fn, who), plan = res.plan;
+  RC.cutPlan = { fnId: fn.id, plan: plan };
+  var total = plan.reduce(function (t, x) { return t + x.save; }, 0);
+  var h = '<div class="card cut-hero"><div class="cut-big">' + (plan.length ? '−' + total.toFixed(1) + 'h' : '0h') + '</div><div><b>' + rcEsc(rcFnRange(fn)) + '</b><div class="rc-small">'
+    + (plan.length ? plan.length + ' change' + (plan.length === 1 ? '' : 's') + ' that keep every daily requirement below. Each one was checked together with the ones above it, so you can apply any of them, or all.' : 'Nothing can be cut without breaking a daily requirement.') + ' Shifts that have started (or start within the hour) are left alone.</div></div></div>';
+  h += '<div class="card"><div class="rc-row" style="border:none;padding:0"><label class="rc-small">Look at <select onchange="RC.cutWho=this.value;rcRenderCuts()" class="rc-to-in" style="margin:0;width:auto"><option value="all"' + (who === 'all' ? ' selected' : '') + '>everyone</option><option value="casual"' + (who === 'casual' ? ' selected' : '') + '>casuals only</option></select></label>'
+    + (plan.length ? '<button class="rc-b rc-green" onclick="rcCutApply(-1)">APPLY ALL</button>' : '') + '</div>';
+  if (!res.dayRules.length) h += '<div class="cut-warn">⚠ No daily requirements are set, so nothing protects cover. Add some in <a href="#" onclick="openPage(\'warnings-page\');return false">ROSTER WARNINGS</a> (EACH DAY - COVER / DUTIES) first.</div>';
+  var lastI = -1;
+  h += plan.map(function (c, k) {
+    var d = fn.dates[c.i], st = fn.staff[c.r], head = '';
+    if (c.i !== lastI) { lastI = c.i; head = '<div class="cut-day">' + rcEsc(d.day + ' ' + d.date) + '</div>'; }
+    return head + '<div class="cut-row"><div><b>' + rcEsc(st.firstName + ' ' + String(st.lastName || '').charAt(0)) + '</b> <span class="cut-from">' + rcEsc(fmt(c.from)) + '</span> → <span class="cut-to">' + (c.shift === 'OFF' ? 'OFF' : rcEsc(fmt(c.shift))) + '</span></div><div class="cut-r"><span class="cut-save">−' + c.save.toFixed(1) + 'h</span><button class="rc-b rc-green sg-apply" onclick="rcCutApply(' + k + ')">APPLY</button></div></div>';
+  }).join('');
+  h += '<div class="rc-small" style="margin-top:8px">Checked against: ' + (res.dayRules.length ? res.dayRules.map(function (w) { return rcEsc(w.msg || RC_WARN_TYPES[w.type].msg); }).join(' • ') : 'nothing') + '. People\'s own warnings (e.g. minimum hours, shortest shift) are kept too.</div></div>'
+    + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+  el.innerHTML = h;
+}
+function rcCutApply(k) {
+  var cp = RC.cutPlan, fn = getSelectedFortnight(); if (!cp || !fn || fn.id !== cp.fnId) return;
+  var list = k === -1 ? cp.plan : [cp.plan[k]];
+  list.forEach(function (c) { if (c && String(fn.staff[c.r].shifts[c.i]) === c.from) rcSaveCell(fn.id, c.r, c.i, c.shift); });
+  toast(k === -1 ? 'Applied ' + list.length + ' changes' : 'Done');
+  setTimeout(function () { renderRosterSafe(); rcRenderCuts(); }, 400);
+}
+
+(function () {
+  var css = ''
+    + '.r-table td.rc-av-off:not(.rc-cell-edit){background-image:repeating-linear-gradient(135deg,rgba(0,0,0,.10) 0 4px,transparent 4px 9px) !important}'
+    + '.r-table td.rc-av-part:not(.rc-cell-edit){box-shadow:inset 0 -3px 0 #f59e0b}'
+    + '@media print{.r-table td.rc-av-off,.r-table td.rc-av-part{background-image:none !important;box-shadow:none !important}}'
+    + '.av-hero{background:linear-gradient(135deg,#111,#3a0005);color:#fff;border:none}.av-hero .rc-small{color:#ddd}.av-who{font-family:"Arial Black",Impact,sans-serif;font-size:20px;font-style:italic;margin-bottom:4px}'
+    + '.av-week{padding:6px 12px}.av-day{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid #eee}.av-day:first-child{border-top:none}'
+    + '.av-dn{width:46px;height:40px;border-radius:10px;background:#111;color:#fff;font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}'
+    + '.av-m-off .av-dn{background:#999}.av-m-between .av-dn{background:#f59e0b}.av-body{flex:1;display:flex;flex-direction:column;gap:6px}'
+    + '.av-seg{display:flex;background:#eee;border-radius:9999px;padding:3px;gap:2px}.av-seg button{flex:1;border:none;background:transparent;border-radius:9999px;padding:8px 4px;font-weight:800;font-size:12px;color:#555;cursor:pointer}'
+    + '.av-seg button.on.av-any{background:#1a7f37;color:#fff}.av-seg button.on.av-between{background:#f59e0b;color:#111}.av-seg button.on.av-off{background:#111;color:#fff}'
+    + '.av-times{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700}.av-times input{flex:1;border:2px solid #ddd;border-radius:10px;padding:6px;font-size:15px}'
+    + '.av-max{display:flex;align-items:center;gap:8px;font-weight:700}.av-max input{width:90px;border:2px solid #ddd;border-radius:10px;padding:6px;font-size:15px}.av-note{width:100%;box-sizing:border-box;min-height:64px;margin:6px 0 0}'
+    + '.av-chips{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:8px 0 4px}.av-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:42px;padding:4px 2px;border-radius:10px;font-size:12px;font-weight:900;line-height:1.15}.av-chip b{font-size:10px;opacity:.8}.av-chip small{font-size:9px;font-weight:800}'
+    + '.av-c-any{background:#e7f6ec;color:#1a7f37}.av-c-off{background:#111;color:#fff}.av-c-part{background:#fff3d6;color:#8a5a00}'
+    + '.av-t td.av-c-any{background:#e7f6ec !important;color:#1a7f37 !important;font-weight:900}.av-t td.av-c-off{background:#111 !important;color:#fff !important;font-weight:900}.av-t td.av-c-part{background:#fff3d6 !important;color:#8a5a00 !important;font-weight:800}.av-t td.av-c-none{color:#bbb !important}'
+    + '.av-t td,.av-t th{text-align:center !important;border-bottom:2px solid #fff !important}.av-t td:first-child,.av-t th:first-child{text-align:left !important}'
+    + '.av-t td,.av-t th{text-align:center;font-size:12px;white-space:nowrap}.av-t td:first-child{text-align:left;white-space:normal;min-width:120px}.av-n{font-style:italic;max-width:220px}'
+    + '.cut-hero{display:flex;gap:14px;align-items:center}.cut-big{font-family:"Arial Black",Impact,sans-serif;font-size:30px;color:#1a7f37;white-space:nowrap}'
+    + '.cut-day{margin:12px 0 4px;font-size:11px;font-weight:900;letter-spacing:1px;color:#888}.cut-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:#f6f6f6;margin-bottom:6px;font-size:13px}'
+    + '.cut-from{text-decoration:line-through;color:#999}.cut-to{font-weight:900}.cut-r{display:flex;align-items:center;gap:8px}.cut-save{font-weight:900;color:#1a7f37}.cut-warn{margin-top:8px;padding:8px 10px;border-radius:10px;background:#fff3d6;font-size:12px;font-weight:700}';
+  var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
 })();
