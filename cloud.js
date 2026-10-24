@@ -1028,11 +1028,19 @@ renderHiddenStaffPage = (function (orig) {
       var st = x.st, u = rcUserForStaff(st), name = st.firstName + ' ' + st.lastName, key = rcEsc(name).replace(/'/g, '');
       var hrs = 0, chips = fn.dates.map(function (d, i) { var sh = st.shifts[i]; var on = parseShiftRange(sh); if (on) hrs += netH(sh); return '<span class="hs-chip' + (on ? ' on' : '') + '"><b>' + rcEsc(d.day.slice(0, 2)) + ' ' + rcEsc(d.date.slice(0, 2)) + '</b>' + (on ? rcEsc(fmt(sh)) : rcIsUAVal(sh) ? 'UA' : rcIsAbsentVal(sh) ? 'AB' : '-') + '</span>'; }).join('');
       return '<div class="hs-person" id="hs-p-' + x.i + '"><div class="rc-row" style="border:none;padding:0"><div><b>' + rcEsc(String(st.lastName).toUpperCase() + ', ' + st.firstName) + '</b> <span class="rc-pill">' + rcEsc(st.employmentType || 'casual') + '</span><br><span class="rc-small">' + (u ? 'Login: ' + rcEsc(u.username) : 'No login') + ' • ' + hrs.toFixed(1) + 'h this fortnight</span></div>'
+        + '<label class="rc-keep" style="margin:6px 0 0" title="New and duplicated rosters copy this person\'s latest shifts onto the same weekdays"><input type="checkbox"' + (st.consistent ? ' checked' : '') + ' onchange="rcSetConsistent(' + x.i + ',this.checked)"> Consistent shifts (carried over to new rosters)</label>'
         + '<div class="rc-btns"><button class="rc-b" onclick="rcHiddenEditShifts(' + x.i + ')">EDIT SHIFTS</button><button class="rc-b rc-white" onclick="rcHiddenEditDetails(' + x.i + ')">EDIT</button><button class="rc-b rc-red" onclick="deleteHiddenStaff(\'' + key + '\')">DELETE</button></div></div>'
         + '<div class="hs-chips">' + chips + '</div><div class="hs-edit" id="hs-e-' + x.i + '"></div></div>';
     }).join('') + '</div>';
   };
 })(renderHiddenStaffPage);
+function rcSetConsistent(rowIdx, on) {
+  var cur = getSelectedFortnight() || getCurrentFortnight(), st0 = cur && cur.staff[rowIdx]; if (!st0) return;
+  var name = rcPersonName(st0), fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
+  fns.forEach(function (f) { (f.staff || []).forEach(function (st) { if (rcPersonName(st) === name) { if (on) st.consistent = true; else delete st.consistent; } }); });
+  safeSetJSON('retail_roster_byFortnight_v1', fns);
+  toast(on ? st0.firstName + '\'s shifts will carry over to new rosters' : st0.firstName + ' no longer carried over');
+}
 function rcHiddenEditShifts(rowIdx) {
   showMain();
   setTimeout(function () {
@@ -1137,7 +1145,17 @@ function rcMarkAbsent(st, i) {
   st.shifts[i] = 'AB';
 }
 function rcIsUAVal(v) { return /^(UA|NA)$/i.test(String(v === undefined || v === null ? '' : v).trim()); }
-/* Hidden staff aren't in the Excel files, so a newly uploaded fortnight gets their rows (empty) */
+/* "Consistent" hidden staff work the same shifts every fortnight: new fortnights copy their latest pattern */
+function rcIsConsistent(name, fns) { name = String(name).toLowerCase(); return rcAsArray(fns).some(function (f) { return (f.staff || []).some(function (st) { return st.consistent && rcPersonName(st) === name; }); }); }
+function rcPatternFor(name, fns, dates, notId) {
+  name = String(name).toLowerCase();
+  var src = rcAsArray(fns).filter(function (f) { return f.id !== notId && (f.staff || []).some(function (st) { return rcPersonName(st) === name && (st.shifts || []).some(function (v) { return !!parseShiftRange(v); }); }); })
+    .sort(function (a, b) { return ((a.dates[0] || {}).iso || '') < ((b.dates[0] || {}).iso || '') ? 1 : -1; })[0];
+  if (!src) return null;
+  var row = src.staff.find(function (st) { return rcPersonName(st) === name; });
+  return dates.map(function (d, i) { var k = src.dates[i] && src.dates[i].day === d.day ? i : src.dates.findIndex(function (x) { return x.day === d.day; }); var v = k >= 0 ? row.shifts[k] : 'OFF'; return parseShiftRange(v) ? String(v) : 'OFF'; });
+}
+/* Hidden staff aren't in the Excel files, so a newly uploaded fortnight gets their rows (empty, or their usual shifts if consistent) */
 function rcEnsureHiddenRows() {
   if (!rcIsMgr()) return;
   var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])), people = {}, changed = false;
@@ -1146,8 +1164,8 @@ function rcEnsureHiddenRows() {
   fns.forEach(function (fn) {
     Object.keys(people).forEach(function (n) {
       if ((fn.staff || []).some(function (st) { return nameOf(st) === n; })) return;
-      var p = people[n], len = fn.dates.length;
-      fn.staff.push({ firstName: p.firstName, lastName: p.lastName, role: 'staff', employmentType: p.employmentType || 'casual', shifts: Array(len).fill('OFF'), originalShifts: {}, absentApproved: {}, cellGreen: {}, unavailable: Array(len).fill(false), isHidden: true });
+      var p = people[n], len = fn.dates.length, pat = rcIsConsistent(n, fns) ? rcPatternFor(n, fns, fn.dates, fn.id) : null;
+      fn.staff.push({ firstName: p.firstName, lastName: p.lastName, role: 'staff', employmentType: p.employmentType || 'casual', consistent: pat ? true : undefined, shifts: pat || Array(len).fill('OFF'), originalShifts: {}, absentApproved: {}, cellGreen: {}, unavailable: Array(len).fill(false), isHidden: true });
       changed = true;
     });
   });
@@ -3002,6 +3020,10 @@ function rcFreshRoster() {
         if (from.isHidden) p.isHidden = true;
       });
     }
+    people.forEach(function (p) {   // consistent hidden staff always carry their usual shifts over
+      var n = rcPersonName(p); if (!(p.isHidden || isHiddenStaffRow(p)) || !rcIsConsistent(n, all)) return;
+      var pat = rcPatternFor(n, all, dates); if (pat) { p.shifts = pat; p.consistent = true; }
+    });
     people.sort(rcStaffSort);
     var fn = { id: 'fn_' + Date.now(), label: label, dates: dates, staff: people };
     if (draft) fn.draft = true;
@@ -3338,8 +3360,54 @@ var RC_WARN_TYPES = {
   maxStaff:      { label: 'More people working than', unit: 'people', def: 8, msg: 'Overstaffed', day: true },
   openBy:        { label: 'Nobody starting by', unit: 'time', def: '07:30', msg: 'No one to open', day: true },
   closeFrom:     { label: 'Nobody working until', unit: 'time', def: '17:30', msg: 'No one to close', day: true },
-  dayHoursOver:  { label: 'Total hours on a day over', unit: 'hours', def: 60, msg: 'Too many hours on the day', day: true }
+  dayHoursOver:  { label: 'Total hours on a day over', unit: 'hours', def: 60, msg: 'Too many hours on the day', day: true },
+  dutyCover:     { label: 'People on a duty at any time (store hours) fewer than', unit: 'people', def: 1, msg: 'Duty not covered', day: true, duty: true },
+  dutyMin:       { label: 'People on a duty working on a day fewer than', unit: 'people', def: 2, msg: 'Not enough people for a duty', day: true, duty: true },
+  dutyClose:     { label: 'Nobody on a duty working until closing', unit: 'none', def: '', msg: 'No one on duty at closing', day: true, duty: true },
+  dutyOpen:      { label: 'Nobody on a duty starting by opening', unit: 'none', def: '', msg: 'No one on duty at opening', day: true, duty: true }
 };
+/* ---------- Staff duties (register, audiologist, spares/parts, stock...): manager-only, never shown to staff ---------- */
+var RC_DEFAULT_DUTIES = [{ id: 'register', name: 'Register' }, { id: 'audiologist', name: 'Audiologist' }, { id: 'parts', name: 'Spares/Parts' }, { id: 'stock', name: 'Stock' }];
+function rcDutyEntry() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_duties'; }) || null; }
+function rcDuties() { var e = rcDutyEntry(); return (e && rcAsArray(e.list).length) ? rcAsArray(e.list) : RC_DEFAULT_DUTIES; }
+function rcDutyName(id) { var d = rcDuties().find(function (x) { return x.id === id; }); return d ? d.name : id; }
+function rcPersonDuties(st) { var e = rcDutyEntry(); return rcAsArray(e && e.people && e.people[rcEncodeKey(rcPersonName(st))]); }
+function rcHasDuty(st, id) { return rcPersonDuties(st).indexOf(id) !== -1; }
+function rcDutyHasPeople(id) { var e = rcDutyEntry(); return !!(e && e.people && Object.keys(e.people).some(function (k) { return rcAsArray(e.people[k]).indexOf(id) !== -1; })); }
+/* Either/or duties: someone who can do Register and Stock covers one of them at a time.
+   Fill each duty's places from the people available (duties in list order, so Register comes first);
+   returns {dutyId: number of places that couldn't be filled}. */
+function rcDutyAllocate(people, demands) {
+  var order = rcDuties().map(function (d) { return d.id; }).filter(function (id) { return demands[id] > 0; });
+  var slots = []; order.forEach(function (id) { for (var k = 0; k < demands[id]; k++) slots.push(id); });
+  var owner = {}, short = {};   // person index -> slot index
+  var can = people.map(function (x) { return rcPersonDuties(x.st); });
+  var tryAssign = function (si, seen) {
+    for (var pi = 0; pi < people.length; pi++) {
+      if (seen[pi] || can[pi].indexOf(slots[si]) === -1) continue;
+      seen[pi] = true;
+      if (owner[pi] === undefined || tryAssign(owner[pi], seen)) { owner[pi] = si; return true; }
+    }
+    return false;
+  };
+  slots.forEach(function (d, si) { if (!tryAssign(si, {})) short[d] = (short[d] || 0) + 1; });
+  return short;
+}
+/* For each duty in `demands`, the times in store hours it's short: {dutyId: [{from, to, n}]} (n = how many were placed) */
+function rcDutyGapsAll(on, day, demands) {
+  var hrs = rcHoursFor(day), out = {}, cur = {};
+  Object.keys(demands).forEach(function (id) { out[id] = []; });
+  for (var t = hrs.open; t < hrs.close; t += 15) {
+    var here = on.filter(function (x) { return x.p.start <= t && x.p.end >= t + 15; }), short = rcDutyAllocate(here, demands);
+    Object.keys(demands).forEach(function (id) {
+      if (short[id]) { var n = demands[id] - short[id], c = cur[id]; if (c && c.n === n && c.to === t) c.to = t + 15; else { cur[id] = { from: t, to: t + 15, n: n }; out[id].push(cur[id]); } }
+      else cur[id] = null;
+    });
+  }
+  return out;
+}
+function rcDutyGaps(on, day, id, need) { var d = {}; d[id] = need; return rcDutyGapsAll(on, day, d)[id]; }
+function rcHmText(m) { m = ((m % 1440) + 1440) % 1440; return fmt(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0') + '-00:00').split('-')[0]; }
 var RC_WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 function rcDayMatch(w, d) {
   var f = w.days || 'all', day = String(d.day || '').toUpperCase().slice(0, 3);
@@ -3350,7 +3418,7 @@ function rcDayMatch(w, d) {
 }
 function rcWarnDaysLabel(f) { return !f || f === 'all' ? 'every day' : f === 'weekdays' ? 'weekdays' : f === 'weekends' ? 'weekends' : f; }
 var RC_WARN_PRESETS = [['hoursOver', 76, 'Employee exceeds normal hours', 'fulltime'], ['hoursOver', 38, 'Casual over 38 hours', 'casual'], ['shiftOver', 10, 'Shift over 10 hours', 'all'], ['restUnder', 10, 'Less than 10 hours rest', 'all'], ['daysInRow', 6, 'More than 6 days in a row', 'all'],
-  ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all']];
+  ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['dutyCover', 1, 'Register not covered', 'all', 'register'], ['dutyClose', '', 'No register worker at closing', 'all', 'register'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all']];
 function rcWarnRules() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).filter(function (w) { return w && RC_WARN_TYPES[w.type]; }); }
 /* People never warned about (stored as a special entry in the same list) */
 function rcWarnIgnoreAll() { var e = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_ignore'; }); return rcAsArray(e && e.people); }
@@ -3431,10 +3499,18 @@ function rcDayWarnings(fn, rules) {
   var out = [];
   (fn.dates || []).forEach(function (d, i) {
     var on = [];
+    var coverNeed = {}, dayNeed = {}, coverGaps = null, dayShort = null;
     (fn.staff || []).forEach(function (st) {
       if ((st.absentApproved && st.absentApproved[i]) || (st.unavailable && st.unavailable[i])) return;
       var sh = st.shifts && st.shifts[i], p = parseShiftRange(sh == null ? '' : String(sh)); if (p) on.push({ st: st, p: p, h: netH(String(sh)) });
     });
+    rules.forEach(function (w) {
+      if (!rcDayMatch(w, d) || !w.duty || !rcDutyHasPeople(w.duty)) return;
+      if (w.type === 'dutyCover') coverNeed[w.duty] = Math.max(coverNeed[w.duty] || 0, +w.value || 1);
+      if (w.type === 'dutyMin') dayNeed[w.duty] = Math.max(dayNeed[w.duty] || 0, +w.value || 1);
+    });
+    if (Object.keys(coverNeed).length) coverGaps = rcDutyGapsAll(on, d.day, coverNeed);
+    if (Object.keys(dayNeed).length) dayShort = rcDutyAllocate(on, dayNeed);
     rules.forEach(function (w) {
       if (!rcDayMatch(w, d)) return;
       var v = w.value, bad = false, detail = '';
@@ -3443,6 +3519,11 @@ function rcDayWarnings(fn, rules) {
       var sh1 = rcHoursFor(d.day), vOpen = v === 'store' ? sh1.open : rcHm(v), vClose = v === 'store' ? sh1.close : rcHm(v);
       if (w.type === 'openBy' && on.length && !on.some(function (x) { return x.p.start <= vOpen; })) { bad = true; detail = 'first start ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return a.start - b.start; })[0].raw).split('-')[0]; }
       if (w.type === 'closeFrom' && on.length && !on.some(function (x) { return x.p.end >= vClose; })) { bad = true; detail = 'last finish ' + fmt(on.map(function (x) { return x.p; }).sort(function (a, b) { return b.end - a.end; })[0].raw).split('-')[1]; }
+      if (w.type === 'dutyCover' && coverGaps && coverGaps[w.duty]) { var gp = coverGaps[w.duty]; if (gp.length) { bad = true; detail = rcDutyName(w.duty) + ' ' + gp.slice(0, 3).map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to) + ' (' + g.n + ')'; }).join(', ') + (gp.length > 3 ? '…' : ''); } }
+      if (w.type === 'dutyMin' && dayShort && w.duty in dayNeed && dayShort[w.duty]) { var can = on.filter(function (x) { return rcHasDuty(x.st, w.duty); }).length; bad = true; detail = rcDutyName(w.duty) + ': ' + (dayNeed[w.duty] - dayShort[w.duty]) + ' of ' + dayNeed[w.duty] + (can > dayNeed[w.duty] - dayShort[w.duty] ? ' (others needed for other duties)' : ''); }
+      var hrsD = rcHoursFor(d.day);
+      if (w.type === 'dutyClose' && w.duty && rcDutyHasPeople(w.duty) && on.length && !on.some(function (x) { return x.p.end >= hrsD.close && rcHasDuty(x.st, w.duty); })) { bad = true; detail = rcDutyName(w.duty) + ' at ' + rcHmText(hrsD.close); }
+      if (w.type === 'dutyOpen' && w.duty && rcDutyHasPeople(w.duty) && on.length && !on.some(function (x) { return x.p.start <= hrsD.open && rcHasDuty(x.st, w.duty); })) { bad = true; detail = rcDutyName(w.duty) + ' at ' + rcHmText(hrsD.open); }
       if (w.type === 'dayHoursOver') { var t = on.filter(function (x) { return !isHiddenStaffRow(x.st); }).reduce(function (a, x) { return a + x.h; }, 0); if (t > +v) { bad = true; detail = t.toFixed(1) + 'h'; } }
       if (bad) out.push({ rule: w, i: i, text: w.msg || RC_WARN_TYPES[w.type].msg, detail: detail });
     });
@@ -3538,7 +3619,7 @@ function rcRenderWarningsPage() {
   var shown = rules.map(function (w, k) { return { w: w, k: k }; }).filter(function (x) { return x.w && RC_WARN_TYPES[x.w.type]; });
   h += shown.length ? shown.map(function (x) {
     var w = x.w, k = x.k, t = RC_WARN_TYPES[w.type];
-    var desc = t.label + (t.unit === 'none' ? '' : ' ' + (w.value === 'store' ? 'store opening/closing time' : w.value) + (/^(time|weekday)$/.test(t.unit) || w.value === 'store' ? '' : ' ' + t.unit)) + ' • ' + (t.day ? rcWarnDaysLabel(w.days) : rcWarnWho(w))
+    var desc = (t.duty && w.duty ? rcDutyName(w.duty) + ': ' : '') + t.label + (t.unit === 'none' ? '' : ' ' + (w.value === 'store' ? 'store opening/closing time' : w.value) + (/^(time|weekday)$/.test(t.unit) || w.value === 'store' ? '' : ' ' + t.unit)) + ' • ' + (t.day ? rcWarnDaysLabel(w.days) : rcWarnWho(w))
       + (rcAsArray(w.skip).length ? ' • ignores ' + rcAsArray(w.skip).map(function (k) { return people[k] || k; }).join(', ') : '');
     return '<div class="rc-row"><div><b>' + rcEsc(w.msg || t.msg) + '</b><br><span class="rc-small">' + rcEsc(desc) + '</span></div><div class="rc-btns">'
       + '<label class="rc-small"><input type="checkbox"' + (w.off ? '' : ' checked') + ' onchange="rcWarnToggle(' + k + ',this.checked)"> on</label>' + (t.day ? '' : '<button class="rc-b rc-white" onclick="rcWarnIgnore(' + k + ')">IGNORE…</button>') + '<button class="rc-b rc-white" onclick="rcWarnDelete(' + k + ')">DELETE</button></div></div>';
@@ -3546,6 +3627,12 @@ function rcRenderWarningsPage() {
   h += '</div><div class="card"><div class="rc-h">STORE HOURS</div><div class="rc-small">Used by the day overview (opening = starts by opening time, closing = works until closing time) and the "Nobody in for opening / until closing" warnings.</div>'
     + RC_WEEKDAYS.map(function (k) { var x = rcHoursFor(k); return '<div class="tm-row"><b style="width:44px">' + k + '</b><label class="rc-small">Open <input type="time" id="sh-o-' + k + '" value="' + x.openS + '"></label><label class="rc-small">Close <input type="time" id="sh-c-' + k + '" value="' + x.closeS + '"></label></div>'; }).join('')
     + '<button class="rc-b rc-red" style="margin-top:8px" onclick="rcSaveStoreHours()">SAVE STORE HOURS</button>';
+  var dus = rcDuties(), de = rcDutyEntry() || {}, dp = de.people || {};
+  h += '</div><div class="card" id="rc-duties-card"><div class="rc-h">STAFF DUTIES</div><div class="rc-small">Background only: managers and masters see this, staff never do and it\'s not on the roster. Tick what each person can do (more than one is fine), then add a <b>People on a duty…</b> warning to check every day against store hours. The day overview shows who is on each duty.</div>'
+    + '<div style="overflow:auto;margin-top:8px"><table class="cmp-t duty-t"><tr><th>Person</th>' + dus.map(function (du) { return '<th>' + rcEsc(du.name) + '</th>'; }).join('') + '</tr>'
+    + Object.keys(people).sort().map(function (k) { var ek = rcEncodeKey(k), mine = rcAsArray(dp[ek]); return '<tr><td>' + rcEsc(people[k]) + '</td>' + dus.map(function (du) { return '<td><input type="checkbox" class="rc-duty" data-p="' + rcEsc(ek) + '" data-d="' + rcEsc(du.id) + '"' + (mine.indexOf(du.id) !== -1 ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join('') + '</table></div>'
+    + '<div class="tm-row" style="border:none;padding:8px 0 0"><button class="rc-b rc-red" onclick="rcSaveDuties()">SAVE DUTIES</button><input id="duty-new" class="rc-to-in" style="margin:0;flex:1" placeholder="Add a duty, e.g. Forklift"><button class="rc-b rc-white" onclick="rcAddDuty()">ADD DUTY</button></div>'
+    + '<div class="rc-small" style="margin-top:4px">' + dus.map(function (du) { return rcEsc(du.name) + ' <a href="#" onclick="rcRemoveDuty(\'' + rcEsc(du.id) + '\');return false">remove</a>'; }).join(' • ') + '</div>';
   var ign = rcWarnIgnoreAll();
   h += '</div><div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NEVER WARN ABOUT</div><button class="rc-b rc-white" onclick="rcWarnIgnore(-1)">CHOOSE PEOPLE…</button></div>'
     + '<div class="rc-small">' + (ign.length ? ign.map(function (k) { return rcEsc(people[k] || k); }).join(', ') : 'Nobody - everyone is checked.') + ' Each warning above can also ignore people with its IGNORE… button. Whole-day cover warnings always count everyone.</div>';
@@ -3554,6 +3641,7 @@ function rcRenderWarningsPage() {
     + '<div class="tm-row" style="border:none;padding:10px 0 0"><select id="wn-type" class="rc-to-in" style="margin:0;flex:2" onchange="rcWarnTypeUI()">'
     + '<optgroup label="Each person">' + Object.keys(RC_WARN_TYPES).filter(function (k) { return !RC_WARN_TYPES[k].day; }).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</optgroup>'
     + '<optgroup label="Each day (cover)">' + Object.keys(RC_WARN_TYPES).filter(function (k) { return RC_WARN_TYPES[k].day; }).map(function (k) { return '<option value="' + k + '">' + rcEsc(RC_WARN_TYPES[k].label) + '</option>'; }).join('') + '</optgroup></select>'
+    + '<select id="wn-duty" class="rc-to-in" style="margin:0;flex:1;display:none">' + rcDuties().map(function (du) { return '<option value="' + rcEsc(du.id) + '">' + rcEsc(du.name) + '</option>'; }).join('') + '</select>'
     + '<input id="wn-value" class="rc-to-in" style="margin:0;flex:1"><select id="wn-wd" class="rc-to-in" style="margin:0;flex:1;display:none">' + RC_WEEKDAYS.map(function (d) { return '<option>' + d + '</option>'; }).join('') + '</select><span id="wn-unit" class="rc-small"></span></div>'
     + '<div class="tm-row" style="border:none;padding:6px 0 0"><select id="wn-days" class="rc-to-in" style="margin:0;flex:1;display:none"><option value="all">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option>' + RC_WEEKDAYS.map(function (d) { return '<option value="' + d + '">' + d + ' only</option>'; }).join('') + '</select>'
     + '<select id="wn-who" class="rc-to-in" style="margin:0;flex:1"><option value="all">Everyone</option><option value="fulltime">Full time only</option><option value="casual">Casuals only</option>'
@@ -3570,6 +3658,7 @@ function rcWarnTypeUI() {
   if (!/^(none|weekday)$/.test(t.unit)) { v.type = t.unit === 'time' ? 'time' : 'number'; v.step = t.unit === 'hours' ? '0.5' : '1'; v.value = t.def; }
   document.getElementById('wn-unit').textContent = /^(time|none|weekday)$/.test(t.unit) ? '' : t.unit;
   document.getElementById('wn-days').style.display = t.day ? '' : 'none';
+  document.getElementById('wn-duty').style.display = t.duty ? '' : 'none';
   document.getElementById('wn-who').style.display = t.day ? 'none' : '';
   document.getElementById('wn-msg').placeholder = 'Message, e.g. ' + t.msg;
 }
@@ -3581,12 +3670,16 @@ function rcWarnAdd() {
   var whoSel = document.getElementById('wn-who'), who = whoSel.value;
   var w = { id: 'w' + Date.now().toString(36), type: type, value: value, who: t.day ? 'all' : who, msg: document.getElementById('wn-msg').value.trim() || t.msg };
   if (t.day) w.days = document.getElementById('wn-days').value;
+  if (t.duty) { w.duty = document.getElementById('wn-duty').value; if (!document.getElementById('wn-msg').value.trim()) w.msg = { dutyCover: rcDutyName(w.duty) + ' not covered', dutyMin: 'Not enough ' + rcDutyName(w.duty), dutyClose: 'No ' + rcDutyName(w.duty).toLowerCase() + ' at closing', dutyOpen: 'No ' + rcDutyName(w.duty).toLowerCase() + ' at opening' }[type]; }
   if (who.indexOf('p:') === 0) w.whoName = whoSel.options[whoSel.selectedIndex].text;
   rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([w]), 'Warning added');
 }
 function rcWarnPreset(k) {
   var p = RC_WARN_PRESETS[k];
-  rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([{ id: 'w' + Date.now().toString(36), type: p[0], value: p[1], who: p[3], msg: p[2] }]), 'Warning added');
+  var w = { id: 'w' + Date.now().toString(36), type: p[0], value: p[1], who: p[3], msg: p[2] }; if (p[4]) w.duty = p[4];
+  var have = rcAsArray(safeGetJSON('retail_roster_warnings_v1', []));
+  if (have.some(function (x) { return x && x.type === w.type && String(x.value) === String(w.value) && (x.duty || '') === (w.duty || '') && (x.who || 'all') === w.who; })) { toast('That warning is already on'); return; }
+  rcWarnSave(rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).concat([w]), 'Warning added');
 }
 /* Pick people to ignore: k = rule index, or -1 for every warning */
 function rcWarnIgnore(k) {
@@ -3608,6 +3701,40 @@ function rcWarnIgnore(k) {
     rcWarnSave(l, pick.length ? 'Ignoring ' + pick.length + ' ' + (pick.length === 1 ? 'person' : 'people') : 'Nobody ignored');
   });
 }
+function rcDutySave(mut, msg) {
+  var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])), e = l.find(function (w) { return w && w.type === '_duties'; });
+  if (!e) { e = { id: 'duties', type: '_duties', list: RC_DEFAULT_DUTIES.slice(), people: {} }; l.push(e); }
+  if (!rcAsArray(e.list).length) e.list = RC_DEFAULT_DUTIES.slice();
+  e.people = e.people || {};
+  mut(e);
+  rcWarnSave(l, msg);
+}
+function rcSaveDuties() {
+  var people = {};
+  document.querySelectorAll('.rc-duty').forEach(function (x) { if (!people[x.dataset.p]) people[x.dataset.p] = []; if (x.checked) people[x.dataset.p].push(x.dataset.d); });
+  Object.keys(people).forEach(function (k) { if (!people[k].length) delete people[k]; });
+  rcDutySave(function (e) { e.people = people; }, 'Duties saved');
+  // anyone on the register: make sure the register checks are on
+  var hasReg = Object.keys(people).some(function (k) { return people[k].indexOf('register') !== -1; });
+  if (hasReg) {
+    var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])), added = 0;
+    [['dutyCover', 1, 'Register not covered'], ['dutyClose', '', 'No register worker at closing']].forEach(function (x) {
+      if (l.some(function (w) { return w && w.type === x[0] && w.duty === 'register'; })) return;
+      l.push({ id: 'w' + Date.now().toString(36) + added, type: x[0], value: x[1], who: 'all', msg: x[2], duty: 'register', days: 'all' }); added++;
+    });
+    if (added) rcWarnSave(l, 'Duties saved - register checks switched on');
+  }
+}
+function rcAddDuty() {
+  var n = String((document.getElementById('duty-new') || {}).value || '').trim(); if (!n) { toast('Type a duty name'); return; }
+  rcDutySave(function (e) { if (rcAsArray(e.list).some(function (d) { return d.name.toLowerCase() === n.toLowerCase(); })) return; e.list = rcAsArray(e.list).concat([{ id: 'd' + Date.now().toString(36), name: n }]); }, 'Added ' + n);
+}
+function rcRemoveDuty(id) {
+  showCustomConfirm('Remove ' + rcEsc(rcDutyName(id)) + '?', 'People lose this duty and warnings for it stop.', function (ok) {
+    if (!ok) return;
+    rcDutySave(function (e) { e.list = rcAsArray(e.list).filter(function (d) { return d.id !== id; }); Object.keys(e.people).forEach(function (k) { e.people[k] = rcAsArray(e.people[k]).filter(function (x) { return x !== id; }); }); }, 'Removed');
+  });
+}
 function rcWarnToggle(k, on) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); if (!l[k]) return; if (on) delete l[k].off; else l[k].off = true; rcWarnSave(l); }
 function rcWarnDelete(k) { var l = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])); l.splice(k, 1); rcWarnSave(l, 'Deleted'); }
 
@@ -3627,7 +3754,7 @@ function rcDayOverview(i) {
     var nm = st.firstName + ' ' + String(st.lastName || '').charAt(0) + String(st.lastName || '').slice(1).toLowerCase(), hid = isHiddenStaffRow(st);
     if ((st.absentApproved && st.absentApproved[i]) || rcIsAbsentVal(sh)) ab.push(nm);
     else if ((st.unavailable && st.unavailable[i]) || rcIsUAVal(sh)) ua.push(nm);
-    else if (p) on.push({ nm: nm, p: p, sh: sh, hid: hid, h: netH(sh) });
+    else if (p) on.push({ st: st, nm: nm, p: p, sh: sh, hid: hid, h: netH(sh) });
     else off.push(nm);
   });
   on.sort(function (a, b) { return a.p.start - b.p.start || a.p.end - b.p.end; });
@@ -3659,6 +3786,16 @@ function rcDayOverview(i) {
     + '<div class="dov-stats"><div><b>' + on.length + '</b><small>working</small></div><div><b>' + opening.length + '</b><small>opening</small></div><div><b>' + closing.length + '</b><small>closing</small></div><div><b>' + total.toFixed(1) + 'h</b><small>hours</small></div></div>'
     + (noOpen ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ Nobody starts by opening (' + rcEsc(t(oT)) + ')</div>' : '')
     + (noClose ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ Nobody works until closing (' + rcEsc(t(cT)) + ')</div>' : '')
+    + (function () {
+        var need = {}; rcDuties().forEach(function (du) { if (rcDutyHasPeople(du.id)) need[du.id] = 1; });
+        rcWarnRules().forEach(function (w) { if (!w.off && w.type === 'dutyCover' && w.duty in need && rcDayMatch(w, d)) need[w.duty] = Math.max(need[w.duty], +w.value || 1); });
+        var allGaps = Object.keys(need).length ? rcDutyGapsAll(on, d.day, need) : {};
+        return rcDuties().filter(function (du) { return du.id in need; }).map(function (du) {
+        var rg = on.filter(function (x) { return rcHasDuty(x.st, du.id); }), gp = allGaps[du.id] || [];
+        return '<div class="dov-reg"><b>' + rcEsc(du.name) + '</b> on: <b>' + rg.length + '</b>' + (rg.length ? ' <span class="rc-small">(' + rcEsc(rg.map(function (x) { return x.nm + (rcPersonDuties(x.st).length > 1 ? ' ⇄' : ''); }).join(', ')) + ')</span>' : '')
+          + (gp.length ? '<br><span class="rc-warn-dv">⚠ No ' + rcEsc(du.name.toLowerCase()) + ' cover ' + rcEsc(gp.map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', ')) + '</span>' : on.length ? ' <span class="rc-small">• covered all day</span>' : '') + '</div>';
+      }).join('') + (on.some(function (x) { return rcPersonDuties(x.st).length > 1; }) ? '<div class="rc-small" style="margin:-2px 0 6px">⇄ can do more than one duty, but only one at a time.</div>' : '');
+      })()
     + (dws.length ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ ' + dws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>' : '')
     + bars
     + group('OPENING <small>starts by ' + rcEsc(t(oT)) + '</small>', opening, 'dov-open')
@@ -4354,6 +4491,7 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '#rc-warn-chip{background:#F59E0B !important;color:#111 !important;border-color:#b77400 !important;min-width:0 !important;font-weight:900}#rc-warn-chip.on{box-shadow:inset 0 0 0 2px #111}'
     + 'body:not(.rc-warn-open) #roster-mount td.rc-warn-cell{outline:none}body:not(.rc-warn-open) #roster-mount th.rc-warn-th{box-shadow:none}body:not(.rc-warn-open) .rc-warn-d{display:none}'
     + 'body.rc-mobile .r-controls.rc-tidy{gap:6px}body.rc-mobile .r-controls.rc-tidy select#fortnight-select{flex:1 1 150px;min-width:0 !important;max-width:none !important}body.rc-mobile .r-controls.rc-tidy #rc-current{flex-basis:100%;order:0 !important;text-align:center}body.rc-mobile .r-controls.rc-tidy .rc-right{margin-left:0 !important}body.rc-mobile #rc-tools-wrap{margin-left:auto}body.rc-mobile #rc-tools-menu{position:fixed;left:8px;right:8px;top:auto;bottom:84px;min-width:0}'
+    + '.duty-t td,.duty-t th{text-align:center !important;white-space:nowrap}.duty-t td:first-child,.duty-t th:first-child{text-align:left !important}.dov-reg{margin:6px 0;padding:6px 10px;background:#f4f4f4;border-radius:10px;font-size:13px}'
     + '#rc-warn-bar{margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#FFF4DB;border:2px solid #F59E0B;font-size:12px}body.rc-mobile #rc-warn-bar{margin:8px 8px 0}.rc-warn-head{cursor:pointer}.rc-warn-row{padding:4px 0;border-top:1px solid #f3d9a4;margin-top:4px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'

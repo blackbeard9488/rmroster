@@ -82,6 +82,16 @@ My Schedule, whichever login they use. Staff don't see any of this.
 The Kate notes row (any Excel row mentioning Kate, unless its name column is a real staff member such as
 Kate Phillips) and the Luke/Chris green cells only apply to the first team.
 
+## 8. Staff duties (background, managers only)
+
+Options → ROSTER WARNINGS → **STAFF DUTIES**: tick who can do Register, Audiologist, Spares/Parts and Stock (add
+your own duties too). Someone with more than one duty covers one at a time. Staff never see this and it isn't on
+the roster. Saving register operators switches on **Register not covered** (checked every 15 minutes of store
+hours) and **No register worker at closing**. The day overview shows who is on each duty and any gaps.
+
+Hidden staff with **Consistent shifts** ticked (Hidden Staff page) get their latest shifts copied onto the same
+weekdays in every new fortnight: Excel uploads, + NEW and DUPLICATE.
+
 ## How things work now
 
 - **Logins**: username and password only. Managers add people, reset forgotten passwords and remove
