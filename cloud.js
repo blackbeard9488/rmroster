@@ -697,6 +697,7 @@ async function rcStartSession(user) {
   toast('Welcome ' + (profile.firstName || profile.username));
   rcMaybeRegisterSW();
   setTimeout(function () { rcDeviceSetup(false); }, 1500);
+  setTimeout(rcSetupReminder, 2500);
 }
 
 if (RC.auth) RC.auth.onAuthStateChanged(function (user) {
@@ -728,6 +729,7 @@ function rcEndSession() {
   var leaving = RC.session && RC.session.uid;
   var logged = leaving ? rcAccessLog('Signed out') : Promise.resolve();
   RC.session = null;
+  var rsr = document.getElementById('rc-setup-reminder'); if (rsr) rsr.remove();
   rcDetach();
   rcClearLocal();
   if (!RC.auth || !RC.auth.currentUser) return;
@@ -904,7 +906,8 @@ renderAccountMgmtPage = function () {
       ? '<span class="am-ok">First login ' + rcEsc(when(u.firstLoginTs)) + '</span>' + (u.lastLoginTs ? ' • last seen ' + rcEsc(when(u.lastLoginTs)) + (u.lastDevice ? ' on ' + rcEsc(u.lastDevice) : '') : '')
         + ' • ' + (u.appInstalled ? '<span class="am-ok">app installed ✓</span>' : '<span class="am-no">app not installed</span>') + ' • ' + (u.pushOn ? '<span class="am-ok">alerts on ✓</span>' : '<span class="am-no">alerts off</span>')
       : '<span class="am-no">Never logged in</span>';
-    return '<div class="rc-row"><div><b>' + rcEsc(u.username) + '</b> <span class="rc-pill">' + rcEsc(u.role) + '</span><br><span class="rc-small">' + rcEsc((u.firstName || '') + ' ' + (u.lastName || '')) + ' • ' + rcEsc(u.employmentType || '') + ' • ' + (linked ? '<span style="color:#1a7f37">on roster</span>' : '<span style="color:#E30613">no matching roster name</span>') + '</span><br><span class="rc-small">' + setup + '</span></div>'
+    if (!rcIsOwner()) setup = '';   // login and device details are for masters only
+    return '<div class="rc-row"><div><b>' + rcEsc(u.username) + '</b> <span class="rc-pill">' + rcEsc(u.role) + '</span><br><span class="rc-small">' + rcEsc((u.firstName || '') + ' ' + (u.lastName || '')) + ' • ' + rcEsc(u.employmentType || '') + ' • ' + (linked ? '<span style="color:#1a7f37">on roster</span>' : '<span style="color:#E30613">no matching roster name</span>') + '</span>' + (setup ? '<br><span class="rc-small">' + setup + '</span>' : '') + '</div>'
       + '<div class="rc-btns"><button class="rc-b" onclick="rcEditUser(\'' + u.uid + '\')">EDIT</button><button class="rc-b" onclick="rcResetUserPassword(\'' + u.uid + '\')">RESET PASSWORD</button>' + (u.uid === RC.session.uid ? '' : '<button class="rc-b rc-red" onclick="rcDeleteUser(\'' + u.uid + '\')">DEL</button>') + '</div></div>';
   }).join('');
   h += '<div class="rc-h" style="margin-top:16px">ADD NEW USER</div><div class="rc-small">First and last name must match the roster so their shifts, offers and alerts reach them.</div>'
@@ -1928,6 +1931,7 @@ async function rcSubscribePush(silent) {
     var json = sub.toJSON();
     var id = Array.prototype.map.call(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(json.endpoint))), function (x) { return x.toString(16).padStart(2, '0'); }).join('').slice(0, 32);
     await RC.db.ref('push/' + RC.session.uid + '/' + id).set({ endpoint: json.endpoint, keys: json.keys, ua: navigator.userAgent.slice(0, 160), ts: firebase.database.ServerValue.TIMESTAMP });
+    setTimeout(rcSetupReminder, 300);
     var pu = {}; pu['users/' + RC.session.uid + '/pushOn'] = true; pu['users/' + RC.session.uid + '/pushTs'] = firebase.database.ServerValue.TIMESTAMP;
     RC.db.ref().update(pu).catch(function () {});
     if (!silent) toast('Notifications on for this device');
@@ -1963,6 +1967,30 @@ function rcPushReady() {
   if (Notification.permission !== 'granted') return Promise.resolve(false);
   return navigator.serviceWorker.getRegistration().then(function (reg) { return reg ? reg.pushManager.getSubscription() : null; }).then(function (s) { return !!s; }).catch(function () { return false; });
 }
+/* A small reminder bar (dismissable for a week) while this device hasn't got the app / notifications set up */
+function rcSetupReminder() {
+  var bar = document.getElementById('rc-setup-reminder');
+  if (!RC.session) { if (bar) bar.remove(); return; }
+  var phone = rcIsPhone(), installed = !phone || rcIsStandalone() || (function () { try { return localStorage.getItem('repco_app_installed') === '1'; } catch (e) { return false; } })();
+  var until = 0; try { until = +localStorage.getItem('repco_setup_reminder_until') || 0; } catch (e) {}
+  rcPushReady().then(function (pushOn) {
+    bar = document.getElementById('rc-setup-reminder');
+    if ((installed && pushOn) || Date.now() < until) { if (bar) bar.remove(); return; }
+    var supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    var blocked = 'Notification' in window && Notification.permission === 'denied';
+    var msg = !installed && !pushOn ? 'Install the Repco Roster app and turn on notifications so you don\'t miss shift offers and roster changes.'
+      : !installed ? 'Install the Repco Roster app on this phone for quicker access.'
+      : blocked ? 'Notifications are blocked on this device. Allow them in your browser or phone settings to get shift alerts.'
+      : !supported ? 'This browser can\'t show notifications. Try Chrome, or on iPhone open Repco Roster from your home screen.'
+      : 'Turn on notifications on this device so you don\'t miss shift offers and roster changes.';
+    if (!bar) { bar = document.createElement('div'); bar.id = 'rc-setup-reminder'; document.body.appendChild(bar); }
+    bar.innerHTML = '<span class="rsr-ico">🔔</span><span class="rsr-t">' + rcEsc(msg) + '</span>' + (blocked && installed ? '' : '<button class="rc-b rc-red" id="rsr-go">SET UP</button>') + '<button class="rc-x" id="rsr-x" title="Remind me in a week">✕</button>';
+    var go = document.getElementById('rsr-go');
+    if (go) go.onclick = function () { if (phone) { RC.deviceSetupShown = false; rcDeviceSetup(false); } else openPage('notif-page'); };
+    document.getElementById('rsr-x').onclick = function () { try { localStorage.setItem('repco_setup_reminder_until', String(Date.now() + 7 * 864e5)); } catch (e) {} bar.remove(); toast('OK - we\'ll remind you in a week'); };
+  });
+}
+document.addEventListener('visibilitychange', function () { if (!document.hidden) setTimeout(rcSetupReminder, 500); });
 /* Shown after login on a phone until the app is installed and notifications are on */
 function rcDeviceSetup(refreshOnly) {
   if (!RC.session || !rcIsPhone()) return;
@@ -3875,6 +3903,12 @@ function rcSaveStoreHours() {
 function rcDayHeaders() {
   if (!rcIsMgr() || RC.pdfMode) return;
   var fn = getSelectedFortnight(); if (!fn) return;
+  // how many are working each day (hidden staff included)
+  var counts = fn.dates.map(function (d, i) { return (fn.staff || []).filter(function (st) { var sh = st.shifts && st.shifts[i]; return !(st.unavailable && st.unavailable[i]) && !(st.absentApproved && st.absentApproved[i]) && !!parseShiftRange(sh == null ? '' : String(sh)); }).length; });
+  document.querySelectorAll('#roster-mount table').forEach(function (t) {
+    var ths = t.querySelectorAll('thead th');
+    fn.dates.forEach(function (d, i) { var th = ths[i + 1]; if (!th) return; var b = th.querySelector('.rc-on-n'); if (!b) { b = document.createElement('span'); b.className = 'rc-on-n'; th.appendChild(b); } b.textContent = counts[i] + ' on'; b.title = counts[i] + ' working (hidden staff included)'; });
+  });
   document.querySelectorAll('#roster-mount table').forEach(function (t) {
     var ths = t.querySelectorAll('thead th');
     fn.dates.forEach(function (d, i) { var th = ths[i + 1]; if (!th || th.dataset.dov) return; th.dataset.dov = '1'; th.classList.add('rc-dov-th'); th.title = (th.title ? th.title + '\n' : '') + 'Click for the day overview'; th.addEventListener('click', function () { rcDayOverview(i); }); });
@@ -4543,6 +4577,8 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-mobile .r-controls.rc-tidy{gap:6px}body.rc-mobile .r-controls.rc-tidy select#fortnight-select{flex:1 1 150px;min-width:0 !important;max-width:none !important}body.rc-mobile .r-controls.rc-tidy #rc-current{flex-basis:100%;order:0 !important;text-align:center}body.rc-mobile .r-controls.rc-tidy .rc-right{margin-left:0 !important}body.rc-mobile #rc-tools-wrap{margin-left:auto}body.rc-mobile #rc-tools-menu{position:fixed;left:8px;right:8px;top:auto;bottom:84px;min-width:0}'
     + '.wq-g{margin-top:8px}.wq-h{font-size:10px;font-weight:900;color:#777;letter-spacing:.5px;margin-bottom:2px}.wq-b{margin:3px 4px 0 0 !important;font-size:11px !important}.wq-b.on{background:#E8F5EC !important;border-color:#1a7f37 !important;color:#1a7f37 !important}'
     + '.duty-t td,.duty-t th{text-align:center !important;white-space:nowrap}.duty-t td:first-child,.duty-t th:first-child{text-align:left !important}.dov-reg{margin:6px 0;padding:6px 10px;background:#f4f4f4;border-radius:10px;font-size:13px}'
+    + '#rc-setup-reminder{position:fixed;right:16px;bottom:16px;z-index:9990;max-width:440px;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#111;color:#fff;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.35);font-size:13px;font-weight:700}#rc-setup-reminder .rsr-t{flex:1}#rc-setup-reminder .rc-x{color:#bbb}#rc-setup-reminder .rc-b{white-space:nowrap}body.rc-mobile #rc-setup-reminder{left:8px;right:8px;bottom:84px;max-width:none;font-size:12px}@media print{#rc-setup-reminder{display:none !important}}'
+    + '.rc-on-n{display:block;margin:2px auto 0;width:max-content;padding:0 6px;border-radius:9999px;background:#111;color:#fff;font-size:9px;font-weight:900}@media print{.rc-on-n{display:none !important}}'
     + '#rc-warn-bar{margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#FFF4DB;border:2px solid #F59E0B;font-size:12px}body.rc-mobile #rc-warn-bar{margin:8px 8px 0}.rc-warn-head{cursor:pointer}.rc-warn-row{padding:4px 0;border-top:1px solid #f3d9a4;margin-top:4px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
