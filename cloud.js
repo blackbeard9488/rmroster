@@ -1596,7 +1596,7 @@ function rcMyPendingOffers(otherOnly) {
 }
 /* Mark offered cells on the roster */
 renderRosterSafe = (function (orig) {
-  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); } catch (e) { console.error('decorate', e); } return r; };
+  return function () { var r = orig.apply(this, arguments); try { rcDecorateRoster(); rcCurrentIndicator(); rcDraftBar(); rcTeamPill(); rcFreshButton(); rcMobileRoster(); rcGuestTags(); rcApplyRowSize(); rcSharedMarks(); rcQueueShared(); rcApprovedTicks(); rcStaffBtn(); document.body.classList.toggle('rc-can-edit', rcIsMgr()); } catch (e) { console.error('decorate', e); } return r; };
 })(renderRosterSafe);
 /* ---------- phones: day view (default) or an easier-to-read fortnight table ---------- */
 function rcRosterView() { try { return localStorage.getItem('repco_roster_view') || 'day'; } catch (e) { return 'day'; } }
@@ -3169,6 +3169,112 @@ function rcSharedMarks() {
   });
 }
 
+/* ---------- Approved requests: a small green tick in the cell (not on printouts or PDFs) ---------- */
+function rcApprovedTicks() {
+  if (!RC.session || RC.pdfMode) return;
+  var fn = getSelectedFortnight(); if (!fn) return;
+  var me = findMyStaff(fn), mgr = rcIsMgr();
+  rcAsArray(safeGetJSON('retail_roster_requests_v2', [])).forEach(function (q) {
+    if (q.status !== 'approved') return;
+    var si = rcStaffIndexForUsername(fn, q.username); if (si === -1) return;
+    if (!mgr && fn.staff[si] !== me) return;          // staff only see ticks on their own row
+    var idx = [];
+    if (q.type === 'unavailability') rcAsArray(q.dates).forEach(function (d) { var k = fn.dates.findIndex(function (x) { return x.date === rcDateKey(d); }); if (k !== -1) idx.push(k); });
+    else if (q.fnId === fn.id && q.shiftIdx != null) idx.push(+q.shiftIdx);
+    idx.forEach(function (i) {
+      var td = document.querySelector('#roster-mount td[data-r="' + si + '"][data-i="' + i + '"]');
+      if (td && !td.querySelector('.rc-tick')) td.insertAdjacentHTML('beforeend', '<span class="rc-tick" title="Approved request' + (q.decidedBy ? ' (' + rcEsc(q.decidedBy) + ')' : '') + '">✓</span>');
+    });
+  });
+}
+
+/* ---------- Add or remove people on a roster ---------- */
+function rcStaffBtn() {
+  var ctl = document.querySelector('#repco-v65 .r-controls') || document.querySelector('.r-controls'); if (!ctl) return;
+  var b = document.getElementById('rc-staff-btn');
+  if (!rcIsMgr() || RC.pdfMode || !getSelectedFortnight()) { if (b) b.remove(); var pn = document.getElementById('rc-staff-panel'); if (pn) pn.remove(); return; }
+  if (!b) { b = document.createElement('button'); b.id = 'rc-staff-btn'; b.onclick = function () { RC.staffPanelOpen = !RC.staffPanelOpen; rcStaffPanel(true); }; var fr = document.getElementById('rc-fresh-btn'); ctl.insertBefore(b, fr || null); }
+  b.textContent = RC.staffPanelOpen ? 'CLOSE STAFF' : 'STAFF + / −';
+  rcStaffPanel(false);
+}
+function rcStaffPanel(force) {
+  var old = document.getElementById('rc-staff-panel');
+  if (!RC.staffPanelOpen) { if (old) old.remove(); var b0 = document.getElementById('rc-staff-btn'); if (b0) b0.textContent = 'STAFF + / −'; return; }
+  if (old && !force && old.contains(document.activeElement)) return;   // don't redraw while someone is typing in it
+  var b1 = document.getElementById('rc-staff-btn'); if (b1) b1.textContent = 'CLOSE STAFF';
+  var fn = getSelectedFortnight(); if (!fn) return;
+  var keep = {}; ['rs-pick', 'rs-first', 'rs-last', 'rs-type', 'rs-scope'].forEach(function (id) { var x = document.getElementById(id); if (x) keep[id] = x.value; });
+  var nameOf = function (x) { return (String(x.firstName || '').trim() + ' ' + String(x.lastName || '').trim()).toLowerCase(); };
+  var on = {}; (fn.staff || []).forEach(function (st) { on[nameOf(st)] = 1; });
+  var pool = rcUserList().filter(function (u) { return u.firstName && u.lastName && !on[nameOf(u)] && !u.isHidden; }).sort(function (a, b) { return String(a.lastName).localeCompare(String(b.lastName)); });
+  var h = '<div class="rc-h">STAFF ON ' + rcEsc(rcFnRange(fn)) + '</div>';
+  h += (fn.staff || []).map(function (st, r) {
+    var n = (st.shifts || []).filter(function (v) { return !rcIsEmptyVal(v); }).length;
+    var hidden = isHiddenStaffRow(st) || st.isHidden;
+    return '<div class="rc-row"><div><b>' + rcEsc(String(st.lastName).toUpperCase() + ', ' + st.firstName) + '</b> <span class="rc-small">' + rcEsc(st.employmentType === 'casual' ? 'casual' : 'full time') + ' • ' + n + ' shift' + (n === 1 ? '' : 's') + (hidden ? ' • hidden' : '') + (st.guestFrom && st.guestFrom !== RC.team ? ' • from ' + rcEsc(rcTeamName(st.guestFrom)) : '') + '</span></div>'
+      + (hidden ? '<span class="rc-small">Hidden Staff page</span>' : '<button class="rc-b rc-white" onclick="rcRemoveFromRoster(' + r + ')">REMOVE</button>') + '</div>';
+  }).join('');
+  h += '<div class="rc-h" style="margin-top:12px">ADD SOMEONE</div>'
+    + '<div class="tm-row" style="border:none;padding:0"><select id="rs-pick" class="rc-to-in" style="margin:0;flex:1" onchange="rcStaffPickUI()"><option value="">Type a new name below…</option>' + pool.map(function (u) { return '<option value="' + rcEsc(u.uid) + '">' + rcEsc(u.firstName + ' ' + u.lastName) + ' (' + rcEsc(u.username) + ')</option>'; }).join('') + '</select></div>'
+    + '<div class="tm-row" id="rs-newname" style="border:none;padding:6px 0 0"><input id="rs-first" class="rc-to-in" style="margin:0;flex:1" placeholder="First name"><input id="rs-last" class="rc-to-in" style="margin:0;flex:1" placeholder="Last name"></div>'
+    + '<div class="tm-row" style="border:none;padding:6px 0 0"><select id="rs-type" class="rc-to-in" style="margin:0;flex:1"><option value="casual">Casual</option><option value="fulltime">Full time</option></select>'
+    + '<select id="rs-scope" class="rc-to-in" style="margin:0;flex:1"><option value="this">This fortnight only</option><option value="later">This and later fortnights</option></select>'
+    + '<button class="rc-b rc-red" onclick="rcAddToRoster()">ADD</button></div>'
+    + '<div class="rc-small" style="margin-top:6px">They start OFF every day. Use the same first and last name as their login so their shifts reach them. Hidden staff are added on the Hidden Staff page; people from another team are borrowed in Account Management.</div>';
+  var el = old || document.createElement('div');
+  el.id = 'rc-staff-panel'; el.className = 'card rc-staff-panel'; el.innerHTML = h;
+  if (!old) { var mount = document.getElementById('roster-mount'); var bar = document.getElementById('rc-draft-bar'); mount.parentNode.insertBefore(el, bar ? bar.nextSibling : mount); }
+  Object.keys(keep).forEach(function (id) { var x = document.getElementById(id); if (x && keep[id] !== undefined && (x.tagName !== 'SELECT' || [].some.call(x.options, function (o) { return o.value === keep[id]; }))) x.value = keep[id]; });
+  rcStaffPickUI();
+}
+function rcStaffPickUI() {
+  var pick = (document.getElementById('rs-pick') || {}).value, nn = document.getElementById('rs-newname'); if (nn) nn.style.display = pick ? 'none' : '';
+  var u = pick && RC.users[pick], t = document.getElementById('rs-type'); if (u && t && document.activeElement !== t) t.value = u.employmentType === 'fulltime' ? 'fulltime' : 'casual';
+}
+function rcAddToRoster() {
+  var fn = getSelectedFortnight(); if (!fn) return;
+  var pick = document.getElementById('rs-pick').value, u = pick && RC.users[pick];
+  var first = u ? u.firstName : document.getElementById('rs-first').value.trim(), last = u ? u.lastName : document.getElementById('rs-last').value.trim();
+  if (!first || !last) { toast('Enter a first and last name'); return; }
+  var type = document.getElementById('rs-type').value, later = document.getElementById('rs-scope').value === 'later';
+  var key = (first + ' ' + last).toLowerCase(), added = 0;
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
+  var start = fn.dates[0].iso;
+  fns.forEach(function (f) {
+    if (!(f.id === fn.id || (later && f.dates[0] && f.dates[0].iso > start))) return;
+    if ((f.staff || []).some(function (st) { return (String(st.firstName).trim() + ' ' + String(st.lastName).trim()).toLowerCase() === key; })) return;
+    var len = f.dates.length;
+    f.staff.push({ firstName: first, lastName: last, role: 'staff', employmentType: type, shifts: Array(len).fill('OFF'), unavailable: Array(len).fill(false) });
+    f.staff.sort(rcStaffSort); added++;
+  });
+  if (!added) { toast(first + ' is already on ' + (later ? 'those rosters' : 'this roster')); return; }
+  safeSetJSON('retail_roster_byFortnight_v1', fns);
+  ['rs-first', 'rs-last'].forEach(function (id) { var x = document.getElementById(id); if (x) x.value = ''; });
+  var pk = document.getElementById('rs-pick'); if (pk) pk.value = '';
+  renderRosterSafe(); rcStaffPanel(true);
+  toast('Added ' + first + ' to ' + added + ' roster' + (added === 1 ? '' : 's'));
+}
+function rcRemoveFromRoster(r) {
+  var fn = getSelectedFortnight(); if (!fn || !fn.staff[r]) return;
+  var st = fn.staff[r], n = (st.shifts || []).filter(function (v) { return !rcIsEmptyVal(v); }).length;
+  var later = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).filter(function (f) { return f.dates[0] && f.dates[0].iso > fn.dates[0].iso && (f.staff || []).some(function (x) { return x.firstName === st.firstName && x.lastName === st.lastName; }); }).length;
+  showCustomConfirm('Remove ' + rcEsc(st.firstName + ' ' + st.lastName) + '?', (n ? '<b>Their ' + n + ' shift' + (n === 1 ? '' : 's') + ' on ' + rcEsc(rcFnRange(fn)) + ' will be removed.</b> ' : '') + 'Their login isn\'t affected.'
+    + (later ? '<label class="rc-keep" style="margin-top:10px"><input type="checkbox" id="rs-rm-later"> Also remove them from the ' + later + ' later roster' + (later === 1 ? '' : 's') + '</label>' : ''), function (ok) {
+    if (!ok) return;
+    var alsoLater = !!(document.getElementById('rs-rm-later') || {}).checked, removed = 0;
+    var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', []));
+    fns.forEach(function (f) {
+      if (!(f.id === fn.id || (alsoLater && f.dates[0] && f.dates[0].iso > fn.dates[0].iso))) return;
+      var before = f.staff.length;
+      f.staff = f.staff.filter(function (x) { return !(x.firstName === st.firstName && x.lastName === st.lastName); });
+      removed += before - f.staff.length;
+    });
+    safeSetJSON('retail_roster_byFortnight_v1', fns);
+    renderRosterSafe(); rcStaffPanel(true);
+    toast('Removed from ' + removed + ' roster' + (removed === 1 ? '' : 's'));
+  });
+}
+
 /* ---------- Access log page (masters) ---------- */
 renderOptions = (function (orig) {
   return function () {
@@ -3549,6 +3655,11 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + 'body.rc-mobile .r-controls #rc-rows-btn{order:4;min-width:0;padding:5px 10px;font-size:10px}'
     + '.rc-else{display:block;margin-top:2px;font-size:8.5px;font-weight:800;color:#555 !important;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}td.cell-off .rc-else{color:#111 !important;font-style:italic}.rc-else.rc-clash{color:#E30613 !important}.rc-else-dv{flex-basis:100%;font-size:11px;color:#666 !important}'
     + 'body.rc-mobile table td.cell-na{font-size:7.5px !important;letter-spacing:0}body.rc-rh-l table td.cell-na{font-size:12px !important}'
+    + '#roster-mount td[data-i]{position:relative}.rc-tick{position:absolute;top:1px;right:2px;color:#1a7f37;font-size:10px;font-weight:900;line-height:1;pointer-events:none}td.cell-na .rc-tick,td.cell-absent .rc-tick{color:#5fe08a}@media print{.rc-tick{display:none !important}}'
+    + '.rc-staff-panel{margin:8px 14px 0}body.rc-mobile .rc-staff-panel{margin:8px 8px 0}#rc-staff-btn{background:#fff}body.rc-mobile .r-controls #rc-staff-btn{order:4;min-width:0;padding:5px 10px;font-size:10px}'
+    + 'body.rc-can-edit #roster-mount tr:not(.totals):hover td{box-shadow:inset 0 2px 0 rgba(227,6,19,.55),inset 0 -2px 0 rgba(227,6,19,.55),0 0 12px rgba(227,6,19,.22);filter:brightness(1.04)}'
+    + 'body.rc-can-edit #roster-mount tr:not(.totals):hover td.staff-cell{box-shadow:inset 4px 0 0 #E30613,inset 0 2px 0 rgba(227,6,19,.55),inset 0 -2px 0 rgba(227,6,19,.55)}'
+    + 'body.rc-can-edit .dv-row.dv-edit:hover{box-shadow:inset 4px 0 0 #E30613,0 0 12px rgba(227,6,19,.18)}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
     + '.ms-hint{font-size:12px;font-weight:700;color:#555;margin:4px 2px 10px}'
