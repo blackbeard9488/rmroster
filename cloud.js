@@ -592,6 +592,7 @@ function rcRenderLiveInner() {
       else if (id === 'buddies-today-page-v141') renderBuddies('today');
       else if (id === 'buddies-tomorrow-page-v141') renderBuddies('tomorrow');
       else if (id === 'today-workers-page') renderTodayWorkers();
+      else if (id === 'compare-page') rcRenderComparePage();
     }
     try { updateMyScheduleCard(); } catch (e) {}
     rcRenderBell();
@@ -1739,6 +1740,13 @@ function rcNotify(uids, note, fixedKey) {
 }
 /* Resolves with what the relay reported ({sent, removed} or {error}) so problems can be shown */
 function rcSendPush(ids, note) {
+  var all = Object.keys(ids);
+  if (all.length > 10) {   // the free relay can only make so many calls per request, so big sends go in batches
+    var parts = []; for (var k = 0; k < all.length; k += 10) { var part = {}; all.slice(k, k + 10).forEach(function (u) { part[u] = ids[u]; }); parts.push(part); }
+    return Promise.all(parts.map(function (part) { return rcSendPush(part, note); })).then(function (rs) {
+      return rs.reduce(function (t, r) { t.sent += (r && r.sent) || 0; t.removed += (r && r.removed) || 0; if (r && r.error) t.error = r.error; return t; }, { sent: 0, removed: 0 });
+    });
+  }
   if (!RC_PUSH_WORKER_URL || !RC.auth.currentUser) return Promise.resolve({ error: 'relay not configured' });
   return RC.auth.currentUser.getIdToken().then(function (token) {
     return fetch(RC_PUSH_WORKER_URL.replace(/\/$/, '') + '/notify', {
@@ -3660,6 +3668,153 @@ function rcDayHeaders() {
   if (dh && di != null && !dh.querySelector('.dov-btn')) dh.insertAdjacentHTML('beforeend', '<button class="rc-b rc-white dov-btn" style="margin-top:6px" onclick="rcDayOverview(' + di + ')">DAY OVERVIEW</button>');
 }
 
+/* ---------- Send a message (push + inbox): managers to their team, masters to anyone ---------- */
+function rcMsgAudiences() {
+  var all = RC.allUsers, me = RC.session.uid, out = [];
+  var list = function (f) { return Object.keys(all).filter(function (k) { return k !== me && f(all[k], k); }); };
+  if (rcIsOwner()) {
+    rcTeamIds().forEach(function (t) { out.push({ id: 'team:' + t, label: 'Everyone in ' + rcTeamName(t), uids: list(function (u) { return rcHomeTeam(u) === t; }) }); });
+    if (rcTeamIds().length > 1) out.push({ id: 'all', label: 'Everyone in every team', uids: list(function () { return true; }) });
+    out.push({ id: 'managers', label: 'All managers', uids: list(function (u) { return rcRoleOf(u) === 'manager'; }) });
+    out.push({ id: 'admins', label: 'All admins', uids: list(function (u) { return rcRoleOf(u) === 'admin'; }) });
+    out.push({ id: 'staff', label: 'All staff (not admins or managers)', uids: list(function (u) { return rcRoleOf(u) === 'staff'; }) });
+  } else {
+    out.push({ id: 'team:' + RC.team, label: 'Everyone in my team', uids: list(function (u, k) { return rcHomeTeam(u) === RC.team || rcIsGuestHere(k); }) });
+  }
+  return out;
+}
+function rcMsgPeople() {
+  var all = RC.allUsers, me = RC.session.uid;
+  return Object.keys(all).filter(function (k) { return k !== me && (rcIsOwner() || rcHomeTeam(all[k]) === RC.team || rcIsGuestHere(k)) && !(rcMyRole() === 'manager' && rcRoleOf(all[k]) === 'master'); })
+    .map(function (k) { var u = all[k]; return { uid: k, label: ((u.firstName || '') + ' ' + (u.lastName || '')).trim() + ' (' + u.username + ', ' + rcRoleOf(u) + (rcTeamIds().length > 1 ? ', ' + rcTeamName(rcHomeTeam(u)) : '') + ')' }; })
+    .sort(function (a, b) { return a.label.localeCompare(b.label); });
+}
+function rcRenderMessagePage() {
+  var el = document.getElementById('message-inner'); if (!el) return;
+  var keep = {}; ['msg-to', 'msg-person', 'msg-title', 'msg-body'].forEach(function (id) { var x = document.getElementById(id); if (x) keep[id] = x.value; });
+  var aud = rcMsgAudiences(), ppl = rcMsgPeople();
+  el.innerHTML = '<div class="card"><div class="rc-h">SEND A MESSAGE</div><div class="rc-small">Goes to their phones (if alerts are on) and their inbox. Staff see it as from "Management", not your login name.</div>'
+    + '<label class="rc-small" style="display:block;margin-top:8px">Send to</label><select id="msg-to" class="rc-to-in" onchange="rcMsgToUI()"><option value="one">One person…</option>' + aud.map(function (a) { return '<option value="' + rcEsc(a.id) + '">' + rcEsc(a.label) + ' (' + a.uids.length + ')</option>'; }).join('') + '</select>'
+    + '<select id="msg-person" class="rc-to-in">' + ppl.map(function (p) { return '<option value="' + rcEsc(p.uid) + '">' + rcEsc(p.label) + '</option>'; }).join('') + '</select>'
+    + '<input id="msg-title" class="rc-to-in" maxlength="60" placeholder="Title (optional), e.g. Stocktake Sunday">'
+    + '<textarea id="msg-body" class="rc-to-in" rows="4" maxlength="500" placeholder="Message" style="border-radius:16px;resize:vertical"></textarea>'
+    + '<button class="rc-b rc-red rc-wide" style="margin-top:8px" onclick="rcSendMessage()">SEND</button><div id="msg-result" class="rc-small" style="margin-top:6px"></div></div>'
+    + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+  Object.keys(keep).forEach(function (id) { var x = document.getElementById(id); if (x && keep[id] !== undefined) x.value = keep[id]; });
+  rcMsgToUI();
+}
+function rcMsgToUI() { var to = document.getElementById('msg-to'), p = document.getElementById('msg-person'); if (to && p) p.style.display = to.value === 'one' ? '' : 'none'; }
+function rcSendMessage() {
+  var to = document.getElementById('msg-to').value, body = document.getElementById('msg-body').value.trim(), title = document.getElementById('msg-title').value.trim();
+  if (!body) { toast('Type a message'); return; }
+  var uids, label;
+  if (to === 'one') { uids = [document.getElementById('msg-person').value]; var u = RC.allUsers[uids[0]]; label = u ? u.username : 'one person'; }
+  else { var a = rcMsgAudiences().find(function (x) { return x.id === to; }); if (!a) return; uids = a.uids; label = a.label; }
+  uids = uids.filter(Boolean);
+  if (!uids.length) { toast('Nobody to send to'); return; }
+  var go = function () {
+    var res = document.getElementById('msg-result'); if (res) res.textContent = 'Sending…';
+    Promise.resolve(rcNotify(uids, { type: 'message', title: title || 'Message from Management', body: body })).then(function (r) {
+      var upd = {}; rcLogHistory(upd, { action: 'Message sent to ' + label + ' (' + uids.length + ')', fn: body.slice(0, 80) }); rcSave(upd).catch(function () {});
+      if (res) res.innerHTML = '<b>Sent to ' + uids.length + ' ' + (uids.length === 1 ? 'person' : 'people') + '.</b> ' + (r && r.error ? 'In their inbox; phone alerts: ' + rcEsc(r.error) : 'In their inbox' + (r && r.sent != null ? ' and ' + r.sent + ' phone alert' + (r.sent === 1 ? '' : 's') : '') + '.');
+      document.getElementById('msg-body').value = ''; document.getElementById('msg-title').value = '';
+      toast('Message sent');
+    });
+  };
+  if (uids.length > 1) showCustomConfirm('Send to ' + uids.length + ' people?', rcEsc(label) + ':<br><br><i>' + rcEsc(body) + '</i>', function (ok) { if (ok) go(); });
+  else go();
+}
+
+/* ---------- Compare rosters (managers and masters) ---------- */
+function rcRowHours(fn, st) {
+  var h = 0, full = st.employmentType !== 'casual', n = 0;
+  (fn.dates || []).forEach(function (d, i) {
+    var sh = String(st.shifts && st.shifts[i] != null ? st.shifts[i] : 'OFF'), o = st.originalShifts && st.originalShifts[i];
+    var leave = (st.absentApproved && st.absentApproved[i]) || (st.unavailable && st.unavailable[i]) || /^(UA|NA|AB|ABSENT)$/i.test(sh.trim());
+    if (leave) { if (full) h += netH(String(o || sh)); } else if (parseShiftRange(sh)) { h += netH(sh); n++; }
+  });
+  return { h: h, n: n };
+}
+function rcRenderComparePage() {
+  var el = document.getElementById('compare-inner'); if (!el) return;
+  var fns = rcAsArray(safeGetJSON('retail_roster_byFortnight_v1', [])).slice().sort(function (a, b) { return ((a.dates[0] || {}).iso || '') < ((b.dates[0] || {}).iso || '') ? 1 : -1; });
+  if (!fns.length) { el.innerHTML = '<div class="card">No rosters yet.</div>'; return; }
+  var cur = getSelectedFortnight() || fns[0];
+  var a = RC.cmpA || cur.id, b = RC.cmpB || 'orig';
+  if (!RC.cmpB) { var i0 = fns.findIndex(function (f) { return f.id === a; }); b = 'orig'; }
+  var opts = function (sel, withOrig) { return (withOrig ? '<option value="orig"' + (sel === 'orig' ? ' selected' : '') + '>Its uploaded Excel / first version</option>' : '') + fns.map(function (f) { return '<option value="' + rcEsc(f.id) + '"' + (f.id === sel ? ' selected' : '') + '>' + rcEsc(rcFnRange(f)) + (f.draft ? ' (draft)' : '') + '</option>'; }).join(''); };
+  var h = '<div class="card"><div class="rc-h">COMPARE ROSTERS</div><div class="rc-small">Compare a fortnight with another one (same weekdays side by side), or with how it was first uploaded to see every change since.</div>'
+    + '<div class="tm-row" style="border:none;padding:8px 0 0"><select id="cmp-a" class="rc-to-in" style="margin:0;flex:1" onchange="RC.cmpA=this.value;rcRenderComparePage()">' + opts(a, false) + '</select><b>vs</b>'
+    + '<select id="cmp-b" class="rc-to-in" style="margin:0;flex:1" onchange="RC.cmpB=this.value;rcRenderComparePage()">' + opts(b, true) + '</select></div>'
+    + '<label class="rc-keep" style="margin-top:6px"><input type="checkbox" id="cmp-only"' + (RC.cmpAll ? '' : ' checked') + ' onchange="RC.cmpAll=!this.checked;rcRenderComparePage()"> Only show people with differences</label></div>';
+  var A = fns.find(function (f) { return f.id === a; }); if (!A) { el.innerHTML = h; return; }
+  var orig = b === 'orig', B = orig ? null : fns.find(function (f) { return f.id === b; });
+  var nameOf = function (st) { return rcPersonName(st); };
+  var map = {};
+  (A.staff || []).forEach(function (st) { if (!isHiddenStaffRow(st)) map[nameOf(st)] = { st: st, a: st }; });
+  if (orig) {
+    // "first version": each cell's original (uploaded) value where it was changed later
+    Object.keys(map).forEach(function (k) {
+      var st = map[k].a, o = JSON.parse(JSON.stringify(st));
+      o.shifts = (st.shifts || []).map(function (v, i) { return st.originalShifts && st.originalShifts[i] != null ? st.originalShifts[i] : v; });
+      o.absentApproved = {}; o.unavailable = []; map[k].b = o;
+    });
+  } else (B.staff || []).forEach(function (st) { if (isHiddenStaffRow(st)) return; var k = nameOf(st); map[k] = map[k] || { st: st }; map[k].b = st; });
+  var bFn = orig ? A : B;
+  // match days by weekday position (same position if both fortnights start on the same weekday)
+  var idxB = A.dates.map(function (d, i) { return bFn.dates[i] && bFn.dates[i].day === d.day ? i : bFn.dates.findIndex(function (x) { return x.day === d.day; }); });
+  var tA = 0, tB = 0, rows = [];
+  Object.keys(map).sort().forEach(function (k) {
+    var m = map[k], ha = m.a ? rcRowHours(A, m.a) : { h: 0, n: 0 }, hb = m.b ? rcRowHours(bFn, m.b) : { h: 0, n: 0 };
+    tA += ha.h; tB += hb.h;
+    var days = [];
+    A.dates.forEach(function (d, i) {
+      var va = m.a ? String(m.a.shifts[i] != null ? m.a.shifts[i] : 'OFF') : '—', j = idxB[i], vb = m.b && j >= 0 ? String(m.b.shifts[j] != null ? m.b.shifts[j] : 'OFF') : '—';
+      if (m.a && m.a.unavailable && m.a.unavailable[i]) va = 'UA'; if (m.a && m.a.absentApproved && m.a.absentApproved[i]) va = 'AB';
+      if (!orig && m.b && j >= 0) { if (m.b.unavailable && m.b.unavailable[j]) vb = 'UA'; if (m.b.absentApproved && m.b.absentApproved[j]) vb = 'AB'; }
+      if ((rcIsEmptyVal(va) ? 'OFF' : va.toUpperCase()) !== (rcIsEmptyVal(vb) ? 'OFF' : vb.toUpperCase())) days.push({ d: orig ? d.day + ' ' + d.date : d.day + ' ' + d.date + ' / ' + (j >= 0 ? bFn.dates[j].date : '?'), a: va, b: vb });
+    });
+    var status = !m.a ? 'only in B' : !m.b ? 'only in A' : '';
+    rows.push({ k: k, st: m.st, ha: ha, hb: hb, days: days, status: status });
+  });
+  var shown = rows.filter(function (r) { return RC.cmpAll || r.days.length || r.status || Math.abs(r.ha.h - r.hb.h) > 0.01; });
+  var lblB = orig ? 'Uploaded' : rcFnRange(B);
+  h += '<div class="card"><div class="cmp-sum"><div><small>' + rcEsc(rcFnRange(A)) + '</small><b>' + tA.toFixed(1) + 'h</b></div><div><small>' + rcEsc(lblB) + '</small><b>' + tB.toFixed(1) + 'h</b></div><div><small>difference</small><b class="' + (tA - tB > 0 ? 'cmp-up' : tA - tB < 0 ? 'cmp-down' : '') + '">' + (tA - tB > 0 ? '+' : '') + (tA - tB).toFixed(1) + 'h</b></div><div><small>people changed</small><b>' + rows.filter(function (r) { return r.days.length || r.status; }).length + '</b></div></div></div>';
+  h += shown.length ? shown.map(function (r) {
+    var diff = r.ha.h - r.hb.h;
+    return '<div class="card cmp-p"><div class="rc-row" style="border:none"><div><b>' + rcEsc(String(r.st.lastName).toUpperCase() + ', ' + r.st.firstName) + '</b>' + (r.status ? ' <span class="rc-pill">' + rcEsc(r.status) + '</span>' : '') + '<br><span class="rc-small">' + r.ha.n + ' shifts vs ' + r.hb.n + '</span></div>'
+      + '<div class="cmp-h"><span>' + r.ha.h.toFixed(1) + 'h</span> vs <span>' + r.hb.h.toFixed(1) + 'h</span> <b class="' + (diff > 0 ? 'cmp-up' : diff < 0 ? 'cmp-down' : '') + '">' + (diff > 0 ? '+' : '') + diff.toFixed(1) + 'h</b></div></div>'
+      + (r.days.length ? '<table class="cmp-t"><tr><th>Day</th><th>' + rcEsc(rcFnRange(A)) + '</th><th>' + rcEsc(lblB) + '</th></tr>' + r.days.map(function (x) { return '<tr><td>' + rcEsc(x.d) + '</td><td><b>' + rcEsc(rcIsEmptyVal(x.a) ? 'OFF' : fmt(x.a)) + '</b></td><td>' + rcEsc(rcIsEmptyVal(x.b) ? 'OFF' : fmt(x.b)) + '</td></tr>'; }).join('') + '</table>' : '<div class="rc-small">Same shifts.</div>') + '</div>';
+  }).join('') : '<div class="card">No differences.</div>';
+  el.innerHTML = h + '<div class="card"><button onclick="showMain()" class="rc-b rc-wide">← BACK TO ROSTER</button></div>';
+}
+
+/* Options buttons and pages for messages and compare */
+renderOptions = (function (orig) {
+  return function () {
+    orig.apply(this, arguments);
+    if (!rcIsManagerUp()) return;
+    var grid = document.querySelector('#options-inner > div'); if (!grid) return;
+    [['btn-message', 'SEND A MESSAGE', 'message-page', '#111', '#fff'], ['btn-compare', 'COMPARE ROSTERS', 'compare-page']].forEach(function (x) {
+      if (document.getElementById(x[0])) return;
+      var b = document.createElement('button'); b.className = 'card'; b.id = x[0]; b.style.cssText = 'font-weight:900;text-align:left' + (x[3] ? ';background:' + x[3] + ';color:' + x[4] : '');
+      b.textContent = x[1]; b.onclick = function () { if (x[2] === 'compare-page') { RC.cmpA = null; RC.cmpB = null; } openPage(x[2]); }; grid.insertBefore(b, grid.lastElementChild);
+    });
+  };
+})(renderOptions);
+openPage = (function (orig) {
+  return function (id) {
+    var pages = { 'message-page': ['SEND A MESSAGE', 'message-inner', rcRenderMessagePage], 'compare-page': ['COMPARE ROSTERS', 'compare-inner', rcRenderComparePage] };
+    var pg = pages[id];
+    if (pg) {
+      if (!rcIsManagerUp()) { toast('Managers only'); return; }
+      if (!document.getElementById(id)) { var p = document.createElement('div'); p.id = id; p.className = 'full-page'; p.innerHTML = '<div class="page-inner"><div class="page-title">' + pg[0] + '</div><div id="' + pg[1] + '"></div></div>'; document.body.appendChild(p); }
+    }
+    orig.apply(this, arguments);
+    if (pg) { pg[2](); setTimeout(rcFitHeader, 0); }
+  };
+})(openPage);
+
 /* ---------- Access log page (masters) ---------- */
 renderOptions = (function (orig) {
   return function () {
@@ -4065,6 +4220,9 @@ applyRoleVisibility = (function (orig) { return function () { var r = orig.apply
     + '.dov-g{border-top:2px solid #eee;padding:8px 0}.dov-gh{font-weight:900;font-size:12px;letter-spacing:.4px;margin-bottom:4px}.dov-gh>span{background:#111;color:#fff;border-radius:9999px;padding:1px 8px;margin-left:4px}.dov-gh small{font-weight:600;color:#777;letter-spacing:0}'
     + '.dov-open .dov-gh>span{background:#1a7f37}.dov-close .dov-gh>span{background:#E30613}.dov-p{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;border-bottom:1px dashed #eee}'
     + '.dov-set{border-top:2px solid #eee;padding-top:8px;margin-top:4px}.dov-set input{border:2px solid #111;border-radius:9999px;padding:2px 8px}.dov-nav{display:flex;justify-content:space-between;margin-top:10px}@media print{#rc-day-ov{display:none !important}}'
+    + '.cmp-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.cmp-sum div{background:#111;color:#fff;border-radius:12px;padding:8px 6px;text-align:center}.cmp-sum small{display:block;font-size:10px;opacity:.8;font-weight:700}.cmp-sum b{font-size:18px}'
+    + '.cmp-up{color:#1a7f37}.cmp-sum .cmp-up{color:#7ee2a0}.cmp-down{color:#E30613}.cmp-sum .cmp-down{color:#ff8a94}.cmp-h{font-size:13px;white-space:nowrap}.cmp-h b{margin-left:6px}'
+    + '.cmp-t{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}.cmp-t th,.cmp-t td{border:none !important;border-bottom:1px solid #eee !important;padding:4px 6px !important;text-align:left;width:auto !important;min-width:0 !important;max-width:none !important;background:transparent !important;color:#111 !important;font-size:12px !important}.cmp-t th{font-size:10px !important;color:#777 !important}'
     + '#rc-warn-bar{margin:8px 14px 0;padding:8px 12px;border-radius:12px;background:#FFF4DB;border:2px solid #F59E0B;font-size:12px}body.rc-mobile #rc-warn-bar{margin:8px 8px 0}.rc-warn-head{cursor:pointer}.rc-warn-row{padding:4px 0;border-top:1px solid #f3d9a4;margin-top:4px}'
     + '.hist-row{display:flex;gap:10px;padding:8px 0;border-top:1px solid #eee;font-size:13px}.hist-t{flex:0 0 64px;font-weight:900;color:#E30613;font-size:12px}.hist-w{flex:1}'
     + '.hrs-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #eee}.hrs-v{font-family:"Arial Black",Impact,sans-serif;font-size:20px;text-align:right}.hrs-v small{display:block;font-family:Arial,sans-serif;font-size:10px;color:#777;font-weight:700}'
