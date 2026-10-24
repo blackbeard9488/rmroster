@@ -3371,7 +3371,9 @@ var RC_WARN_TYPES = {
   outsideHours:  { label: 'Shift starts or finishes outside store hours by more than', unit: 'hours', def: 1, msg: 'Shift outside store hours' }
 };
 /* ---------- Staff duties (register, audiologist, spares/parts, stock...): manager-only, never shown to staff ---------- */
-var RC_DEFAULT_DUTIES = [{ id: 'register', name: 'Register' }, { id: 'audiologist', name: 'Audiologist' }, { id: 'parts', name: 'Spares/Parts' }, { id: 'stock', name: 'Stock' }];
+var RC_DEFAULT_DUTIES = [{ id: 'register', name: 'Register', cover: true }, { id: 'audiologist', name: 'Audiologist', cover: false }, { id: 'parts', name: 'Spares/Parts', cover: true }, { id: 'stock', name: 'Stock', cover: false }];
+/* Duties that need cover through the day (checked for gaps); others are just listed. Audiologist and Stock don't by default. */
+function rcDutyNeedsCover(id) { var d = rcDuties().find(function (x) { return x.id === id; }); if (!d) return false; if (d.cover !== undefined) return !!d.cover; var def = RC_DEFAULT_DUTIES.find(function (x) { return x.id === id; }); return def ? def.cover : true; }
 function rcDutyEntry() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_duties'; }) || null; }
 function rcDuties() { var e = rcDutyEntry(); return (e && rcAsArray(e.list).length) ? rcAsArray(e.list) : RC_DEFAULT_DUTIES; }
 function rcDutyName(id) { var d = rcDuties().find(function (x) { return x.id === id; }); return d ? d.name : id; }
@@ -3437,7 +3439,7 @@ var RC_WARN_PRESETS = [
   ['daysInRow', 6, 'More than 6 days in a row', 'all'], ['daysOffUnder', 2, 'Fewer than 2 days off in a week', 'all'], ['restRunUnder', 2, 'No 2 rest days in a row', 'all'], ['requestedOff', '', 'Rostered on a requested day off', 'all'], ['outsideHours', 1, 'Shift outside store hours', 'all'],
   ['minStaff', 3, 'Fewer than 3 people on', 'all'], ['coverAnyTime', 2, 'Fewer than 2 people in the store', 'all'], ['mgrCover', 1, 'No manager on', 'all'], ['openBy', 'store', 'Nobody in for opening', 'all'], ['closeFrom', 'store', 'Nobody in until closing', 'all'],
   ['dutyCover', 1, 'Register not covered', 'all', 'register'], ['dutyOpen', '', 'No register worker at opening', 'all', 'register'], ['dutyClose', '', 'No register worker at closing', 'all', 'register'], ['dutyBreak', 5, 'Register worker has no break cover', 'all', 'register'],
-  ['dutyCover', 1, 'Audiologist not covered', 'all', 'audiologist'], ['dutyCover', 1, 'Spares/Parts not covered', 'all', 'parts'], ['dutyOpen', '', 'No spares/parts at opening', 'all', 'parts'], ['dutyClose', '', 'No spares/parts at closing', 'all', 'parts'], ['dutyCover', 1, 'Stock not covered', 'all', 'stock']];
+  ['dutyCover', 1, 'Spares/Parts not covered', 'all', 'parts'], ['dutyOpen', '', 'No spares/parts at opening', 'all', 'parts'], ['dutyClose', '', 'No spares/parts at closing', 'all', 'parts']];
 function rcWarnRules() { return rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).filter(function (w) { return w && RC_WARN_TYPES[w.type]; }); }
 /* People never warned about (stored as a special entry in the same list) */
 function rcWarnIgnoreAll() { var e = rcAsArray(safeGetJSON('retail_roster_warnings_v1', [])).find(function (w) { return w && w.type === '_ignore'; }); return rcAsArray(e && e.people); }
@@ -3659,7 +3661,8 @@ function rcRenderWarningsPage() {
     + '<div style="overflow:auto;margin-top:8px"><table class="cmp-t duty-t"><tr><th>Person</th>' + dus.map(function (du) { return '<th>' + rcEsc(du.name) + '</th>'; }).join('') + '</tr>'
     + Object.keys(people).sort().map(function (k) { var ek = rcEncodeKey(k), mine = rcAsArray(dp[ek]); return '<tr><td>' + rcEsc(people[k]) + '</td>' + dus.map(function (du) { return '<td><input type="checkbox" class="rc-duty" data-p="' + rcEsc(ek) + '" data-d="' + rcEsc(du.id) + '"' + (mine.indexOf(du.id) !== -1 ? ' checked' : '') + '></td>'; }).join('') + '</tr>'; }).join('') + '</table></div>'
     + '<div class="tm-row" style="border:none;padding:8px 0 0"><button class="rc-b rc-red" onclick="rcSaveDuties()">SAVE DUTIES</button><input id="duty-new" class="rc-to-in" style="margin:0;flex:1" placeholder="Add a duty, e.g. Forklift"><button class="rc-b rc-white" onclick="rcAddDuty()">ADD DUTY</button></div>'
-    + '<div class="rc-small" style="margin-top:4px">' + dus.map(function (du) { return rcEsc(du.name) + ' <a href="#" onclick="rcRemoveDuty(\'' + rcEsc(du.id) + '\');return false">remove</a>'; }).join(' • ') + '</div>';
+    + '<div class="rc-small" style="margin-top:6px"><b>Needs cover through the day</b> (checked for gaps; the others are just listed):<br>' + dus.map(function (du) { return '<label style="margin-right:10px;white-space:nowrap"><input type="checkbox"' + (rcDutyNeedsCover(du.id) ? ' checked' : '') + ' onchange="rcDutyCoverToggle(\'' + rcEsc(du.id) + '\',this.checked)"> ' + rcEsc(du.name) + '</label>'; }).join('') + '</div>'
+    + '<div class="rc-small" style="margin-top:4px">Remove a duty: ' + dus.map(function (du) { return '<a href="#" onclick="rcRemoveDuty(\'' + rcEsc(du.id) + '\');return false">' + rcEsc(du.name) + '</a>'; }).join(' • ') + '</div>';
   var ign = rcWarnIgnoreAll();
   h += '</div><div class="card"><div class="rc-row" style="border:none"><div class="rc-h">NEVER WARN ABOUT</div><button class="rc-b rc-white" onclick="rcWarnIgnore(-1)">CHOOSE PEOPLE…</button></div>'
     + '<div class="rc-small">' + (ign.length ? ign.map(function (k) { return rcEsc(people[k] || k); }).join(', ') : 'Nobody - everyone is checked.') + ' Each warning above can also ignore people with its IGNORE… button. Whole-day cover warnings always count everyone.</div>';
@@ -3760,9 +3763,12 @@ function rcSaveDuties() {
     if (added) rcWarnSave(l, 'Duties saved - register checks switched on');
   }
 }
+function rcDutyCoverToggle(id, on) {
+  rcDutySave(function (e) { e.list = rcAsArray(e.list).map(function (d) { return d.id === id ? Object.assign({}, d, { cover: !!on }) : d; }); }, rcDutyName(id) + (on ? ' checked for cover' : ' not checked for cover'));
+}
 function rcAddDuty() {
   var n = String((document.getElementById('duty-new') || {}).value || '').trim(); if (!n) { toast('Type a duty name'); return; }
-  rcDutySave(function (e) { if (rcAsArray(e.list).some(function (d) { return d.name.toLowerCase() === n.toLowerCase(); })) return; e.list = rcAsArray(e.list).concat([{ id: 'd' + Date.now().toString(36), name: n }]); }, 'Added ' + n);
+  rcDutySave(function (e) { if (rcAsArray(e.list).some(function (d) { return d.name.toLowerCase() === n.toLowerCase(); })) return; e.list = rcAsArray(e.list).concat([{ id: 'd' + Date.now().toString(36), name: n, cover: true }]); }, 'Added ' + n);
 }
 function rcRemoveDuty(id) {
   showCustomConfirm('Remove ' + rcEsc(rcDutyName(id)) + '?', 'People lose this duty and warnings for it stop.', function (ok) {
@@ -3822,13 +3828,14 @@ function rcDayOverview(i) {
     + (noOpen ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ Nobody starts by opening (' + rcEsc(t(oT)) + ')</div>' : '')
     + (noClose ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ Nobody works until closing (' + rcEsc(t(cT)) + ')</div>' : '')
     + (function () {
-        var need = {}; rcDuties().forEach(function (du) { if (rcDutyHasPeople(du.id)) need[du.id] = 1; });
+        var need = {}, shown = rcDuties().filter(function (du) { return rcDutyHasPeople(du.id); });
+        shown.forEach(function (du) { if (rcDutyNeedsCover(du.id)) need[du.id] = 1; });
         rcWarnRules().forEach(function (w) { if (!w.off && w.type === 'dutyCover' && w.duty in need && rcDayMatch(w, d)) need[w.duty] = Math.max(need[w.duty], +w.value || 1); });
         var allGaps = Object.keys(need).length ? rcDutyGapsAll(on, d.day, need) : {};
-        return rcDuties().filter(function (du) { return du.id in need; }).map(function (du) {
+        return shown.map(function (du) {
         var rg = on.filter(function (x) { return rcHasDuty(x.st, du.id); }), gp = allGaps[du.id] || [];
         return '<div class="dov-reg"><b>' + rcEsc(du.name) + '</b> on: <b>' + rg.length + '</b>' + (rg.length ? ' <span class="rc-small">(' + rcEsc(rg.map(function (x) { return x.nm + (rcPersonDuties(x.st).length > 1 ? ' ⇄' : ''); }).join(', ')) + ')</span>' : '')
-          + (gp.length ? '<br><span class="rc-warn-dv">⚠ No ' + rcEsc(du.name.toLowerCase()) + ' cover ' + rcEsc(gp.map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', ')) + '</span>' : on.length ? ' <span class="rc-small">• covered all day</span>' : '') + '</div>';
+          + (!(du.id in need) ? ' <span class="rc-small">• not checked for cover</span>' : gp.length ? '<br><span class="rc-warn-dv">⚠ No ' + rcEsc(du.name.toLowerCase()) + ' cover ' + rcEsc(gp.map(function (g) { return rcHmText(g.from) + '-' + rcHmText(g.to); }).join(', ')) + '</span>' : on.length ? ' <span class="rc-small">• covered all day</span>' : '') + '</div>';
       }).join('') + (on.some(function (x) { return rcPersonDuties(x.st).length > 1; }) ? '<div class="rc-small" style="margin:-2px 0 6px">⇄ can do more than one duty, but only one at a time.</div>' : '');
       })()
     + (dws.length ? '<div class="rc-warn-dv" style="margin:6px 0">⚠ ' + dws.map(function (w) { return rcEsc(w.text) + (w.detail ? ' (' + rcEsc(w.detail) + ')' : ''); }).join(' • ') + '</div>' : '')
